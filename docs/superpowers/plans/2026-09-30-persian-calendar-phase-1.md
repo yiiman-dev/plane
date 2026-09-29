@@ -348,7 +348,7 @@ export type CalendarAdapter = {
 };
 ```
 
-- [ ] **Step 7: Create a placeholder index so the build has an entry**
+- [ ] **Step 7: Create the package index so the build has an entry**
 
 `packages/calendar/src/index.ts`:
 
@@ -361,6 +361,10 @@ export type CalendarAdapter = {
 
 export * from "./types";
 ```
+
+**This file is a shared append point.** Tasks 4 and 8 each add one `export *` line to it. Always
+append the new line above the closing content and leave every existing line untouched — a full
+rewrite here silently drops a sibling task's export. Read the file immediately before editing it.
 
 - [ ] **Step 8: Install and verify the package builds**
 
@@ -605,7 +609,6 @@ git commit -m "feat(calendar): add Gregorian calendar adapter"
 **Files:**
 - Create: `packages/calendar/src/adapters/persian.ts`
 - Create: `packages/calendar/tests/persian-adapter.test.ts`
-- Modify: `packages/calendar/tests/gregorian-adapter.test.ts` (add an interop assertion)
 
 **Interfaces:**
 - Consumes: `CalendarAdapter` and friends from Task 1
@@ -1102,18 +1105,14 @@ export const getCalendarAdapter = (system: CalendarSystem = "gregorian"): Calend
 
 - [ ] **Step 4: Export from the package index**
 
-Replace `packages/calendar/src/index.ts` with:
+Read `packages/calendar/src/index.ts`, then **append** one line after the existing `export * from "./types";` — do not rewrite the file:
 
 ```ts
-/**
- * Copyright (c) 2023-present Plane Software, Inc. and contributors
- * SPDX-License-Identifier: AGPL-3.0-only
- * See the LICENSE file for details.
- */
-
-export * from "./types";
 export * from "./adapters";
 ```
+
+The result is two export lines. If the file contains anything other than the AGPL header and
+`export * from "./types";`, stop and report it: another task's export is already there.
 
 - [ ] **Step 5: Run the test to verify it passes**
 
@@ -2343,11 +2342,16 @@ Add to `packages/calendar/package.json` `exports`, after the `"."` entry:
     "./picker": "./dist/picker/index.js",
 ```
 
-Re-export it from the root so `@plane/calendar` consumers can reach it either way:
+Re-export it from the root so `@plane/calendar` consumers can reach it either way. Read
+`packages/calendar/src/index.ts` and **append** this line after the last existing export, leaving
+every other line untouched:
 
 ```ts
 export * from "./picker";
 ```
+
+The file must end up with exactly three export lines (`./types`, `./adapters`, `./picker`). If
+`./adapters` is missing, an earlier task's work was lost — stop and report it.
 
 - [ ] **Step 3: Add the dependency and verify the existing tests still pass**
 
