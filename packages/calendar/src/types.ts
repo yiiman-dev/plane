@@ -62,7 +62,12 @@ export type CalendarAdapter = {
    */
   fromParts: (year: number, month: number, day: number) => Date;
 
-  /** Days in the given calendar month: 28–31. */
+  /**
+   * Days in the given calendar month.
+   *
+   * Gregorian runs 28–31; Persian runs 29–31 (Esfand is 29, or 30 in a leap year). Both fit in
+   * 28–31, so the doc states the union rather than pretending one calendar defines the range.
+   */
   getMonthLength: (year: number, month: number) => number;
 
   /**
