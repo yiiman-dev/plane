@@ -77,6 +77,29 @@ describe("gregorianCalendar", () => {
     );
   });
 
+  it("returns the weekday when weekday is the only option", () => {
+    const date = new Date(2025, 5, 15); // a Sunday
+    expect(gregorianCalendar.format(date, { weekday: "long" })).toBe("Sunday");
+    expect(gregorianCalendar.format(date, { weekday: "short" })).toBe("Sun");
+  });
+
+  it("pads month 2-digit but not month numeric", () => {
+    const date = new Date(2025, 5, 15);
+    expect(gregorianCalendar.format(date, { month: "2-digit" })).toBe("06");
+    expect(gregorianCalendar.format(date, { month: "numeric" })).toBe("6");
+    expect(gregorianCalendar.format(date, { month: "2-digit", day: "2-digit" })).toBe("06 15");
+  });
+
+  it("does not emit a dangling separator for a bare weekday", () => {
+    const date = new Date(2025, 5, 15);
+    expect(gregorianCalendar.format(date, { weekday: "long", day: "numeric" })).toBe("Sunday, 15");
+  });
+
+  it("is unaffected for the product's year/short-month/day shape", () => {
+    const date = new Date(2025, 5, 15);
+    expect(gregorianCalendar.format(date, { year: "numeric", month: "short", day: "numeric" })).toBe("Jun 15, 2025");
+  });
+
   it("lists 12 month names and 7 weekday names", () => {
     expect(gregorianCalendar.getMonthNames("long")).toHaveLength(12);
     expect(gregorianCalendar.getMonthNames("short")[0]).toBe("Jan");

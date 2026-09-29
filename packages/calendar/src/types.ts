@@ -37,7 +37,14 @@ export type CalendarFormatOptions = {
 export type CalendarAdapter = {
   /** Identity of this adapter. */
   readonly system: CalendarSystem;
-  /** The BCP 47 locale this adapter formats in, for month/weekday name lookups. */
+  /**
+   * The BCP 47 locale this adapter formats in, for month/weekday name lookups.
+   *
+   * Not all adapters enforce it. The Gregorian adapter declares `en-US` but omits the locale
+   * argument from every `date-fns` call, so its output follows the host system locale — which is
+   * what `packages/utils/src/datetime.ts` already does, and pinning `en-US` would change output the
+   * product currently produces. Adapters that genuinely localize (e.g. Persian) do use this value.
+   */
   readonly locale: string;
 
   /** Gregorian `Date` → the date's parts in this calendar. Months are 1-based. */
@@ -66,7 +73,11 @@ export type CalendarAdapter = {
    */
   getMonthGrid: (year: number, month: number, weekStartsOn?: number) => Date[];
 
-  /** Steps a year+month pair, clamping the month into 1–12 and carrying into the year. */
+  /**
+   * Steps a year+month pair, wrapping the month into 1–12 and carrying into the year: stepping back
+   * from January yields the previous December. This is the correct behavior for month navigation —
+   * clamping would pin the user to January forever when paging backwards past the start of the year.
+   */
   addMonths: (parts: CalendarMonthParts, delta: number) => CalendarMonthParts;
 
   /** Local midnight on the first day of the given calendar month, as a Gregorian `Date`. */
