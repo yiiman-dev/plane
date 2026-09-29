@@ -17,8 +17,12 @@ const MONTH_TOKENS = { long: "MMMM", short: "MMM", narrow: "MMMMM" } as const;
 const YEAR_TOKENS = { numeric: "yyyy", "2-digit": "yy" } as const;
 
 /**
- * Maps the adapter's semantic format options onto `date-fns` tokens. The Persian adapter cannot use
- * this — its tokens have no Persian equivalent — so the two formatters stay separate on purpose.
+ * Maps the adapter's semantic format options onto `date-fns` tokens.
+ *
+ * The Persian adapter reuses the *option-bag semantics* established here — which fields exist, how
+ * `weekday` behaves as a leading clause, and what `2-digit` means — but must derive its own
+ * punctuation and must never pass these token strings to an `Intl`-based formatter. The token
+ * vocabulary below is date-fns-specific and has no Persian equivalent.
  *
  * The option values are `Intl.DateTimeFormat` names (`"long"`, `"numeric"`, …), not date-fns
  * tokens, so each one has to be translated rather than passed through.
@@ -38,9 +42,9 @@ export const toDatePartsToken = (options: CalendarFormatOptions): string => {
   if (options.year) tokens.push(`${dayAndMonth.join(" ")}, ${YEAR_TOKENS[options.year]}`.replace(/^, /, ""));
   else tokens.push(...dayAndMonth);
 
-  // The guard tests the *option bag*, not the assembled tokens, so a bare `weekday` counts as a
-  // present field instead of being silently dropped. An option bag with no date parts at all would
-  // make date-fns throw, so it falls back to the picker trigger's shape.
+  // `tokens` is only ever pushed from a date part, so an empty list means the bag named no date
+  // field at all — which would make date-fns throw — and falls back to the picker trigger's shape.
+  // A bare `weekday` is a present field, so it returns the weekday rather than being dropped.
   if (tokens.length === 0) return options.weekday ? WEEKDAY_TOKENS[options.weekday] : "MMM dd, yyyy";
 
   const body = tokens.join(" ");
