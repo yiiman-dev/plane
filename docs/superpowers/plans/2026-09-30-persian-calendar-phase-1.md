@@ -35,63 +35,66 @@
 
 **Created:**
 
-| Path | Responsibility |
-|---|---|
-| `packages/calendar/package.json` | Package manifest, mirroring `packages/blocks` |
-| `packages/calendar/tsconfig.json` | Extends `@plane/typescript-config/react-library.json` |
-| `packages/calendar/tsdown.config.ts` | Single entry, `platform: "neutral"`, `dts: true` |
-| `packages/calendar/vitest.config.ts` | `unit` (node) + `dom` (jsdom) projects, copied from `packages/blocks` |
-| `packages/calendar/vitest.setup.dom.ts` | Minimal jsdom stubs (no virtualizer needed) |
-| `packages/calendar/src/types.ts` | `CalendarSystem`, `CalendarDateParts`, `CalendarMonthParts`, `CalendarFormatOptions`, `CalendarAdapter` |
-| `packages/calendar/src/adapters/gregorian.ts` | Gregorian adapter, delegates to `date-fns` |
-| `packages/calendar/src/adapters/persian.ts` | Persian adapter via native `Intl` |
-| `packages/calendar/src/adapters/index.ts` | `getCalendarAdapter(system)` + `isPersianCalendarSupported()` |
-| `packages/calendar/src/picker/persian-month-grid.tsx` | 6×7 Persian day grid |
-| `packages/calendar/src/picker/day-cell.tsx` | One day button |
-| `packages/calendar/src/picker/month-year-picker.tsx` | Year + month jump dropdowns |
-| `packages/calendar/src/picker/use-calendar-navigation.ts` | Month stepping + keyboard movement |
-| `packages/calendar/src/picker/calendar-surface.tsx` | Picks Gregorian or Persian grid |
-| `packages/calendar/src/index.ts` | Public exports |
-| `apps/api/plane/tests/unit/db/test_profile_calendar_system.py` | Model + serializer coverage |
+| Path                                                           | Responsibility                                                                                          |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `packages/calendar/package.json`                               | Package manifest, mirroring `packages/blocks`                                                           |
+| `packages/calendar/tsconfig.json`                              | Extends `@plane/typescript-config/react-library.json`                                                   |
+| `packages/calendar/tsdown.config.ts`                           | Single entry, `platform: "neutral"`, `dts: true`                                                        |
+| `packages/calendar/vitest.config.ts`                           | `unit` (node) + `dom` (jsdom) projects, copied from `packages/blocks`                                   |
+| `packages/calendar/vitest.setup.dom.ts`                        | Minimal jsdom stubs (no virtualizer needed)                                                             |
+| `packages/calendar/src/types.ts`                               | `CalendarSystem`, `CalendarDateParts`, `CalendarMonthParts`, `CalendarFormatOptions`, `CalendarAdapter` |
+| `packages/calendar/src/adapters/gregorian.ts`                  | Gregorian adapter, delegates to `date-fns`                                                              |
+| `packages/calendar/src/adapters/persian.ts`                    | Persian adapter via native `Intl`                                                                       |
+| `packages/calendar/src/adapters/index.ts`                      | `getCalendarAdapter(system)` + `isPersianCalendarSupported()`                                           |
+| `packages/calendar/src/picker/persian-month-grid.tsx`          | 6×7 Persian day grid                                                                                    |
+| `packages/calendar/src/picker/day-cell.tsx`                    | One day button                                                                                          |
+| `packages/calendar/src/picker/month-year-picker.tsx`           | Year + month jump dropdowns                                                                             |
+| `packages/calendar/src/picker/use-calendar-navigation.ts`      | Month stepping + keyboard movement                                                                      |
+| `packages/calendar/src/picker/calendar-surface.tsx`            | Picks Gregorian or Persian grid                                                                         |
+| `packages/calendar/src/index.ts`                               | Public exports                                                                                          |
+| `apps/api/plane/tests/unit/db/test_profile_calendar_system.py` | Model + serializer coverage                                                                             |
 
 **Modified:**
 
-| Path | Change |
-|---|---|
-| `pnpm-workspace.yaml` | Nothing — no new external deps |
-| `packages/utils/package.json` | Add `@plane/calendar: workspace:*` |
-| `packages/utils/src/datetime.ts` | Thread `CalendarSystem` through the display formatters |
-| `packages/blocks/package.json` | Add `@plane/calendar: workspace:*` |
-| `packages/blocks/src/property-select/date-select.tsx` | Render `CalendarSurface` |
-| `packages/blocks/src/property-select/date-range-select.tsx` | Render `CalendarSurface` |
-| `packages/blocks/src/property-select/date-select-shell.tsx` | Add `calendarSystem` to common props |
-| `packages/types/src/users.ts` | `ECalendarSystem` enum + `TUserProfile.calendar_system` |
-| `apps/api/plane/db/models/user.py` | `CalendarSystem` choices + `calendar_system` field |
-| `apps/api/plane/db/migrations/` | New migration |
-| `apps/web/store/user/profile.store.ts` | `calendarSystem` getter |
-| `apps/web/components/settings/profile/content/pages/preferences/language-and-timezone-list.tsx` | Radio group |
-| `apps/web/components/power-k/config/preferences-commands.ts` | `update_calendar_system` command |
-| `apps/web/components/profile/time.tsx` | Use adapter instead of pinned `en-US` |
-| `apps/web/components/user/user-greetings.tsx` | Same |
-| `apps/web/components/home/user-greetings.tsx` | Same, and consolidate with the above |
-| `packages/i18n/src/locales/en/common.json` | 4 new keys |
-| `apps/web/components/core/filters/date-filter-modal.tsx` | Render `CalendarSurface` |
-| `apps/web/components/inbox/modals/snooze-issue-modal.tsx` | Render `CalendarSurface` |
+| Path                                                                                            | Change                                                  |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `pnpm-workspace.yaml`                                                                           | Nothing — no new external deps                          |
+| `packages/utils/package.json`                                                                   | Add `@plane/calendar: workspace:*`                      |
+| `packages/utils/src/datetime.ts`                                                                | Thread `CalendarSystem` through the display formatters  |
+| `packages/blocks/package.json`                                                                  | Add `@plane/calendar: workspace:*`                      |
+| `packages/blocks/src/property-select/date-select.tsx`                                           | Render `CalendarSurface`                                |
+| `packages/blocks/src/property-select/date-range-select.tsx`                                     | Render `CalendarSurface`                                |
+| `packages/blocks/src/property-select/date-select-shell.tsx`                                     | Add `calendarSystem` to common props                    |
+| `packages/types/src/users.ts`                                                                   | `ECalendarSystem` enum + `TUserProfile.calendar_system` |
+| `apps/api/plane/db/models/user.py`                                                              | `CalendarSystem` choices + `calendar_system` field      |
+| `apps/api/plane/db/migrations/`                                                                 | New migration                                           |
+| `apps/web/store/user/profile.store.ts`                                                          | `calendarSystem` getter                                 |
+| `apps/web/components/settings/profile/content/pages/preferences/language-and-timezone-list.tsx` | Radio group                                             |
+| `apps/web/components/power-k/config/preferences-commands.ts`                                    | `update_calendar_system` command                        |
+| `apps/web/components/profile/time.tsx`                                                          | Use adapter instead of pinned `en-US`                   |
+| `apps/web/components/user/user-greetings.tsx`                                                   | Same                                                    |
+| `apps/web/components/home/user-greetings.tsx`                                                   | Same, and consolidate with the above                    |
+| `packages/i18n/src/locales/en/common.json`                                                      | 4 new keys                                              |
+| `apps/web/components/core/filters/date-filter-modal.tsx`                                        | Render `CalendarSurface`                                |
+| `apps/web/components/inbox/modals/snooze-issue-modal.tsx`                                       | Render `CalendarSurface`                                |
 
 ---
 
 ## Task 1: Scaffold `@plane/calendar`
 
 **Files:**
+
 - Create: `packages/calendar/package.json`
 - Create: `packages/calendar/tsconfig.json`
 - Create: `packages/calendar/tsdown.config.ts`
 - Create: `packages/calendar/vitest.config.ts`
 - Create: `packages/calendar/vitest.setup.dom.ts`
+- Create: `packages/calendar/.prettierignore`
 - Create: `packages/calendar/src/types.ts`
 - Create: `packages/calendar/src/index.ts`
 
 **Interfaces:**
+
 - Consumes: nothing (first task)
 - Produces: the `CalendarSystem`, `CalendarDateParts`, `CalendarMonthParts`, `CalendarFormatOptions`, and `CalendarAdapter` types. Every later task imports these from `@plane/calendar`.
 
@@ -107,9 +110,7 @@
   "description": "Calendar adapters and calendar-aware date pickers for Plane",
   "license": "AGPL-3.0",
   "type": "module",
-  "sideEffects": [
-    "**/*.css"
-  ],
+  "sideEffects": ["**/*.css"],
   "exports": {
     ".": "./dist/index.js",
     "./package.json": "./package.json"
@@ -204,7 +205,10 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          include: ["src/**/*.test.ts"],
+          // This package keeps tests in `tests/`, not colocated in `src/` the way packages/blocks
+          // does, so the glob must cover both. A glob that misses where the tests actually live
+          // makes every test silently not run, which reads as a green pass.
+          include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
           environment: "node",
         },
       },
@@ -215,7 +219,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "dom",
-          include: ["src/**/*.test.tsx"],
+          include: ["tests/**/*.test.tsx", "src/**/*.test.tsx"],
           environment: "jsdom",
           setupFiles: ["./vitest.setup.dom.ts"],
         },
@@ -255,7 +259,30 @@ afterEach(() => {
 });
 ```
 
-- [ ] **Step 6: Define the adapter contract**
+- [ ] **Step 6: Add the dist-exclusion ignore file**
+
+`packages/calendar/.prettierignore` — copy this verbatim from `packages/blocks/.prettierignore`:
+
+```
+.next/
+.react-router/
+.turbo/
+.vite/
+build/
+dist/
+node_modules/
+out/
+pnpm-lock.yaml
+storybook-static/
+```
+
+**Why this file and not a root `.gitignore` entry:** oxfmt reads `.gitignore` and `.prettierignore`
+from the _current directory_ only. `pnpm --filter=@plane/calendar check:format` runs with cwd set to
+`packages/calendar`, which has no `.gitignore` of its own, so the repo root's `dist/` entry never
+applies. Without this file, `check:format` fails on tsdown's generated `dist/index.d.ts` after any
+build. All 14 sibling workspace packages carry this exact file.
+
+- [ ] **Step 7: Define the adapter contract**
 
 `packages/calendar/src/types.ts`:
 
@@ -348,7 +375,7 @@ export type CalendarAdapter = {
 };
 ```
 
-- [ ] **Step 7: Create the package index so the build has an entry**
+- [ ] **Step 8: Create the package index so the build has an entry**
 
 `packages/calendar/src/index.ts`:
 
@@ -366,7 +393,7 @@ export * from "./types";
 append the new line above the closing content and leave every existing line untouched — a full
 rewrite here silently drops a sibling task's export. Read the file immediately before editing it.
 
-- [ ] **Step 8: Install and verify the package builds**
+- [ ] **Step 9: Install and verify the package builds**
 
 Run: `pnpm install`
 Expected: `packages/calendar` is linked into the workspace, no peer warnings.
@@ -375,12 +402,12 @@ Run: `pnpm --filter=@plane/calendar build`
 Expected: `dist/index.js` and `dist/index.d.ts` are emitted, no errors.
 
 Run: `pnpm --filter=@plane/calendar test`
-Expected: `No test files found` — the harness is wired but empty. This is not a failure yet.
+Expected: vitest reports no test files and exits non-zero. That is correct for this task — the harness is wired but empty, and it self-resolves once Task 2 adds a test file. Do not treat it as a failure, and do not add a placeholder test to silence it.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add packages/calendar
+git add packages/calendar pnpm-lock.yaml
 git commit -m "chore(calendar): scaffold @plane/calendar package"
 ```
 
@@ -389,10 +416,12 @@ git commit -m "chore(calendar): scaffold @plane/calendar package"
 ## Task 2: The Gregorian adapter
 
 **Files:**
+
 - Create: `packages/calendar/src/adapters/gregorian.ts`
 - Create: `packages/calendar/tests/gregorian-adapter.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CalendarAdapter`, `CalendarDateParts`, `CalendarMonthParts`, `CalendarFormatOptions` from Task 1
 - Produces: `gregorianCalendar: CalendarAdapter`, and exports `toDatePartsToken` for reuse by the Persian adapter
 
@@ -571,7 +600,8 @@ export const gregorianCalendar: CalendarAdapter = {
 
   getMonthStart: ({ year, month }: CalendarMonthParts): Date => new Date(year, month - 1, 1),
 
-  format: (date: Date, options: CalendarFormatOptions = {}): string => formatWithTokens(date, toDatePartsToken(options)),
+  format: (date: Date, options: CalendarFormatOptions = {}): string =>
+    formatWithTokens(date, toDatePartsToken(options)),
 
   getMonthNames: (style: "long" | "short" | "narrow"): string[] =>
     Array.from({ length: MONTHS_PER_YEAR }, (_, index) =>
@@ -607,10 +637,12 @@ git commit -m "feat(calendar): add Gregorian calendar adapter"
 ## Task 3: The Persian adapter
 
 **Files:**
+
 - Create: `packages/calendar/src/adapters/persian.ts`
 - Create: `packages/calendar/tests/persian-adapter.test.ts`
 
 **Interfaces:**
+
 - Consumes: `CalendarAdapter` and friends from Task 1
 - Produces: `persianCalendar: CalendarAdapter` and `isPersianCalendarSupported(): boolean`
 
@@ -845,19 +877,28 @@ const readParts = (date: Date): CalendarDateParts => {
   const read = (type: Intl.DateTimeFormatPartTypes): number => {
     const raw = parts.find((part) => part.type === type)?.value ?? "0";
     // Persian locales emit Arabic-Indic digits; normalize before arithmetic.
-    return Number.parseInt(raw.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))), 10);
+    return Number.parseInt(
+      raw.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))),
+      10
+    );
   };
   return { year: read("year"), month: read("month"), day: read("day") };
 };
 
 const readMonth = (date: Date): number => {
   const raw = monthFormatter.formatToParts(date).find((part) => part.type === "month")?.value ?? "1";
-  return Number.parseInt(raw.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))), 10);
+  return Number.parseInt(
+    raw.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))),
+    10
+  );
 };
 
 const readYear = (date: Date): number => {
   const raw = yearFormatter.formatToParts(date).find((part) => part.type === "year")?.value ?? "0";
-  return Number.parseInt(raw.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))), 10);
+  return Number.parseInt(
+    raw.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))),
+    10
+  );
 };
 
 /**
@@ -916,7 +957,8 @@ export const persianDayCount = (year: number, month: number): number => {
   // Month M runs until the first day of month M+1, so the length is a difference, not a lookup
   // table. Stepping a year when M is 12 is what makes Esfand 29 vs 30 fall out on its own.
   const firstOfMonth = invertToGregorian(year, month, 1);
-  const firstOfNext = month === MONTHS_PER_YEAR ? invertToGregorian(year + 1, 1, 1) : invertToGregorian(year, month + 1, 1);
+  const firstOfNext =
+    month === MONTHS_PER_YEAR ? invertToGregorian(year + 1, 1, 1) : invertToGregorian(year, month + 1, 1);
   return Math.round(differenceInCalendarDays(firstOfNext, firstOfMonth));
 };
 
@@ -968,7 +1010,9 @@ export const persianCalendar: CalendarAdapter = {
   getMonthNames: (style: "long" | "short" | "narrow"): string[] => {
     const formatter = new Intl.DateTimeFormat(PERSIAN_LOCALE, { calendar: "persian", month: style });
     // Day 1 of each Persian month, taken from the years 1400–1411 so the run spans every month.
-    return Array.from({ length: MONTHS_PER_YEAR }, (_, index) => formatter.format(invertToGregorian(1403, index + 1, 1)));
+    return Array.from({ length: MONTHS_PER_YEAR }, (_, index) =>
+      formatter.format(invertToGregorian(1403, index + 1, 1))
+    );
   },
 
   getWeekdayNames: (style: "long" | "short" | "narrow", weekStartsOn = 0): string[] => {
@@ -1006,11 +1050,13 @@ git commit -m "feat(calendar): add Persian calendar adapter via native Intl"
 ## Task 4: Adapter registry
 
 **Files:**
+
 - Create: `packages/calendar/src/adapters/index.ts`
 - Create: `packages/calendar/tests/adapter-registry.test.ts`
 - Modify: `packages/calendar/src/index.ts`
 
 **Interfaces:**
+
 - Consumes: `gregorianCalendar` (Task 2), `persianCalendar`, `isPersianCalendarSupported` (Task 3)
 - Produces: `getCalendarAdapter(system: CalendarSystem): CalendarAdapter`, `resolveCalendarSystem(value: unknown): CalendarSystem`. Every later task imports these.
 
@@ -1131,11 +1177,13 @@ git commit -m "feat(calendar): add adapter registry with safe fallbacks"
 ## Task 5: Make `renderFormattedDate` calendar-aware
 
 **Files:**
+
 - Modify: `packages/utils/package.json`
 - Modify: `packages/utils/src/datetime.ts:19-56, 171-180, 492-529`
 - Create: `packages/calendar/tests/utils-integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getCalendarAdapter`, `resolveCalendarSystem` (Task 4)
 - Produces: these signatures, all called by Tasks 6, 7, 8:
   ```ts
@@ -1405,10 +1453,10 @@ export const formatDateRange = (
       if (sameMonth) {
         return `${monthName} ${start.day} - ${end.day}, ${start.year}`;
       }
-      return `${adapter.format(parsedStartDate, { month: "short", day: "numeric" })} - ${adapter.format(
-        parsedEndDate,
-        { month: "short", day: "numeric" }
-      )}, ${end.year}`;
+      return `${adapter.format(parsedStartDate, { month: "short", day: "numeric" })} - ${adapter.format(parsedEndDate, {
+        month: "short",
+        day: "numeric",
+      })}, ${end.year}`;
     }
 
     const startYear = parsedStartDate.getFullYear();
@@ -1444,12 +1492,14 @@ git commit -m "feat(utils): make display formatters calendar-aware"
 ## Task 6: The `Profile.calendar_system` field
 
 **Files:**
+
 - Modify: `apps/api/plane/db/models/user.py:200-268`
 - Create: `apps/api/plane/db/migrations/00XX_profile_calendar_system.py`
 - Create: `apps/api/plane/tests/unit/db/test_profile_calendar_system.py`
 - Modify: `packages/types/src/users.ts:15, 62-85`
 
 **Interfaces:**
+
 - Consumes: nothing
 - Produces: `Profile.calendar_system` with values `"gregorian" | "persian"`; `ECalendarSystem` in `@plane/types`. Task 7 and Task 8 depend on both.
 
@@ -1565,7 +1615,7 @@ export enum ECalendarSystem {
 Then add to `TUserProfile` (line 62), right after `start_of_the_week`:
 
 ```ts
-  calendar_system: ECalendarSystem;
+calendar_system: ECalendarSystem;
 ```
 
 - [ ] **Step 7: Commit**
@@ -1580,6 +1630,7 @@ git commit -m "feat(api): add Profile.calendar_system preference"
 ## Task 7: The Persian month grid
 
 **Files:**
+
 - Create: `packages/calendar/src/picker/day-cell.tsx`
 - Create: `packages/calendar/src/picker/persian-month-grid.tsx`
 - Create: `packages/calendar/src/picker/month-year-picker.tsx`
@@ -1587,6 +1638,7 @@ git commit -m "feat(api): add Profile.calendar_system preference"
 - Create: `packages/calendar/tests/persian-month-grid.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `CalendarAdapter`, `CalendarMonthParts` (Task 1)
 - Produces: `PersianMonthGrid(props)` and `MonthYearPicker(props)`, consumed by `CalendarSurface` in Task 8.
 
@@ -1809,7 +1861,7 @@ export const useCalendarNavigation = ({ adapter, month, onMonthChange, focused, 
         return true;
       }
       if (event.key === "Home") {
-        moveFocus(-(((focused.getDay() - 0 + 7) % 7)));
+        moveFocus(-((focused.getDay() - 0 + 7) % 7));
         return true;
       }
       if (event.key === "End") {
@@ -1822,7 +1874,10 @@ export const useCalendarNavigation = ({ adapter, month, onMonthChange, focused, 
   );
 
   const years = useMemo(() => {
-    const span = Array.from({ length: YEAR_WINDOW_RADIUS * 2 + 1 }, (_, index) => visibleMonth.year - YEAR_WINDOW_RADIUS + index);
+    const span = Array.from(
+      { length: YEAR_WINDOW_RADIUS * 2 + 1 },
+      (_, index) => visibleMonth.year - YEAR_WINDOW_RADIUS + index
+    );
     return span;
   }, [visibleMonth.year]);
 
@@ -2109,16 +2164,21 @@ export const PersianMonthGrid = (props: PersianMonthGridProps) => {
 
       <div role="grid" className="grid grid-cols-7 gap-0.5">
         {weekdayNames.map((name) => (
-          <div key={name} role="columnheader" className="flex h-8 items-center justify-center text-10 text-content-tertiary">
+          <div
+            key={name}
+            role="columnheader"
+            className="flex h-8 items-center justify-center text-10 text-content-tertiary"
+          >
             {name}
           </div>
         ))}
         {days.map((date) => {
           const parts = adapter.toParts(date);
-          const isCurrentMonth = parts.year === navigation.visibleMonth.year && parts.month === navigation.visibleMonth.month;
+          const isCurrentMonth =
+            parts.year === navigation.visibleMonth.year && parts.month === navigation.visibleMonth.month;
           const inRange = Boolean(
             (range?.from && range?.to && date >= range.from && date <= range.to) ||
-              (draftFrom && sameDay(draftFrom, range?.from) && !range?.to && date >= draftFrom)
+            (draftFrom && sameDay(draftFrom, range?.from) && !range?.to && date >= draftFrom)
           );
           return (
             <DayCell
@@ -2163,6 +2223,7 @@ git commit -m "feat(calendar): add Persian month grid"
 ## Task 8: Wire the grid into the property selects
 
 **Files:**
+
 - Create: `packages/calendar/src/picker/calendar-surface.tsx`
 - Modify: `packages/calendar/src/index.ts`
 - Modify: `packages/blocks/package.json`
@@ -2173,6 +2234,7 @@ git commit -m "feat(calendar): add Persian month grid"
 - Modify: `apps/web/components/inbox/modals/snooze-issue-modal.tsx`
 
 **Interfaces:**
+
 - Consumes: `PersianMonthGrid` (Task 7), `getCalendarAdapter` (Task 4)
 - Produces: `CalendarSurface(props)`, exported from `@plane/calendar/picker`. Also adds `calendarSystem?: CalendarSystem` to `DateSelectCommonProps`.
 
@@ -2215,10 +2277,7 @@ import { PersianMonthGrid } from "./persian-month-grid";
  * imported because that would make `@plane/calendar` depend on `@plane/blocks`, which already
  * depends on this package.
  */
-const buildDisabledMatchers = (
-  minDate?: Date,
-  maxDate?: Date
-): ({ before: Date } | { after: Date })[] | undefined => {
+const buildDisabledMatchers = (minDate?: Date, maxDate?: Date): ({ before: Date } | { after: Date })[] | undefined => {
   if (!minDate && !maxDate) return undefined;
   const matchers: ({ before: Date } | { after: Date })[] = [];
   if (minDate) matchers.push({ before: minDate });
@@ -2393,12 +2452,12 @@ import type { CalendarMonthParts } from "@plane/calendar";
 Add `calendarSystem = "gregorian"` to the component's props destructure (alongside `formatToken`, `minDate`, `weekStartsOn`), then add the visible-month state right after the existing `isOpen` state:
 
 ```ts
-  // Which month the grid is showing. Seeded from the picked value so reopening a populated field
-  // lands on the right month; the parent owns it from then on.
-  const [visibleMonth, setVisibleMonth] = useState<CalendarMonthParts>(() => {
-    const parts = getCalendarAdapter(resolveCalendarSystem(calendarSystem)).toParts(value ?? new Date());
-    return { year: parts.year, month: parts.month };
-  });
+// Which month the grid is showing. Seeded from the picked value so reopening a populated field
+// lands on the right month; the parent owns it from then on.
+const [visibleMonth, setVisibleMonth] = useState<CalendarMonthParts>(() => {
+  const parts = getCalendarAdapter(resolveCalendarSystem(calendarSystem)).toParts(value ?? new Date());
+  return { year: parts.year, month: parts.month };
+});
 ```
 
 Replace the `<Calendar … />` element that is currently a child of `DateSelectShell` with:
@@ -2436,10 +2495,10 @@ Keep `format` imported only if something else in the file still uses it; otherwi
 In `packages/blocks/src/property-select/date-range-select.tsx`, add the same imports and the `calendarSystem = "gregorian"` prop default, plus:
 
 ```ts
-  const [visibleMonth, setVisibleMonth] = useState<CalendarMonthParts>(() => {
-    const parts = getCalendarAdapter(resolveCalendarSystem(calendarSystem)).toParts(value.from ?? new Date());
-    return { year: parts.year, month: parts.month };
-  });
+const [visibleMonth, setVisibleMonth] = useState<CalendarMonthParts>(() => {
+  const parts = getCalendarAdapter(resolveCalendarSystem(calendarSystem)).toParts(value.from ?? new Date());
+  return { year: parts.year, month: parts.month };
+});
 ```
 
 Replace the `<Calendar mode="range" … />` element with:
@@ -2544,6 +2603,7 @@ git commit -m "feat(blocks): render the Persian grid in date pickers"
 ## Task 9: The settings UI
 
 **Files:**
+
 - Modify: `apps/web/store/user/profile.store.ts:35-69`
 - Modify: `apps/web/components/settings/profile/content/pages/preferences/language-and-timezone-list.tsx:80-116`
 - Create: `apps/web/components/settings/profile/content/pages/preferences/calendar-system-preference.tsx`
@@ -2551,6 +2611,7 @@ git commit -m "feat(blocks): render the Persian grid in date pickers"
 - Modify: `packages/i18n/src/locales/en/common.json`
 
 **Interfaces:**
+
 - Consumes: `ECalendarSystem` (Task 6), `useUserProfile` / `updateUserProfile` (existing)
 - Produces: `useUserProfile().calendarSystem`, a user-facing control, and the `update_calendar_system` palette command.
 
@@ -2711,6 +2772,7 @@ git commit -m "feat(web): add calendar system preference setting"
 ## Task 10: Fix the hardcoded-locale leaks
 
 **Files:**
+
 - Create: `apps/web/helpers/greeting.ts`
 - Modify: `apps/web/components/user/user-greetings.tsx:25,30,35,39`
 - Modify: `apps/web/components/home/user-greetings.tsx:25,30,35,39`
@@ -2718,6 +2780,7 @@ git commit -m "feat(web): add calendar system preference setting"
 - Create: `packages/calendar/tests/locale-leak.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getCalendarAdapter`, `resolveCalendarSystem` (Task 4), `useUserProfile().calendarSystem` (Task 9)
 - Produces: `getGreetingParts(date, hour)` and `getClockTime(date, system)`, both shared by all three call sites.
 
@@ -2842,6 +2905,7 @@ git commit -m "fix(web): route clock and greeting Intl calls through the calenda
 ## Task 11: Full verification pass
 
 **Files:**
+
 - No new files. This task is the phase-1 gate.
 
 - [ ] **Step 1: Run every test suite**
@@ -2896,6 +2960,6 @@ If the QA pass is clean, skip this step.
 
 Phase 1 deliberately stops here. Not part of this plan:
 
-- **The issue calendar layout, Gantt, and chart axis labels** — phase 2. The `MONTHS_LIST` / `DAYS_LIST` constants in `packages/constants/src/calendar.ts` are still English, so the calendar *layout* will keep showing `Jun` until then. This is a known, visible gap; it is called out here so it is not mistaken for a bug.
+- **The issue calendar layout, Gantt, and chart axis labels** — phase 2. The `MONTHS_LIST` / `DAYS_LIST` constants in `packages/constants/src/calendar.ts` are still English, so the calendar _layout_ will keep showing `Jun` until then. This is a known, visible gap; it is called out here so it is not mistaken for a bug.
 - **Relative filter boundaries and Persian email dates** — phase 3.
 - **The `fa-IR` locale and RTL layout** — phase 4, a separate project.
