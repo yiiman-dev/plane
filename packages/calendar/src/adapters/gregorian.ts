@@ -12,6 +12,10 @@ const GRID_CELLS = 42;
 
 const MONTHS_PER_YEAR = 12;
 
+const WEEKDAY_TOKENS = { long: "EEEE", short: "EEE", narrow: "EEEEE" } as const;
+const MONTH_TOKENS = { long: "MMMM", short: "MMM", narrow: "MMMMM" } as const;
+const YEAR_TOKENS = { numeric: "yyyy", "2-digit": "yy" } as const;
+
 /**
  * Maps the adapter's semantic format options onto `date-fns` tokens. The Persian adapter cannot use
  * this — its tokens have no Persian equivalent — so the two formatters stay separate on purpose.
@@ -20,23 +24,24 @@ const MONTHS_PER_YEAR = 12;
  * tokens, so each one has to be translated rather than passed through.
  */
 export const toDatePartsToken = (options: CalendarFormatOptions): string => {
-  const WEEKDAY_TOKENS = { long: "EEEE", short: "EEE", narrow: "EEEEE" } as const;
-  const MONTH_TOKENS = { long: "MMMM", short: "MMM", narrow: "MMMMM" } as const;
-  const YEAR_TOKENS = { numeric: "yyyy", "2-digit": "yy" } as const;
-
   // Day and month sit side by side ("June 15"), the trailing year is set off by a comma
   // ("June 15, 2025"), and a leading weekday is a separate clause ("Sunday, June 15, 2025").
   const dayAndMonth: string[] = [];
   if (options.month) {
-    dayAndMonth.push(options.month === "numeric" || options.month === "2-digit" ? "M" : MONTH_TOKENS[options.month]);
+    if (options.month === "numeric") dayAndMonth.push("M");
+    else if (options.month === "2-digit") dayAndMonth.push("MM");
+    else dayAndMonth.push(MONTH_TOKENS[options.month]);
   }
   if (options.day) dayAndMonth.push(options.day === "2-digit" ? "dd" : "d");
 
   const tokens: string[] = [];
   if (options.year) tokens.push(`${dayAndMonth.join(" ")}, ${YEAR_TOKENS[options.year]}`.replace(/^, /, ""));
   else tokens.push(...dayAndMonth);
-  // An empty option bag would make date-fns throw; fall back to the picker trigger's shape.
-  if (tokens.length === 0) return "MMM dd, yyyy";
+
+  // The guard tests the *option bag*, not the assembled tokens, so a bare `weekday` counts as a
+  // present field instead of being silently dropped. An option bag with no date parts at all would
+  // make date-fns throw, so it falls back to the picker trigger's shape.
+  if (tokens.length === 0) return options.weekday ? WEEKDAY_TOKENS[options.weekday] : "MMM dd, yyyy";
 
   const body = tokens.join(" ");
   return options.weekday ? `${WEEKDAY_TOKENS[options.weekday]}, ${body}` : body;
@@ -44,6 +49,10 @@ export const toDatePartsToken = (options: CalendarFormatOptions): string => {
 
 export const gregorianCalendar: CalendarAdapter = {
   system: "gregorian",
+  // Declared for the adapter contract, not enforced: every `format` below omits the locale argument,
+  // so output follows the host system locale, exactly as `packages/utils/src/datetime.ts` does today.
+  // Pinning `en-US` here would introduce output drift relative to current product behavior, which is
+  // the one thing this reference adapter exists to prevent. The Persian adapter does use its own locale.
   locale: "en-US",
 
   toParts: (date: Date): CalendarDateParts => ({
@@ -85,7 +94,8 @@ export const gregorianCalendar: CalendarAdapter = {
     ),
 
   getWeekdayNames: (style: "long" | "short" | "narrow", weekStartsOn = 0): string[] => {
-    // 3 Aug 2021 was a Tuesday; walking back weekStartsOn days from a known Sunday anchors the run.
+    // 1 Aug 2021 was a Sunday, so stepping forward 7 days from it covers every weekday in order; the
+    // rotation below then moves `weekStartsOn` to the front.
     const token = style === "long" ? "EEEE" : style === "short" ? "EEE" : "EEEEE";
     const knownSunday = new Date(2021, 7, 1);
     const names = Array.from({ length: 7 }, (_, index) => formatWithTokens(addDays(knownSunday, index), token));
