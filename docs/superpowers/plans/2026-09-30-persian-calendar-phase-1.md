@@ -326,7 +326,15 @@ export type CalendarFormatOptions = {
 export type CalendarAdapter = {
   /** Identity of this adapter. */
   readonly system: CalendarSystem;
-  /** The BCP 47 locale this adapter formats in, for month/weekday name lookups. */
+  /**
+   * The BCP 47 locale this adapter formats in.
+   *
+   * **The Gregorian adapter does not enforce this** — `date-fns`'s `format()` is called without a
+   * locale, so its output follows the host system locale, which is exactly what
+   * `packages/utils/src/datetime.ts` does today. The field exists so the Persian adapter can declare
+   * its own locale and so callers can see which locale a rendered string belongs to. Do not read it
+   * as a guarantee that the Gregorian adapter pins `en-US`.
+   */
   readonly locale: string;
 
   /** Gregorian `Date` → the date's parts in this calendar. Months are 1-based. */
@@ -355,7 +363,13 @@ export type CalendarAdapter = {
    */
   getMonthGrid: (year: number, month: number, weekStartsOn?: number) => Date[];
 
-  /** Steps a year+month pair, clamping the month into 1–12 and carrying into the year. */
+  /**
+   * Steps a year+month pair, wrapping the month into 1-12 and carrying into the year.
+   *
+   * It **wraps**, it does not clamp: stepping back one month from January yields the previous
+   * December, never January again. Clamping would make backward navigation in a month grid a
+   * no-op, which reads as a broken arrow button.
+   */
   addMonths: (parts: CalendarMonthParts, delta: number) => CalendarMonthParts;
 
   /** Local midnight on the first day of the given calendar month, as a Gregorian `Date`. */
@@ -559,7 +573,7 @@ const MONTHS_PER_YEAR = 12;
 const toDatePartsToken = (options: CalendarFormatOptions): string => {
   const order: string[] = [];
   if (options.weekday) order.push(options.weekday);
-  if (options.month) order.push(options.month === "numeric" || options.month === "2-digit" ? "M" : options.month);
+  if (options.month) order.push(MONTH_TOKENS[options.month]);
   if (options.day) order.push(options.day === "2-digit" ? "dd" : "d");
   if (options.year) order.push(options.year);
   // An empty option bag would make date-fns throw; fall back to the picker trigger's shape.
@@ -609,7 +623,7 @@ export const gregorianCalendar: CalendarAdapter = {
     ),
 
   getWeekdayNames: (style: "long" | "short" | "narrow", weekStartsOn = 0): string[] => {
-    // 3 Aug 2021 was a Tuesday; walking back weekStartsOn days from a known Sunday anchors the run.
+    // 1 Aug 2021 was a Sunday, so index N of the run is the Nth weekday.
     const token = style === "long" ? "EEEE" : style === "short" ? "EEE" : "EEEEE";
     const knownSunday = new Date(2021, 7, 1);
     const names = Array.from({ length: 7 }, (_, index) => formatWithTokens(addDays(knownSunday, index), token));
