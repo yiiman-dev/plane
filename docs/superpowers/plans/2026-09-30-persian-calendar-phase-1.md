@@ -352,7 +352,12 @@ export type CalendarAdapter = {
    */
   fromParts: (year: number, month: number, day: number) => Date;
 
-  /** Days in the given calendar month: 28–31. */
+  /**
+   * Days in the given calendar month.
+   *
+   * Gregorian runs 28-31; Persian runs 29-31 (Esfand is 29, or 30 in a leap year). Both fit in
+   * 28-31, so the doc states the union rather than pretending one calendar defines the range.
+   */
   getMonthLength: (year: number, month: number) => number;
 
   /**
@@ -659,6 +664,18 @@ git commit -m "feat(calendar): add Gregorian calendar adapter"
 
 - Consumes: `CalendarAdapter` and friends from Task 1
 - Produces: `persianCalendar: CalendarAdapter` and `isPersianCalendarSupported(): boolean`
+
+> **Read before implementing — two traps carried over from Task 2's review.**
+>
+> 1. **Do not reuse `toDatePartsToken` from `../adapters/gregorian` for the Persian renderer.** It
+>    returns `date-fns` token strings, which have no Persian equivalent. Reuse only its _option-bag
+>    semantics_; write Persian punctuation from scratch. `Intl` composes its own separators, so
+>    Persian needs no manual `", "` insertion at all — and Persian convention differs from
+>    Gregorian anyway (the year is not comma-prefixed the same way).
+> 2. **The `format` implementation below is transcribed from a mapper that was never executed.**
+>    Task 2 shipped with a `format` that threw on every call and only a test caught it. Verify the
+>    Persian `format` assertions actually pass rather than assuming the transcription is right, and
+>    report any output that differs from the expected Persian strings.
 
 - [ ] **Step 1: Write the failing test**
 
