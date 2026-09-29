@@ -18,7 +18,10 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          include: ["src/**/*.test.ts"],
+          // Tests live in the sibling `tests/` directory, not colocated in `src/` (unlike
+          // packages/blocks). Both globs are required: without the `tests/` one, every test
+          // file is silently never collected and the suite passes green having run nothing.
+          include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
           environment: "node",
         },
       },
@@ -29,7 +32,8 @@ export default defineConfig({
         extends: true,
         test: {
           name: "dom",
-          include: ["src/**/*.test.tsx"],
+          // See the `unit` project above: same `tests/`-first layout.
+          include: ["tests/**/*.test.tsx", "src/**/*.test.tsx"],
           environment: "jsdom",
           setupFiles: ["./vitest.setup.dom.ts"],
         },
