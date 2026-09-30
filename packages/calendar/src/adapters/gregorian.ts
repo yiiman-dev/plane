@@ -36,7 +36,10 @@ export const toDatePartsToken = (options: CalendarFormatOptions): string => {
     else if (options.month === "2-digit") dayAndMonth.push("MM");
     else dayAndMonth.push(MONTH_TOKENS[options.month]);
   }
-  if (options.day) dayAndMonth.push(options.day === "2-digit" ? "dd" : "d");
+  // `do` after the width digit, never instead of it: `do` alone is the bare ordinal ("15th") and
+  // loses the zero padding, so `2-digit` + ordinal is `ddo`.
+  if (options.day)
+    dayAndMonth.push(options.day === "2-digit" ? (options.dayOrdinal ? "ddo" : "dd") : options.dayOrdinal ? "do" : "d");
 
   const tokens: string[] = [];
   if (options.year) tokens.push(`${dayAndMonth.join(" ")}, ${YEAR_TOKENS[options.year]}`.replace(/^, /, ""));
