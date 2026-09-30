@@ -151,6 +151,94 @@ describe("persianCalendar", () => {
     });
   });
 
+  it("formats every valid combination of CalendarFormatOptions without throwing", () => {
+    // Regression: `format` shipped throwing on every call. Task 2 caught it only because a test
+    // exercised it, so the guard is an exhaustive sweep of the option bag's real values rather than
+    // one hand-picked combination — a future field added to `CalendarFormatOptions` and forwarded
+    // to `Intl` wrong would otherwise go unnoticed. `Intl` rejects an unknown value by throwing.
+    const date = g(2024, 7, 22); // 1 Shahrivar 1403
+    const years = ["numeric", "2-digit"] as const;
+    const months = ["long", "short", "numeric", "2-digit"] as const;
+    const days = ["numeric", "2-digit"] as const;
+    const weekdays = ["long", "short", "narrow"] as const;
+
+    let combinations = 0;
+    for (const year of years) {
+      for (const month of months) {
+        for (const day of days) {
+          for (const weekday of weekdays) {
+            combinations++;
+            const formatted = persianCalendar.format(date, { year, month, day, weekday });
+            expect(typeof formatted).toBe("string");
+            expect(formatted.length).toBeGreaterThan(0);
+          }
+        }
+      }
+    }
+    // Also each field alone, since a combination can be valid while a lone field is not.
+    for (const option of [
+      { year: "numeric" as const },
+      { year: "2-digit" as const },
+      { month: "long" as const },
+      { month: "short" as const },
+      { month: "numeric" as const },
+      { month: "2-digit" as const },
+      { day: "numeric" as const },
+      { day: "2-digit" as const },
+      { weekday: "long" as const },
+      { weekday: "short" as const },
+      { weekday: "narrow" as const },
+    ]) {
+      expect(persianCalendar.format(date, option).length).toBeGreaterThan(0);
+    }
+    // And the empty bag, which has its own fallback path.
+    expect(persianCalendar.format(date).length).toBeGreaterThan(0);
+    expect(combinations).toBe(48);
+  });
+
+  it("rejects non-integer parts instead of letting NaN reach the search", () => {
+    // `NaN < MIN` and `NaN > MAX` are both false, so a range-only guard lets `NaN` through to the
+    // seed and `Intl` then throws `RangeError: Invalid time value` from inside a render path.
+    // `fromParts` must degrade to the same placeholder an out-of-range year gets, never throw.
+    expect(() => persianCalendar.fromParts(Number.NaN, 1, 1)).not.toThrow();
+    expect(() => persianCalendar.fromParts(1403.5, 1, 1)).not.toThrow();
+    expect(() => persianCalendar.fromParts(1403, 1.5, 1)).not.toThrow();
+    expect(() => persianCalendar.fromParts(1403, 1, Number.NaN)).not.toThrow();
+    expect(() => persianCalendar.fromParts(Number.POSITIVE_INFINITY, 1, 1)).not.toThrow();
+
+    // A rejected input must not read back as the input that was asked for — the same property the
+    // out-of-range test above asserts. `NaN` degrades all the way to `NaN` parts (no invented
+    // year); a fractional year falls out of range and gets the placeholder, so it is not month 1
+    // of 1403 the way a silently-accepted float would be.
+    expect(persianCalendar.toParts(persianCalendar.fromParts(Number.NaN, 1, 1)).year).toBeNaN();
+    expect(persianCalendar.toParts(persianCalendar.fromParts(1403.5, 1, 1)).month).not.toBe(1);
+  });
+
+  it("never reports a zero or negative month length", () => {
+    // `getMonthLength` feeds callers that divide by it, so a 0 fallback would surface as `Infinity`
+    // rather than as a wrong-but-finite month. Probe across the whole supported range.
+    for (const year of [1178, 1300, 1403, 1500, 1633]) {
+      for (let month = 1; month <= 12; month++) {
+        const length = persianCalendar.getMonthLength(year, month);
+        expect(length).toBeGreaterThanOrEqual(28);
+        expect(length).toBeLessThanOrEqual(31);
+      }
+    }
+  });
+
+  it("degrades to NaN parts on an Invalid Date like the Gregorian adapter does", () => {
+    // Both adapters share one interface; the picker calls through it. A render path must not throw,
+    // and the two must not diverge for the same input.
+    const invalid = new Date(Number.NaN);
+    expect(() => persianCalendar.toParts(invalid)).not.toThrow();
+    const persian = persianCalendar.toParts(invalid);
+    const gregorian = gregorianCalendar.toParts(invalid);
+    expect(persian.year).toBeNaN();
+    expect(persian.month).toBeNaN();
+    expect(persian.day).toBeNaN();
+    expect(gregorian).toEqual(persian);
+  });
+
   it("refuses Persian years outside CLDR's exact range instead of extrapolating", () => {
     // Out of range the adapter must not claim a confident answer: `Intl` would happily extrapolate
     // and hand back a plausible-but-wrong date. The guard returns a placeholder that does not read

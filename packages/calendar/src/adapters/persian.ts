@@ -30,11 +30,15 @@ const MIN_SUPPORTED_YEAR = 1178;
 const MAX_SUPPORTED_YEAR = 1633;
 
 /**
- * How far from the seed, in days, the inverse conversion expects the answer to lie.
+ * The starting bracket width, in days, for the inverse conversion's day-offset search.
  *
- * The seed lands within a couple of days of the target month's start, and a Persian day-of-month is
- * at most 30 further on, so 64 days brackets every date in the supported range with room to spare.
- * The search widens the bracket if the expectation is ever violated rather than trusting it.
+ * 64 is *not* wide enough to hold the answer and is not intended to be. Measured against the
+ * supported range, every valid Persian date lands 79–113 days after its seed — Persian month M
+ * starts roughly 2.5 months *after* Gregorian month M, because the Persian year begins at Nowruz in
+ * March while the Gregorian month M seed lands in May of the same numbered year. The widening loops
+ * in `invertToGregorian` are therefore load-bearing on every single call, not a safety net: they
+ * always grow 64 → 128 before the bisection runs. Removing them would make every conversion return
+ * a confidently wrong date rather than fail.
  */
 const INITIAL_BRACKET_DAYS = 64;
 
@@ -80,12 +84,24 @@ export const isPersianCalendarSupported = (): boolean => {
   }
 };
 
-/** Reads the Persian year+month+day out of an already-parsed Gregorian date. */
-const readParts = (date: Date): CalendarDateParts => ({
-  year: readNumber(date, "year"),
-  month: readNumber(date, "month"),
-  day: readNumber(date, "day"),
-});
+/**
+ * Reads the Persian year+month+day out of an already-parsed Gregorian date.
+ *
+ * An `Invalid Date` yields `NaN` parts rather than throwing, matching what the Gregorian adapter
+ * returns for the same input. `Intl.DateTimeFormat.formatToParts` throws on an invalid date, and
+ * `toParts` sits in the render path behind the picker, so degrading is the right behavior here: a
+ * comparison against `NaN` is simply false, exactly as with the Gregorian adapter's `NaN` parts.
+ */
+const readParts = (date: Date): CalendarDateParts => {
+  if (Number.isNaN(date.getTime())) {
+    return { year: Number.NaN, month: Number.NaN, day: Number.NaN };
+  }
+  return {
+    year: readNumber(date, "year"),
+    month: readNumber(date, "month"),
+    day: readNumber(date, "day"),
+  };
+};
 
 /**
  * Persian → Gregorian, by progressive search.
@@ -116,21 +132,36 @@ const invertToGregorian = (year: number, month: number, day: number): Date => {
   const cached = fromPartsCache.get(cacheKey);
   if (cached) return new Date(cached.getTime());
 
-  if (year < MIN_SUPPORTED_YEAR || year > MAX_SUPPORTED_YEAR) {
-    // Out of CLDR's exact range. Returning the start of the Gregorian year keeps the picker usable
-    // rather than producing a confidently wrong date. Not memoized: it is a rejected input, not a
-    // conversion result.
+  // `Number.isInteger` rather than a plain range comparison: `NaN` fails both `NaN < MIN` and
+  // `NaN > MAX`, so a range-only guard lets it through to the seed and the eventual
+  // `formatToParts` throws `RangeError: Invalid time value` from inside a render path.
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    year < MIN_SUPPORTED_YEAR ||
+    year > MAX_SUPPORTED_YEAR
+  ) {
+    // Out of CLDR's exact range, or not a date at all. Returning the start of the Gregorian year
+    // keeps the picker usable rather than producing a confidently wrong date. Not memoized: it is a
+    // rejected input, not a conversion result. A non-integer year flows through the same line, which
+    // for `NaN` yields an `Invalid Date` — and `toParts` degrades that to `NaN` parts rather than
+    // inventing a year, so a caller comparing against `NaN` simply highlights nothing.
     return new Date(year, 0, 1);
   }
 
   const target: CalendarDateParts = { year, month, day };
-  // Seed: Persian year Y begins in Gregorian year Y + 621, at roughly the same point in the year
-  // as the equivalent Gregorian month.
+  // Seed: Persian year Y begins in Gregorian year Y + 621, but Persian month M is *not* at the same
+  // point in that Gregorian year as month M — the Persian year starts at Nowruz (20/21 March), so
+  // month M lands roughly 2.5 months later than the Gregorian month M seed. Measured, the target is
+  // 79–113 days after this seed; see `INITIAL_BRACKET_DAYS`.
   const seed = startOfDay(new Date(year + SEED_YEAR_OFFSET, month - 1, 1));
 
   // Establish the invariant "low is before the target, high is not" as day offsets from the seed.
-  // Widening rather than trusting the bracket keeps an unexpected seed from silently returning the
-  // wrong day.
+  // These loops are required, not defensive: `INITIAL_BRACKET_DAYS` is narrower than every real
+  // offset, so they always widen 64 → 128 before the bisection below. Deleting them makes every
+  // call return a wrong date silently, because the bisection would still converge — to a plausible
+  // neighbouring day rather than the requested one.
   let span = INITIAL_BRACKET_DAYS;
   while (compareParts(readParts(addDays(seed, -span)), target) >= 0 && span < 4096) span *= 2;
   while (compareParts(readParts(addDays(seed, span)), target) < 0 && span < 4096) span *= 2;
@@ -153,6 +184,12 @@ const invertToGregorian = (year: number, month: number, day: number): Date => {
 /** Longest a Persian month can be, used only to bound the Esfand rollover probe below. */
 const MAX_MONTH_LENGTH = 31;
 
+/**
+ * Shortest a Persian month can be, and the fallback when the rollover probe finds no match. Also
+ * the length every non-Esfand month is ≥ 29.
+ */
+const MIN_MONTH_LENGTH = 29;
+
 /** Exposed for tests and for the picker's month-length shortcut. */
 export const persianDayCount = (year: number, month: number): number => {
   const firstOfMonth = invertToGregorian(year, month, 1);
@@ -172,7 +209,10 @@ export const persianDayCount = (year: number, month: number): number => {
     const parts = readParts(candidate);
     if (parts.year === year && parts.month === month) return length;
   }
-  return 0;
+  // Unreachable while `Intl` is answering: Esfand always ends within 29–30 days of its start. Not
+  // returning 0 regardless — callers divide by this value, and 0 would turn an internal
+  // inconsistency into `Infinity` in a render path instead of a wrong-but-finite month length.
+  return MIN_MONTH_LENGTH;
 };
 
 export const persianCalendar: CalendarAdapter = {
