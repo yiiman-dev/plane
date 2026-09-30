@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@makeplane/propel": "catalog:",
+    "@plane/calendar": "workspace:*",
     "@plane/constants": "workspace:*",
     "@plane/types": "workspace:*",
     "chroma-js": "catalog:",

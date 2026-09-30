@@ -35,6 +35,7 @@
   "devDependencies": {
     "@plane/tailwind-config": "workspace:*",
     "@plane/typescript-config": "workspace:*",
+    "@plane/utils": "workspace:*",
     "@testing-library/react": "catalog:",
     "@testing-library/user-event": "catalog:",
     "@types/react": "catalog:",
