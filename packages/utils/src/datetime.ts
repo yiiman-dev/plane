@@ -579,10 +579,20 @@ export const formatDateRange = (
       if (sameMonth) {
         return `${monthName} ${startDay} - ${endDay}, ${adapter.format(parsedStartDate, { year: "numeric" })}`;
       }
-      return `${adapter.format(parsedStartDate, { month: "short", day: "numeric" })} - ${adapter.format(parsedEndDate, {
-        month: "short",
-        day: "numeric",
-      })}, ${adapter.format(parsedEndDate, { year: "numeric" })}`;
+      // Same year, different month
+      if (start.year === end.year) {
+        return `${adapter.format(parsedStartDate, { month: "short", day: "numeric" })} - ${adapter.format(
+          parsedEndDate,
+          {
+            month: "short",
+            day: "numeric",
+          }
+        )}, ${adapter.format(parsedEndDate, { year: "numeric" })}`;
+      }
+      // Different year — each side needs its own year, otherwise the range reads as incoherent
+      // (e.g. "Esfand 29 - Farvardin 6, 1403" implies a Farvardin 6 that precedes its own start).
+      const fullForm = { year: "numeric", month: "short", day: "numeric" } as const;
+      return `${adapter.format(parsedStartDate, fullForm)} - ${adapter.format(parsedEndDate, fullForm)}`;
     }
 
     // Same year, same month
