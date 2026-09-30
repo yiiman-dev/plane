@@ -324,6 +324,7 @@ export const getDate = (date: string | Date | undefined | null): Date | undefine
   try {
     if (!date || date === "") return;
 
+    // oxlint-disable-next-line eslint-plugin-unicorn/no-instanceof-builtins -- deliberate: getDate intentionally accepts boxed String objects alongside primitives
     if (typeof date !== "string" && !(date instanceof String)) return date;
 
     const [yearString, monthString, dayString] = date.substring(0, 10).split("-");
@@ -440,6 +441,7 @@ export const generateDateArray = (startDate: string | Date, endDate: string | Da
   const dateArray = [];
 
   // Use a while loop to generate dates between the range
+  // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- false positive: `start.setDate()` mutates the Date in place, which this rule cannot track
   while (start <= end) {
     // Push the current date (converted to ISO string for consistency)
     dateArray.push({
