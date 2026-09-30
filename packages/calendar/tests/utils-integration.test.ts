@@ -78,6 +78,41 @@ describe("formatDateRange with a calendar system", () => {
     // Guards the non-same-month branch, which the brief's implementation never got to run.
     expect(formatDateRange(g(2024, 7, 15), g(2024, 8, 6), "persian")).toBe("۲۵ مرداد - ۱۶ شهریور, ۱۴۰۳");
   });
+
+  it("renders both years for a Persian range that crosses a new year", () => {
+    // 20 Mar 2023 is 29 Esfand 1401; 25 Mar 2024 is 6 Farvardin 1403 — the range crosses Nowruz.
+    // The old two-case implementation appended only the end's year, producing
+    // "۲۹ اسفند - ۶ فروردین, ۱۴۰۳", which asserts the start is Esfand 29 *1403* — a date
+    // 11 months after the range's own end. Each side now carries its own year.
+    expect(formatDateRange(g(2023, 2, 20), g(2024, 2, 25), "persian")).toBe("۲۹ اسفند ۱۴۰۱ - ۶ فروردین ۱۴۰۳");
+    // The Gregorian equivalent for the same range, for reference: "Mar 20, 2023 - Mar 25, 2024".
+  });
+
+  it("renders a Persian new-year range inside a single Gregorian year", () => {
+    // 19 Mar 2025 is 29 Esfand 1403, 26 Mar 2025 is 6 Farvardin 1404.
+    expect(formatDateRange(g(2025, 2, 19), g(2025, 2, 26), "persian")).toBe("۲۹ اسفند ۱۴۰۳ - ۶ فروردین ۱۴۰۴");
+  });
+
+  it("renders both years for a Persian range across two years in a different month", () => {
+    // 5 Jan 2024 is 15 Dey 1402, 10 Jan 2025 is 21 Dey 1403. Same month, different years: the
+    // month-only shortcut would have shown ۱۴۰۳ on both sides and hidden a full year.
+    expect(formatDateRange(g(2024, 0, 5), g(2025, 0, 10), "persian")).toBe("۱۵ دی ۱۴۰۲ - ۲۱ دی ۱۴۰۳");
+  });
+
+  it("keeps the Persian same-year cross-month and same-month forms unchanged", () => {
+    // The two pre-existing Persian shapes must survive the third branch being added.
+    expect(formatDateRange(g(2024, 7, 15), g(2024, 8, 6), "persian")).toBe("۲۵ مرداد - ۱۶ شهریور, ۱۴۰۳");
+    expect(formatDateRange(g(2024, 7, 15), g(2024, 7, 19), "persian")).toBe("مرداد ۲۵ - ۲۹, ۱۴۰۳");
+  });
+
+  it("keeps every Gregorian branch on a new-year range unchanged", () => {
+    // The Persian third branch is a sibling of these, not a replacement: the Gregorian path that
+    // ~100 call sites use must keep printing "MMM dd, yyyy" on both sides across a year boundary.
+    expect(formatDateRange(g(2023, 2, 20), g(2024, 2, 25))).toBe("Mar 20, 2023 - Mar 25, 2024");
+    expect(formatDateRange(g(2025, 2, 19), g(2025, 2, 26))).toBe("Mar 19 - 26, 2025");
+    expect(formatDateRange(g(2024, 0, 5), g(2025, 0, 10))).toBe("Jan 05, 2024 - Jan 10, 2025");
+    expect(formatDateRange(g(2024, 7, 15), g(2024, 8, 6))).toBe("Aug 15 - Sep 06, 2024");
+  });
 });
 
 describe("renderFormattedDateWithoutYear with a calendar system", () => {
