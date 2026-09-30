@@ -51,6 +51,57 @@ export const toDatePartsToken = (options: CalendarFormatOptions): string => {
   return options.weekday ? `${WEEKDAY_TOKENS[options.weekday]}, ${body}` : body;
 };
 
+/**
+ * The `date-fns` tokens Plane actually passes to {@link toCalendarFormatOptions} today, mapped onto
+ * the adapter's semantic options. This is the inverse of {@link toDatePartsToken}: that one turns
+ * options into tokens for the Gregorian adapter, this one turns a token a caller wrote into the
+ * options an adapter can honour, so a non-Gregorian adapter can respect the caller's intent.
+ *
+ * Keyed by the whole token string rather than derived by scanning for `M`/`d`/`y` runs. A scanner
+ * cannot know that "MM" in `dd/MM/yyyy` is a month but "MMM" is a name, and it would happily accept
+ * `"hello"` as a token whose `l` looks like nothing at all — the exact class of silent misreading
+ * the explicit table prevents. Only the tokens that reach a call site are listed:
+ *
+ * - `"MMM dd, yyyy"` — `renderFormattedDate`'s default, and ~60 production call sites that pass no token
+ * - `"MMM dd"` — compact form: `renderFormattedDateWithoutYear`, `formatDateRange`, chart axes
+ * - `"MMM"`, `"MMM, yyyy"` — `apps/web/components/chart/utils.ts`
+ * - `"MMMM dd, yyyy"`, `"MMMM dd"` — long month name, same two shapes
+ * - `"dd/MM/yyyy"`, `"MM/dd/yyyy"`, `"yyyy/MM/dd"`, `"yyyy-MM-dd"` — the four date formats the
+ *   date pickers ship (`MERGE_TOKENS` in `packages/blocks/src/property-select/date-range-select.tsx`)
+ *
+ * A token that is absent, or that names a field this table does not cover, maps to `undefined` and
+ * the caller falls back — see {@link toCalendarFormatOptions}.
+ */
+const TOKEN_FORMAT_OPTIONS: Readonly<Record<string, CalendarFormatOptions>> = {
+  "MMM dd, yyyy": { year: "numeric", month: "short", day: "numeric" },
+  "MMM dd": { month: "short", day: "numeric" },
+  "MMM, yyyy": { year: "numeric", month: "short" },
+  MMM: { month: "short" },
+  "MMMM dd, yyyy": { year: "numeric", month: "long", day: "numeric" },
+  "MMMM dd": { month: "long", day: "numeric" },
+  "dd/MM/yyyy": { year: "numeric", month: "2-digit", day: "2-digit" },
+  "MM/dd/yyyy": { year: "numeric", month: "2-digit", day: "2-digit" },
+  "yyyy/MM/dd": { year: "numeric", month: "2-digit", day: "2-digit" },
+  "yyyy-MM-dd": { year: "numeric", month: "2-digit", day: "2-digit" },
+};
+
+/**
+ * The semantic options a `date-fns` format token stands for, or `undefined` when the token names
+ * something this table does not cover.
+ *
+ * Exported (and documented) rather than kept module-private because `@plane/utils` needs it: its
+ * `renderFormattedDate` honours the caller's token for every adapter that cannot take tokens itself,
+ * which is the only way a Persian render can omit the year a caller asked to omit. The token
+ * vocabulary itself stays private — only the whole-token lookup is public, so the table cannot be
+ * half-remembered and reimplemented by a caller.
+ *
+ * @param token a `date-fns` format token, e.g. `"MMM dd"`
+ */
+export const toCalendarFormatOptions = (token: string): CalendarFormatOptions | undefined =>
+  // `Object.hasOwn` rather than a bare index: this table is a plain object, so a caller-supplied
+  // token like `"toString"` or `"constructor"` would otherwise resolve to an inherited member.
+  Object.hasOwn(TOKEN_FORMAT_OPTIONS, token) ? TOKEN_FORMAT_OPTIONS[token] : undefined;
+
 export const gregorianCalendar: CalendarAdapter = {
   system: "gregorian",
   // Declared for the adapter contract, not enforced: every `format` below omits the locale argument,
