@@ -10,6 +10,10 @@
 
 import { getCalendarAdapter, resolveCalendarSystem } from "./src/adapters/index.ts";
 import type { CalendarAdapter, CalendarSystem } from "./src/types.ts";
+// `@plane/utils` resolves through its built `dist/`, and `pnpm install` intentionally keeps the
+// dependency one-way (utils -> calendar) so turbo's build graph stays acyclic. Import the source
+// directly here so the demo runs on a clean checkout without a prior build.
+import { formatDateRange } from "../utils/src/datetime.ts";
 
 const adapterFor = (system: CalendarSystem): CalendarAdapter => getCalendarAdapter(resolveCalendarSystem(system));
 
@@ -126,6 +130,22 @@ rule("6. Month navigation wraps across the Persian new year");
     const next = a.addMonths({ year: y, month: m }, delta);
     console.log(`  ${y}/${m} ${delta > 0 ? "+" : ""}${delta} -> ${next.year}/${next.month}`);
   }
+}
+
+/* ------------------------------------------------------------------ 6b. ranges */
+
+rule("6b. Date ranges — three cases, matching the Gregorian formatter");
+{
+  const cases: Array<[string, Date, Date]> = [
+    ["same month", new Date(2024, 7, 15), new Date(2024, 7, 19)],
+    ["same year", new Date(2024, 7, 15), new Date(2024, 8, 16)],
+    ["across Nowruz", new Date(2023, 2, 20), new Date(2024, 2, 25)],
+  ];
+  for (const [label, start, end] of cases) {
+    console.log(`  ${label.padEnd(16)} ${formatDateRange(start, end, "persian")}`);
+    console.log(`  ${"".padEnd(16)} ${formatDateRange(start, end)}   (Gregorian, unchanged)`);
+  }
+  console.log("\n  A range crossing the Persian new year must name both years, or the start reads as a later date.");
 }
 
 /* ------------------------------------------------------------------ 7. degradation */
