@@ -9,7 +9,7 @@ import { action, makeObservable, observable, runInAction } from "mobx";
 // plane imports
 import { UserService } from "@plane/services";
 import type { TUserProfile } from "@plane/types";
-import { EStartOfTheWeek } from "@plane/types";
+import { ECalendarSystem, EStartOfTheWeek } from "@plane/types";
 // store
 import type { RootStore } from "@/store/root.store";
 
@@ -59,6 +59,7 @@ export class ProfileStore implements IProfileStore {
     updated_at: "",
     language: "",
     start_of_the_week: EStartOfTheWeek.SUNDAY,
+    calendar_system: ECalendarSystem.GREGORIAN,
   };
 
   // services

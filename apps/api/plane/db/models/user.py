@@ -294,6 +294,14 @@ class Profile(TimeAuditModel):
         # new user never sees a calendar they did not ask for. This must never re-run for an
         # existing profile: silently changing how dates render is disruptive, and the
         # calendar is a separate field precisely so it can diverge from the language.
+        #
+        # Two known limits, both deliberate rather than accidental:
+        #  - DRF injects a field's default into `validated_data` when the key is absent, so a
+        #    `ModelSerializer` create would look like an explicit choice and skip this. Both
+        #    production call sites use `Profile.objects.create` directly, so nothing is affected
+        #    today; a future profile-create API must pass the language-derived value itself.
+        #  - `bulk_create` bypasses `save()` entirely, so rows inserted that way keep the field
+        #    default. No call site does this.
         if self._state.adding and not self._calendar_system_is_explicit:
             self.calendar_system = (
                 self.CalendarSystem.PERSIAN
