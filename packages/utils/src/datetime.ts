@@ -4,21 +4,27 @@
  * See the LICENSE file for details.
  */
 
+import { getCalendarAdapter, resolveCalendarSystem } from "@plane/calendar";
+import type { CalendarSystem } from "@plane/calendar";
 import { differenceInDays, format, formatDistanceToNow, isAfter, isEqual, isValid, parseISO } from "date-fns";
 import { isNumber } from "lodash-es";
 
 // Format Date Helpers
 /**
  * @returns {string | null} formatted date in the desired format or platform default format (MMM dd, yyyy)
- * @description Returns date in the formatted format
+ * @description Returns date in the formatted format. Pass a `system` to render in the user's
+ * calendar; omitting it preserves the Gregorian output every existing call site depends on.
  * @param {Date | string} date
- * @param {string} formatToken (optional) // default MMM dd, yyyy
+ * @param {string} formatToken (optional) // default MMM dd, yyyy — ignored in Persian mode
+ * @param {CalendarSystem} system (optional) // default gregorian
  * @example renderFormattedDate("2024-01-01", "MM-DD-YYYY") // Jan 01, 2024
  * @example renderFormattedDate("2024-01-01") // Jan 01, 2024
+ * @example renderFormattedDate("2024-01-01", undefined, "persian") // ۱۱ دی ۱۴۰۲
  */
 export const renderFormattedDate = (
   date: string | Date | undefined | null,
-  formatToken: string = "MMM dd, yyyy"
+  formatToken: string = "MMM dd, yyyy",
+  system: CalendarSystem = "gregorian"
 ): string | undefined => {
   // Parse the date to check if it is valid
   const parsedDate = getDate(date);
@@ -26,34 +32,47 @@ export const renderFormattedDate = (
   if (!parsedDate) return;
   // Check if the parsed date is valid before formatting
   if (!isValid(parsedDate)) return; // Return null for invalid dates
-  let formattedDate;
-  try {
-    // Format the date in the format provided or default format (MMM dd, yyyy)
-    formattedDate = format(parsedDate, formatToken);
-  } catch (_e) {
-    // Format the date in format (MMM dd, yyyy) in case of any error
-    formattedDate = format(parsedDate, "MMM dd, yyyy");
+  const adapter = getCalendarAdapter(resolveCalendarSystem(system));
+  if (adapter.system === "gregorian") {
+    let formattedDate;
+    try {
+      // Format the date in the format provided or default format (MMM dd, yyyy)
+      formattedDate = format(parsedDate, formatToken);
+    } catch (_e) {
+      // Format the date in format (MMM dd, yyyy) in case of any error
+      formattedDate = format(parsedDate, "MMM dd, yyyy");
+    }
+    return formattedDate;
   }
-  return formattedDate;
+  // Persian has no date-fns token equivalents, so the token cannot apply. Fall back to the adapter's
+  // long form, which is the Persian equivalent of "MMM dd, yyyy".
+  return adapter.format(parsedDate, { year: "numeric", month: "short", day: "numeric" });
 };
 
 /**
  * @returns {string} formatted date in the format of MMM dd
  * @description Returns date in the formatted format
  * @param {string | Date} date
- * @example renderShortDateFormat("2024-01-01") // Jan 01
+ * @param {CalendarSystem} system (optional) // default gregorian
+ * @example renderFormattedDateWithoutYear("2024-01-01") // Jan 01
  */
-export const renderFormattedDateWithoutYear = (date: string | Date): string => {
+export const renderFormattedDateWithoutYear = (date: string | Date, system: CalendarSystem = "gregorian"): string => {
   // Parse the date to check if it is valid
   const parsedDate = getDate(date);
   // return if undefined
   if (!parsedDate) return "";
   // Check if the parsed date is valid before formatting
   if (!isValid(parsedDate)) return ""; // Return empty string for invalid dates
-  // Format the date in short format (MMM dd)
-  const formattedDate = format(parsedDate, "MMM dd");
-  return formattedDate;
+  const adapter = getCalendarAdapter(resolveCalendarSystem(system));
+  if (adapter.system === "gregorian") {
+    // Format the date in short format (MMM dd)
+    return format(parsedDate, "MMM dd");
+  }
+  return adapter.format(parsedDate, { month: "short", day: "numeric" });
 };
+
+// NOTE: this is the API/persistence format. It is deliberately NOT calendar-aware — every date
+// persisted or sent to the API stays Gregorian regardless of what the user sees.
 
 /**
  * @returns {string | null} formatted date in the format of yyyy-mm-dd to be used in payload
@@ -166,17 +185,38 @@ export const findHowManyDaysLeft = (
  * @returns {string} formatted date in the form of amount of time passed since the event happened
  * @description Returns time passed since the event happened
  * @param {string | Date} time
+ * @param {CalendarSystem} system (optional) // default gregorian
  * @example calculateTimeAgo("2023-01-01") // 1 year ago
+ * @example calculateTimeAgo(new Date(Date.now() - 3 * 86_400_000), "persian") // ۳ روز پیش
  */
-export const calculateTimeAgo = (time: string | number | Date | null): string => {
+export const calculateTimeAgo = (time: string | number | Date | null, system: CalendarSystem = "gregorian"): string => {
   if (!time) return "";
   // Parse the time to check if it is valid
   const parsedTime = typeof time === "string" || typeof time === "number" ? parseISO(String(time)) : time;
   // return if undefined
   if (!parsedTime) return ""; // Return empty string for invalid dates
+  const resolved = resolveCalendarSystem(system);
+  if (resolved === "persian") {
+    // date-fns' `formatDistanceToNow` has no locale option that reaches `Intl`, so the Persian path
+    // goes through RelativeTimeFormat directly and keeps the same English default otherwise.
+    const seconds = Math.round((parsedTime.getTime() - Date.now()) / 1000);
+    const units: Array<{ unit: Intl.RelativeTimeFormatUnit; seconds: number }> = [
+      { unit: "year", seconds: 31_536_000 },
+      { unit: "month", seconds: 2_592_000 },
+      { unit: "week", seconds: 604_800 },
+      { unit: "day", seconds: 86_400 },
+      { unit: "hour", seconds: 3_600 },
+      { unit: "minute", seconds: 60 },
+    ];
+    const match = units.find((candidate) => Math.abs(seconds) >= candidate.seconds);
+    if (!match) return new Intl.RelativeTimeFormat("fa", { numeric: "auto" }).format(seconds, "second");
+    return new Intl.RelativeTimeFormat("fa", { numeric: "auto" }).format(
+      Math.round(seconds / match.seconds),
+      match.unit
+    );
+  }
   // Format the time in the form of amount of time passed since the event happened
-  const distance = formatDistanceToNow(parsedTime, { addSuffix: true });
-  return distance;
+  return formatDistanceToNow(parsedTime, { addSuffix: true });
 };
 
 export function calculateTimeAgoShort(date: string | number | Date | null): string {
@@ -491,21 +531,29 @@ export const checkDateCriteria = (dateToCheck: Date | null, filterDate: Date, ty
  */
 export const formatDateRange = (
   parsedStartDate: Date | null | undefined,
-  parsedEndDate: Date | null | undefined
+  parsedEndDate: Date | null | undefined,
+  system: CalendarSystem = "gregorian"
 ): string => {
   // If no dates are provided
   if (!parsedStartDate && !parsedEndDate) {
     return "";
   }
 
+  const adapter = getCalendarAdapter(resolveCalendarSystem(system));
+  const isPersian = adapter.system === "persian";
+
   // If only start date is provided
   if (parsedStartDate && !parsedEndDate) {
-    return format(parsedStartDate, "MMM dd, yyyy");
+    return isPersian
+      ? adapter.format(parsedStartDate, { year: "numeric", month: "short", day: "numeric" })
+      : format(parsedStartDate, "MMM dd, yyyy");
   }
 
   // If only end date is provided
   if (!parsedStartDate && parsedEndDate) {
-    return format(parsedEndDate, "MMM dd, yyyy");
+    return isPersian
+      ? adapter.format(parsedEndDate, { year: "numeric", month: "short", day: "numeric" })
+      : format(parsedEndDate, "MMM dd, yyyy");
   }
 
   // If both dates are provided
@@ -514,6 +562,26 @@ export const formatDateRange = (
     const startMonth = parsedStartDate.getMonth();
     const endYear = parsedEndDate.getFullYear();
     const endMonth = parsedEndDate.getMonth();
+
+    if (isPersian) {
+      // Persian months are 31 or 30 days, so the Gregorian "same month" shortcut — which relies on
+      // both dates sharing a month index — is re-derived from the adapter's own parts. The
+      // comparison uses `toParts` (Latin numbers), but every rendered number must come back through
+      // `format` or it would print ASCII digits into a Persian string.
+      const start = adapter.toParts(parsedStartDate);
+      const end = adapter.toParts(parsedEndDate);
+      const sameMonth = start.year === end.year && start.month === end.month;
+      const monthName = adapter.getMonthNames("short")[start.month - 1];
+      const startDay = adapter.format(parsedStartDate, { day: "numeric" });
+      const endDay = adapter.format(parsedEndDate, { day: "numeric" });
+      if (sameMonth) {
+        return `${monthName} ${startDay} - ${endDay}, ${adapter.format(parsedStartDate, { year: "numeric" })}`;
+      }
+      return `${adapter.format(parsedStartDate, { month: "short", day: "numeric" })} - ${adapter.format(parsedEndDate, {
+        month: "short",
+        day: "numeric",
+      })}, ${adapter.format(parsedEndDate, { year: "numeric" })}`;
+    }
 
     // Same year, same month
     if (startYear === endYear && startMonth === endMonth) {

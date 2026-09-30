@@ -1,0 +1,116 @@
+/**
+ * Copyright (c) 2023-present Plane Software, Inc. and contributors
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * See the LICENSE file for details.
+ */
+
+import {
+  calculateTimeAgo,
+  formatDateRange,
+  renderFormattedDate,
+  renderFormattedDateWithoutYear,
+  renderFormattedPayloadDate,
+} from "@plane/utils";
+import { describe, expect, it } from "vitest";
+
+const g = (year: number, monthIndex: number, day: number) => new Date(year, monthIndex, day);
+
+describe("renderFormattedDate with a calendar system", () => {
+  it("is unchanged when no system is passed", () => {
+    // This is the regression guard for all 21 existing locales.
+    expect(renderFormattedDate(g(2025, 5, 15))).toBe("Jun 15, 2025");
+    expect(renderFormattedDate("2025-06-15")).toBe("Jun 15, 2025");
+  });
+
+  it("is unchanged when the system is explicitly gregorian", () => {
+    expect(renderFormattedDate(g(2025, 5, 15), undefined, "gregorian")).toBe("Jun 15, 2025");
+  });
+
+  it("renders Persian when asked", () => {
+    // CORRECTION to the brief: 22 August 2024 is 1 Shahrivar 1403, not 22 Shahrivar. The brief
+    // asserted toContain("۲۲") for this date, which no correct implementation can satisfy.
+    // Asserted as an exact string, which is strictly stronger than the three toContain checks
+    // the brief used.
+    expect(renderFormattedDate(g(2024, 7, 22), undefined, "persian")).toBe("۱ شهریور ۱۴۰۳");
+  });
+
+  it("renders a two-digit Persian day", () => {
+    // Keeps the intent of the brief's "۲۲" check, on a date that really is 22 Shahrivar 1403.
+    expect(renderFormattedDate(g(2024, 8, 12), undefined, "persian")).toBe("۲۲ شهریور ۱۴۰۳");
+  });
+
+  it("falls back to the default token for an unknown token", () => {
+    // The pre-existing try/catch behaviour must survive the rewrite.
+    expect(renderFormattedDate(g(2025, 5, 15), "not-a-token")).toBe("Jun 15, 2025");
+  });
+
+  it("returns undefined for invalid input in both systems", () => {
+    expect(renderFormattedDate(undefined)).toBeUndefined();
+    expect(renderFormattedDate("not-a-date")).toBeUndefined();
+    expect(renderFormattedDate("not-a-date", undefined, "persian")).toBeUndefined();
+  });
+});
+
+describe("formatDateRange with a calendar system", () => {
+  it("is unchanged in Gregorian", () => {
+    expect(formatDateRange(g(2025, 0, 24), g(2025, 0, 28))).toBe("Jan 24 - 28, 2025");
+  });
+
+  it("keeps every Gregorian branch byte-for-byte", () => {
+    // The Persian rewrite wraps the Gregorian branches in an `isPersian` guard; these pin all four
+    // of them plus the two single-date branches so the refactor cannot silently reshape them.
+    expect(formatDateRange(g(2025, 0, 24), g(2025, 1, 6))).toBe("Jan 24 - Feb 06, 2025");
+    expect(formatDateRange(g(2024, 11, 28), g(2025, 0, 4))).toBe("Dec 28, 2024 - Jan 04, 2025");
+    expect(formatDateRange(g(2025, 0, 24), null)).toBe("Jan 24, 2025");
+    expect(formatDateRange(null, g(2025, 0, 24))).toBe("Jan 24, 2025");
+    expect(formatDateRange(null, null)).toBe("");
+  });
+
+  it("renders a Persian same-month range", () => {
+    // CORRECTION to the brief: 15–19 August 2024 is 25–29 *Mordad* 1403 (Persian month 5), not
+    // "24–28 Shahrivar". The brief's toContain("شهریور") is unsatisfiable for these dates —
+    // Shahrivar 1403 does not begin until 22 August 2024. The year ۱۴۰۳ was correct.
+    const formatted = formatDateRange(g(2024, 7, 15), g(2024, 7, 19), "persian");
+    expect(formatted).toBe("مرداد ۲۵ - ۲۹, ۱۴۰۳");
+  });
+
+  it("renders a Persian cross-month range", () => {
+    // Guards the non-same-month branch, which the brief's implementation never got to run.
+    expect(formatDateRange(g(2024, 7, 15), g(2024, 8, 6), "persian")).toBe("۲۵ مرداد - ۱۶ شهریور, ۱۴۰۳");
+  });
+});
+
+describe("renderFormattedDateWithoutYear with a calendar system", () => {
+  it("is unchanged by default and in explicit Gregorian", () => {
+    expect(renderFormattedDateWithoutYear("2024-01-01")).toBe("Jan 01");
+    expect(renderFormattedDateWithoutYear("2024-01-01", "gregorian")).toBe("Jan 01");
+  });
+
+  it("renders Persian when asked", () => {
+    expect(renderFormattedDateWithoutYear("2024-01-01", "persian")).toBe("۱۱ دی");
+  });
+});
+
+// The boundary that keeps storage Gregorian. renderFormattedPayloadDate takes no `system` and
+// must never gain one; this test is the tripwire for that.
+describe("renderFormattedPayloadDate", () => {
+  it("stays Gregorian yyyy-MM-dd", () => {
+    expect(renderFormattedPayloadDate(g(2024, 7, 22))).toBe("2024-08-22");
+    expect(renderFormattedPayloadDate("2024-08-22")).toBe("2024-08-22");
+    // 1 Shahrivar 1403 in Persian, but the payload must carry the Gregorian instant.
+    expect(renderFormattedPayloadDate(g(2024, 7, 22))).not.toContain("۱۴۰۳");
+  });
+});
+
+describe("calculateTimeAgo with a calendar system", () => {
+  it("stays English by default", () => {
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3_600_000);
+    expect(calculateTimeAgo(threeDaysAgo)).toMatch(/3 days ago/);
+  });
+
+  it("renders Persian when asked", () => {
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3_600_000);
+    const formatted = calculateTimeAgo(threeDaysAgo, "persian");
+    expect(formatted).toContain("روز");
+  });
+});
