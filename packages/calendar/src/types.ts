@@ -32,6 +32,17 @@ export type CalendarFormatOptions = {
   month?: "long" | "short" | "numeric" | "2-digit";
   day?: "numeric" | "2-digit";
   weekday?: "long" | "short" | "narrow";
+  /**
+   * Render the day as an ordinal ("15th" rather than "15"), matching `date-fns`' `PPPP`.
+   *
+   * Separate from {@link CalendarFormatOptions.day} because it changes the rendered string, not the
+   * field's width: `day: "numeric"` and an ordinal day are different outputs of the same field, and
+   * a picker cell's accessible name needs the ordinal while an ordinary date line does not.
+   *
+   * An adapter whose calendar has no ordinal day form ignores this. `Intl` exposes no such option
+   * for `day`, and Persian writes day numbers as bare digits.
+   */
+  dayOrdinal?: boolean;
 };
 
 export type CalendarAdapter = {
