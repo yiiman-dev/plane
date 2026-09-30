@@ -216,8 +216,10 @@ describe("persianCalendar", () => {
 
   it("never reports a zero or negative month length", () => {
     // `getMonthLength` feeds callers that divide by it, so a 0 fallback would surface as `Infinity`
-    // rather than as a wrong-but-finite month. Probe across the whole supported range.
-    for (const year of [1178, 1300, 1403, 1500, 1633]) {
+    // rather than as a wrong-but-finite month. Probe across the whole supported range, and the
+    // out-of-range years too — those make both difference probes return the same guard placeholder,
+    // which is exactly how a 0 used to escape.
+    for (const year of [1178, 1300, 1403, 1500, 1633, 1177, 1634, 9999]) {
       for (let month = 1; month <= 12; month++) {
         const length = persianCalendar.getMonthLength(year, month);
         expect(length).toBeGreaterThanOrEqual(28);
