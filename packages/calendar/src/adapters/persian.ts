@@ -33,7 +33,7 @@ const MAX_SUPPORTED_YEAR = 1633;
  * The starting bracket width, in days, for the inverse conversion's day-offset search.
  *
  * 64 is *not* wide enough to hold the answer and is not intended to be. Measured against the
- * supported range, every valid Persian date lands 79–113 days after its seed — Persian month M
+ * supported range, every valid Persian date lands 78–114 days after its seed — Persian month M
  * starts roughly 2.5 months *after* Gregorian month M, because the Persian year begins at Nowruz in
  * March while the Gregorian month M seed lands in May of the same numbered year. The widening loops
  * in `invertToGregorian` are therefore load-bearing on every single call, not a safety net: they
@@ -44,7 +44,7 @@ const INITIAL_BRACKET_DAYS = 64;
 
 /**
  * A hard ceiling on refinement steps, so a bug in the comparison cannot spin forever inside a
- * render path. Measured worst case is 10 steps; anything near this bound means the search is
+ * render path. Measured worst case over the full supported range is 8 steps; anything near this bound means the search is
  * broken, not that the input is exotic.
  */
 const MAX_SEARCH_STEPS = 24;
@@ -154,14 +154,16 @@ const invertToGregorian = (year: number, month: number, day: number): Date => {
   // Seed: Persian year Y begins in Gregorian year Y + 621, but Persian month M is *not* at the same
   // point in that Gregorian year as month M — the Persian year starts at Nowruz (20/21 March), so
   // month M lands roughly 2.5 months later than the Gregorian month M seed. Measured, the target is
-  // 79–113 days after this seed; see `INITIAL_BRACKET_DAYS`.
+  // 78–114 days after this seed; see `INITIAL_BRACKET_DAYS`.
   const seed = startOfDay(new Date(year + SEED_YEAR_OFFSET, month - 1, 1));
 
   // Establish the invariant "low is before the target, high is not" as day offsets from the seed.
-  // These loops are required, not defensive: `INITIAL_BRACKET_DAYS` is narrower than every real
-  // offset, so they always widen 64 → 128 before the bisection below. Deleting them makes every
-  // call return a wrong date silently, because the bisection would still converge — to a plausible
-  // neighbouring day rather than the requested one.
+  // The widening below is required, not defensive: `INITIAL_BRACKET_DAYS` is narrower than every
+  // real offset, so the forward loop always fires and grows 64 → 128 before the bisection starts.
+  // Deleting it makes every call return a wrong date silently, because the bisection would still
+  // converge — to a plausible neighbouring day rather than the requested one. The backward loop
+  // never fires in practice (the seed is always before the target) but is kept as the symmetric
+  // guard, since it costs one `formatToParts`.
   let span = INITIAL_BRACKET_DAYS;
   while (compareParts(readParts(addDays(seed, -span)), target) >= 0 && span < 4096) span *= 2;
   while (compareParts(readParts(addDays(seed, span)), target) < 0 && span < 4096) span *= 2;
@@ -192,6 +194,12 @@ const MIN_MONTH_LENGTH = 29;
 
 /** Exposed for tests and for the picker's month-length shortcut. */
 export const persianDayCount = (year: number, month: number): number => {
+  // An out-of-range year makes both difference probes hit the range guard and return the *same*
+  // placeholder, so the difference is 0 — a length no month can have, and one a caller might divide
+  // by. Refuse before probing rather than reporting it.
+  if (!Number.isInteger(year) || year < MIN_SUPPORTED_YEAR || year > MAX_SUPPORTED_YEAR) {
+    return MIN_MONTH_LENGTH;
+  }
   const firstOfMonth = invertToGregorian(year, month, 1);
   if (month !== MONTHS_PER_YEAR) {
     // Month M runs until the first day of month M+1, so the length is a difference, not a lookup
