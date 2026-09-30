@@ -180,6 +180,7 @@ export function CycleForm(props: Props) {
                       icon={<CalendarOutline />}
                       placeholder={`${t("start_date")} - ${t("end_date")}`}
                       weekStartsOn={userProfile?.start_of_the_week}
+                      calendarSystem={userProfile?.calendar_system}
                       tabIndex={getIndex("date_range")}
                     />
                   )}

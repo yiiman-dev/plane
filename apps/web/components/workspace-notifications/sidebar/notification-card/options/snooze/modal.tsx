@@ -179,6 +179,7 @@ export function NotificationSnoozeModal(props: TNotificationSnoozeModal) {
                         minDate={new Date()}
                         clearable
                         weekStartsOn={userProfile?.start_of_the_week}
+                        calendarSystem={userProfile?.calendar_system}
                         variant="select-lg"
                       />
                     )}

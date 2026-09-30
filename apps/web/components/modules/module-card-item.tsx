@@ -251,6 +251,7 @@ export const ModuleCardItem = observer(function ModuleCardItem(props: Props) {
                 }}
                 placeholder="Start date - End date"
                 weekStartsOn={userProfile?.start_of_the_week}
+                calendarSystem={userProfile?.calendar_system}
                 disabled={isDisabled}
                 icon={renderIcon ? undefined : <CalendarOutline aria-hidden="true" />}
               />

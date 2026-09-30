@@ -185,6 +185,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
           showTooltip
           tooltipHeading={t("common.order_by.start_date")}
           weekStartsOn={userProfile?.start_of_the_week}
+          calendarSystem={userProfile?.calendar_system}
           variant="pill-sm"
         />
       </div>
@@ -204,6 +205,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
           showTooltip
           tooltipHeading={t("common.order_by.due_date")}
           weekStartsOn={userProfile?.start_of_the_week}
+          calendarSystem={userProfile?.calendar_system}
           variant="pill-sm"
         />
       </div>

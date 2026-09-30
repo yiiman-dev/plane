@@ -10,6 +10,7 @@ import { Button } from "@makeplane/propel/components/button";
 import { Popover, PopoverBody, PopoverContent, PopoverTrigger } from "@makeplane/propel/components/popover";
 import type { PopoverContentProps } from "@makeplane/propel/components/popover";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
+import type { CalendarSystem } from "@plane/calendar";
 import type { IconElement } from "../types/icon";
 import { cn } from "@plane/utils";
 import type { SelectVariant } from "../select/types";
@@ -40,6 +41,13 @@ export type DateSelectCommonProps = {
   formatToken?: string;
   /** @see WeekStart */
   weekStartsOn?: WeekStart;
+  /**
+   * Which calendar the grid and the trigger label render in. `persian` shows Jalali months and
+   * days; storage is unaffected. The app wrapper supplies the user's profile value, resolved
+   * against the host's `Intl` support, so `persian` degrades to Gregorian where it is unavailable.
+   * @default "gregorian"
+   */
+  calendarSystem?: CalendarSystem;
   /** Month shown on open while nothing is picked. Defaults to the current month. */
   defaultMonth?: Date;
   /** Leading icon on the trigger. */

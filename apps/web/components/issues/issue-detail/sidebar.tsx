@@ -146,6 +146,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 disabled={!isEditable}
                 clearable
                 weekStartsOn={userProfile?.start_of_the_week}
+                calendarSystem={userProfile?.calendar_system}
                 variant="select-ghost-md"
                 showTooltip
                 tooltipHeading={t("common.order_by.start_date")}
@@ -170,6 +171,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                     "text-danger-primary": shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group),
                   })}
                   weekStartsOn={userProfile?.start_of_the_week}
+                  calendarSystem={userProfile?.calendar_system}
                   variant="select-ghost-md"
                   showTooltip
                   tooltipHeading={t("common.order_by.due_date")}

@@ -190,6 +190,7 @@ export function ModuleForm(props: Props) {
                       placeholder={`${t("start_date")} - ${t("end_date")}`}
                       icon={<CalendarOutline />}
                       weekStartsOn={userProfile?.start_of_the_week}
+                      calendarSystem={userProfile?.calendar_system}
                       tabIndex={getIndex("date_range")}
                     />
                   )}

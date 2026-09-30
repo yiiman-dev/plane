@@ -58,6 +58,7 @@ export const SpreadsheetDueDateColumn = observer(function SpreadsheetDueDateColu
           "text-danger-primary": shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group),
         })}
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         onClose={onClose}
         variant="table-cell"
       />

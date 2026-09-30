@@ -5,11 +5,12 @@
  */
 
 import { useState } from "react";
-import { format } from "date-fns";
-import { Calendar } from "@makeplane/propel/components/calendar";
+import { CalendarSurface, getCalendarAdapter } from "@plane/calendar";
+import type { CalendarMonthParts } from "@plane/calendar";
+import { renderFormattedDate } from "@plane/utils";
 import type { DateSelectCommonProps } from "./date-select-shell";
 import { DateSelectShell } from "./date-select-shell";
-import { buildDisabledMatchers, DEFAULT_DATE_FORMAT_TOKEN } from "./date-select.utils";
+import { DEFAULT_DATE_FORMAT_TOKEN } from "./date-select.utils";
 
 /** Both ends of the picked range. Either end may be unset. */
 export type DateRangeValue = {
@@ -72,22 +73,36 @@ const MERGE_TOKENS: Record<string, { sameYear: MergeTokenPair; sameMonth: MergeT
  * The merged label: drop from one end whatever the other repeats. Two days in one month give
  * "Jun 10 - 24, 2025"; two months in one year give "Jan 24 - Feb 02, 2025"; anything wider — or any
  * `formatToken` outside {@link MERGE_TOKENS} — stays whole.
+ *
+ * `formatOne` is `formatToken`-aware rather than a bare `date-fns` `format`, so both ends speak the
+ * user's calendar. The merge is skipped when a narrowed token renders *identically* to the full one
+ * — which is what a Persian adapter does for a token it cannot map, since it falls back to the full
+ * form — so the Persian label collapses to the un-merged one rather than repeating a whole date
+ * where a fragment was meant to go.
  */
-function mergeRangeLabel(range: DateRangeValue, from: string, to: string, formatToken: string): string {
+function mergeRangeLabel(
+  range: DateRangeValue,
+  from: string,
+  to: string,
+  formatToken: string,
+  formatOne: (date: Date, token: string) => string
+): string {
   const joined = from && to ? `${from} - ${to}` : from || to;
   if (!range.from || !range.to || !from || !to) return joined;
   if (range.from.getFullYear() !== range.to.getFullYear()) return joined;
   const tokens = MERGE_TOKENS[formatToken];
   if (!tokens) return joined;
   const pair = range.from.getMonth() === range.to.getMonth() ? tokens.sameMonth : tokens.sameYear;
-  return `${format(range.from, pair.from)} - ${format(range.to, pair.to)}`;
+  const mergedFrom = formatOne(range.from, pair.from);
+  const mergedTo = formatOne(range.to, pair.to);
+  if (mergedFrom === from && mergedTo === to) return joined;
+  return `${mergedFrom} - ${mergedTo}`;
 }
 
 /**
- * Presentational, data-source-agnostic range picker: the `Select` trigger chrome over a propel
- * `Calendar` in range mode. Propel's `Calendar` drops react-day-picker's `numberOfMonths` (its
- * styled contract covers one month), so the panel shows a single month and the user pages through
- * it — the two-month side-by-side layout needs the upstream prop before it can come back.
+ * Presentational, data-source-agnostic range picker: the `Select` trigger chrome over a month grid
+ * in range mode. The grid shows a single month and the user pages through it — the two-month
+ * side-by-side layout needs an upstream prop before it can come back.
  */
 export function DateRangeSelect(props: DateRangeSelectProps) {
   const {
@@ -97,6 +112,7 @@ export function DateRangeSelect(props: DateRangeSelectProps) {
     minDate,
     maxDate,
     weekStartsOn,
+    calendarSystem = "gregorian",
     defaultMonth,
     placeholder = "",
     clearable = false,
@@ -104,28 +120,44 @@ export function DateRangeSelect(props: DateRangeSelectProps) {
   } = props;
   // states
   const [isOpen, setIsOpen] = useState(props.defaultOpen ?? false);
-  // react-day-picker answers the FIRST click of a range with `{ from: day, to: day }`, which is
-  // indistinguishable from a finished one-day range. The half-picked range is held here — shown in
-  // the calendar, withheld from `onChange` — until the second click completes it, so a caller never
-  // sees a range it did not ask for.
+  // The grid answers the FIRST click of a range with an open end rather than a finished one-day
+  // range. That half-picked range is held here — shown in the calendar, withheld from `onChange` —
+  // until the second click completes it, so a caller never sees a range it did not ask for.
   const [draft, setDraft] = useState<DateRangeValue | null>(null);
+  /**
+   * Which month the Persian grid is showing. Only the Persian branch reads it — the Gregorian branch
+   * hands `defaultMonth` to `react-day-picker` and lets it re-seed on every mount — but it is
+   * seeded here from the same inputs so the two branches open on the same month.
+   */
+  const [visibleMonth, setVisibleMonth] = useState<CalendarMonthParts>(() => {
+    const seed = value.from ?? defaultMonth ?? new Date();
+    const { year, month } = getCalendarAdapter(calendarSystem).toParts(seed);
+    return { year, month };
+  });
   // derived values
-  const from = value.from ? format(value.from, formatToken) : "";
-  const to = value.to ? format(value.to, formatToken) : "";
+  const formatOne = (date: Date, token: string): string => renderFormattedDate(date, token, calendarSystem) ?? "";
+  const from = value.from ? formatOne(value.from, formatToken) : "";
+  const to = value.to ? formatOne(value.to, formatToken) : "";
   const joined = from && to ? `${from} - ${to}` : from || to;
   const formatted = props.formatLabel
     ? props.formatLabel(value, { from, to })
     : props.mergeDates
-      ? mergeRangeLabel(value, from, to, formatToken)
+      ? mergeRangeLabel(value, from, to, formatToken, formatOne)
       : joined;
   const isEmpty = !value.from && !value.to;
-  const disabledMatchers = buildDisabledMatchers(minDate, maxDate);
   // The calendar shows the in-progress pick; the trigger keeps showing the committed value.
   const shown = draft ?? value;
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
     setDraft(null);
+    // Re-seed the Persian grid's month on open, the way `react-day-picker` re-seeds from
+    // `defaultMonth` every time the popover remounts it.
+    if (open) {
+      const seed = value.from ?? defaultMonth ?? new Date();
+      const { year, month } = getCalendarAdapter(calendarSystem).toParts(seed);
+      setVisibleMonth({ year, month });
+    }
     if (!open) onClose?.();
   };
 
@@ -143,14 +175,16 @@ export function DateRangeSelect(props: DateRangeSelectProps) {
         handleOpenChange(false);
       }}
     >
-      <Calendar
+      <CalendarSurface
+        system={calendarSystem}
         mode="range"
-        selected={shown.from ? { from: shown.from, to: shown.to ?? undefined } : undefined}
-        defaultMonth={value.from ?? defaultMonth}
-        disabled={disabledMatchers}
-        weekStartsOn={weekStartsOn}
-        onSelect={(range) => {
-          const next = { from: range?.from ?? null, to: range?.to ?? null };
+        value={null}
+        range={shown}
+        onSelect={() => {
+          // A range is picked through `onRangeSelect`; the grid never reports a single day.
+        }}
+        onRangeSelect={(pickedFrom, pickedTo) => {
+          const next = { from: pickedFrom, to: pickedTo };
           // Deselecting the open end restarts the range without emitting.
           if (!next.from) {
             setDraft(null);
@@ -162,10 +196,16 @@ export function DateRangeSelect(props: DateRangeSelectProps) {
             handleOpenChange(false);
             return;
           }
-          // First click: react-day-picker's `to === from` is not a finished range, it is the open
-          // end waiting for the next click.
+          // First click: an open end waiting for the next click, not a finished range.
           setDraft({ from: next.from, to: null });
         }}
+        month={visibleMonth}
+        onMonthChange={setVisibleMonth}
+        defaultMonth={defaultMonth}
+        weekStartsOn={weekStartsOn}
+        minDate={minDate}
+        maxDate={maxDate}
+        disabled={props.disabled}
       />
     </DateSelectShell>
   );

@@ -4,9 +4,9 @@
  * See the LICENSE file for details.
  */
 
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Button } from "@makeplane/propel/components/button";
-import { Calendar } from "@makeplane/propel/components/calendar";
 import {
   Dialog,
   DialogActions,
@@ -20,7 +20,12 @@ import { Icon } from "@makeplane/propel/components/icon";
 import { IconButton } from "@makeplane/propel/components/icon-button";
 import { CloseOutline } from "@makeplane/propel/icons";
 import { useTranslation } from "@plane/i18n";
+import { CalendarSurface, getCalendarAdapter } from "@plane/blocks/property-select";
+import type { CalendarMonthParts } from "@plane/blocks/property-select";
 import { renderFormattedPayloadDate, renderFormattedDate, getDate } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
+// local imports
 import { DateFilterSelect } from "./date-filter-select";
 type Props = {
   title: string;
@@ -44,8 +49,22 @@ const defaultValues: TFormValues = {
 export function DateFilterModal({ title, handleClose, isOpen, onSelect }: Props) {
   // plane hooks
   const { t } = useTranslation();
+  const { data: userProfile } = useUserProfile();
+  const calendarSystem = userProfile?.calendar_system ?? "gregorian";
   const { handleSubmit, watch, control } = useForm<TFormValues>({
     defaultValues,
+  });
+  // Each end of the range gets its own visible month, as it gets its own calendar. The Gregorian
+  // branch re-seeds itself from `defaultMonth` when react-day-picker mounts, so this state only
+  // steers the Persian grid; seeding once matches react-day-picker's own behaviour, which does not
+  // follow `selected` as it changes.
+  const [month1, setMonth1] = useState<CalendarMonthParts>(() => {
+    const { year, month } = getCalendarAdapter(calendarSystem).toParts(defaultValues.date1);
+    return { year, month };
+  });
+  const [month2, setMonth2] = useState<CalendarMonthParts>(() => {
+    const { year, month } = getCalendarAdapter(calendarSystem).toParts(defaultValues.date2);
+    return { year, month };
   });
 
   const handleFormSubmit = (formData: TFormValues) => {
@@ -101,16 +120,19 @@ export function DateFilterModal({ title, handleClose, isOpen, onSelect }: Props)
                       const dateValue = getDate(value);
                       const date2Value = getDate(watch("date2"));
                       return (
-                        <Calendar
-                          selected={dateValue}
-                          defaultMonth={dateValue}
-                          onSelect={(date: Date | undefined) => {
+                        <CalendarSurface
+                          system={calendarSystem}
+                          mode="single"
+                          value={dateValue ?? null}
+                          onSelect={(date) => {
                             if (!date) return;
                             onChange(date);
                           }}
-                          mode="single"
+                          month={month1}
+                          onMonthChange={setMonth1}
+                          defaultMonth={dateValue ?? undefined}
                           showOutsideDays
-                          disabled={date2Value ? [{ after: date2Value }] : undefined}
+                          maxDate={date2Value ?? undefined}
                         />
                       );
                     }}
@@ -123,16 +145,19 @@ export function DateFilterModal({ title, handleClose, isOpen, onSelect }: Props)
                         const dateValue = getDate(value);
                         const date1Value = getDate(watch("date1"));
                         return (
-                          <Calendar
-                            selected={dateValue}
-                            defaultMonth={dateValue}
-                            onSelect={(date: Date | undefined) => {
+                          <CalendarSurface
+                            system={calendarSystem}
+                            mode="single"
+                            value={dateValue ?? null}
+                            onSelect={(date) => {
                               if (!date) return;
                               onChange(date);
                             }}
-                            mode="single"
+                            month={month2}
+                            onMonthChange={setMonth2}
+                            defaultMonth={dateValue ?? undefined}
                             showOutsideDays
-                            disabled={date1Value ? [{ before: date1Value }] : undefined}
+                            minDate={date1Value ?? undefined}
                           />
                         );
                       }}

@@ -7,9 +7,12 @@
 import { useState } from "react";
 // ui
 import { useTranslation } from "@plane/i18n";
+import { CalendarSurface, getCalendarAdapter } from "@plane/blocks/property-select";
+import type { CalendarMonthParts } from "@plane/blocks/property-select";
 import { Button } from "@makeplane/propel/components/button";
-import { Calendar } from "@makeplane/propel/components/calendar";
 import { Dialog, DialogActions, DialogBody, DialogContent, DialogMain } from "@makeplane/propel/components/dialog";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 
 export type InboxIssueSnoozeModalProps = {
   isOpen: boolean;
@@ -20,8 +23,17 @@ export type InboxIssueSnoozeModalProps = {
 
 export function InboxIssueSnoozeModal(props: InboxIssueSnoozeModalProps) {
   const { isOpen, handleClose, value, onConfirm } = props;
+  // store hooks
+  const { data: userProfile } = useUserProfile();
+  const calendarSystem = userProfile?.calendar_system ?? "gregorian";
   // states
   const [date, setDate] = useState(value || new Date());
+  // The month the Persian grid shows. The Gregorian branch re-seeds itself from `defaultMonth` on
+  // every mount, so this only steers the Persian one.
+  const [visibleMonth, setVisibleMonth] = useState<CalendarMonthParts>(() => {
+    const { year, month } = getCalendarAdapter(calendarSystem).toParts(value || new Date());
+    return { year, month };
+  });
   //hooks
   const { t } = useTranslation();
 
@@ -35,20 +47,19 @@ export function InboxIssueSnoozeModal(props: InboxIssueSnoozeModalProps) {
       <DialogContent size="xs" aria-label={t("inbox_issue.actions.snooze")}>
         <DialogMain>
           <DialogBody>
-            <Calendar
-              selected={date ? new Date(date) : undefined}
-              defaultMonth={date ? new Date(date) : undefined}
-              onSelect={(date: Date | undefined) => {
-                if (!date) return;
-                setDate(date);
-              }}
+            <CalendarSurface
+              system={calendarSystem}
               mode="single"
+              value={date ? new Date(date) : null}
+              onSelect={(next) => {
+                if (!next) return;
+                setDate(next);
+              }}
+              month={visibleMonth}
+              onMonthChange={setVisibleMonth}
+              defaultMonth={date ? new Date(date) : undefined}
               showOutsideDays
-              disabled={[
-                {
-                  before: new Date(),
-                },
-              ]}
+              minDate={new Date()}
             />
           </DialogBody>
         </DialogMain>

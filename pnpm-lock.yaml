@@ -1156,6 +1156,9 @@ importers:
       '@makeplane/propel':
         specifier: 'catalog:'
         version: 0.7.3(@date-fns/tz@1.4.1)(@types/react@19.2.17)(date-fns@4.1.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(tailwindcss@4.1.17)
+      '@plane/calendar':
+        specifier: workspace:*
+        version: link:../calendar
       '@plane/constants':
         specifier: workspace:*
         version: link:../constants
