@@ -15,6 +15,7 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 # Module imports
 from plane.db.models import FileAsset
@@ -220,6 +221,10 @@ class Profile(TimeAuditModel):
         (SATURDAY, "Saturday"),
     )
 
+    class CalendarSystem(models.TextChoices):
+        GREGORIAN = "gregorian", _("Gregorian")
+        PERSIAN = "persian", _("Persian")
+
     id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True, primary_key=True)
     # User
     user = models.OneToOneField("db.User", on_delete=models.CASCADE, related_name="profile")
@@ -250,6 +255,13 @@ class Profile(TimeAuditModel):
     # language
     language = models.CharField(max_length=255, default="en")
     start_of_the_week = models.PositiveSmallIntegerField(choices=START_OF_THE_WEEK_CHOICES, default=SUNDAY)
+    # How this user sees dates. Storage stays Gregorian regardless of this value — it only
+    # selects which calendar the presentation layer renders.
+    calendar_system = models.CharField(
+        max_length=16,
+        choices=CalendarSystem.choices,
+        default=CalendarSystem.GREGORIAN,
+    )
     goals = models.JSONField(default=dict)
     background_color = models.CharField(max_length=255, default=get_random_color)
 

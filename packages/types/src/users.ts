@@ -22,6 +22,16 @@ export enum EStartOfTheWeek {
   SATURDAY = 6,
 }
 
+/**
+ * @description The calendar system the user sees dates in. Storage stays Gregorian
+ * regardless of this value — it only selects which calendar is rendered.
+ * @enum {string}
+ */
+export enum ECalendarSystem {
+  GREGORIAN = "gregorian",
+  PERSIAN = "persian",
+}
+
 export interface IUserLite {
   avatar_url: string;
   display_name: string;
@@ -82,6 +92,7 @@ export type TUserProfile = {
   created_at: Date | string;
   updated_at: Date | string;
   start_of_the_week: EStartOfTheWeek;
+  calendar_system: ECalendarSystem;
 };
 
 export interface IInstanceAdminStatus {
