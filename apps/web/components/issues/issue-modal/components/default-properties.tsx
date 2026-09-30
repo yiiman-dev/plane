@@ -172,6 +172,7 @@ export const IssueDefaultProperties = observer(function IssueDefaultProperties(p
             placeholder={t("start_date")}
             icon={<CalendarOutline />}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             clearable
             tabIndex={getIndex("start_date")}
             variant="pill-md"
@@ -193,6 +194,7 @@ export const IssueDefaultProperties = observer(function IssueDefaultProperties(p
             placeholder={t("due_date")}
             icon={<CalendarOutline />}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             clearable
             tabIndex={getIndex("target_date")}
             variant="pill-md"

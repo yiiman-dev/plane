@@ -47,6 +47,7 @@ export const SingleDateFilterValueInput = observer(function SingleDateFilterValu
       maxDate={config.max}
       placeholder={EMPTY_FILTER_PLACEHOLDER_TEXT}
       weekStartsOn={userProfile?.start_of_the_week}
+      calendarSystem={userProfile?.calendar_system}
       defaultOpen={!conditionValue}
       disabled={isDisabled}
       variant="pill-lg"

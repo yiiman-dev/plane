@@ -237,6 +237,7 @@ export function CreateApiTokenForm(props: Props) {
                     disabled={neverExpires}
                     clearable
                     weekStartsOn={userProfile?.start_of_the_week}
+                    calendarSystem={userProfile?.calendar_system}
                     variant="pill-md"
                   />
                 )}

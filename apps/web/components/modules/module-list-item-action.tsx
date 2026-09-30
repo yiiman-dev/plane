@@ -149,6 +149,7 @@ export const ModuleListItemAction = observer(function ModuleListItemAction(props
         mergeDates
         placeholder={`${t("start_date")} - ${t("end_date")}`}
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         disabled={isDisabled}
         icon={renderIcon ? undefined : <CalendarOutline aria-hidden="true" />}
       />

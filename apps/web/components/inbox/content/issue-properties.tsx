@@ -161,6 +161,7 @@ export const InboxIssueContentProperties = observer(function InboxIssueContentPr
                   minDate={minDate ?? undefined}
                   disabled={!isEditable}
                   weekStartsOn={userProfile?.start_of_the_week}
+                  calendarSystem={userProfile?.calendar_system}
                   clearable
                   clearLabel={t("common.clear")}
                   variant="select-ghost-md"

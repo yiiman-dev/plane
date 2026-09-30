@@ -152,6 +152,7 @@ export const SubIssuesListItemProperties = observer(function SubIssuesListItemPr
             showTooltip
             tooltipHeading={t("project_cycles.date_range")}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             mergeDates
             side="top"
             align="end"
@@ -177,6 +178,7 @@ export const SubIssuesListItemProperties = observer(function SubIssuesListItemPr
           showTooltip
           tooltipHeading={t("common.order_by.start_date")}
           weekStartsOn={userProfile?.start_of_the_week}
+          calendarSystem={userProfile?.calendar_system}
           side="top"
           align="end"
           variant="pill-sm"
@@ -201,6 +203,7 @@ export const SubIssuesListItemProperties = observer(function SubIssuesListItemPr
           showTooltip
           tooltipHeading={t("common.order_by.due_date")}
           weekStartsOn={userProfile?.start_of_the_week}
+          calendarSystem={userProfile?.calendar_system}
           side="top"
           align="end"
           variant="pill-sm"
