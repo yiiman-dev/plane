@@ -8,7 +8,7 @@ import type { CalendarAdapter, CalendarSystem } from "../types";
 import { gregorianCalendar } from "./gregorian";
 import { isPersianCalendarSupported, persianCalendar } from "./persian";
 
-export { gregorianCalendar, toDatePartsToken } from "./gregorian";
+export { gregorianCalendar } from "./gregorian";
 export { isPersianCalendarSupported, persianCalendar, persianDayCount } from "./persian";
 
 /**
