@@ -13,9 +13,13 @@ import type { CalendarAdapter, CalendarSystem } from "./src/types.ts";
 // `@plane/utils` resolves through its built `dist/`, and `pnpm install` intentionally keeps the
 // dependency one-way (utils -> calendar) so turbo's build graph stays acyclic. Import the source
 // directly here so the demo runs on a clean checkout without a prior build.
-import { formatDateRange } from "../utils/src/datetime.ts";
+import { calculateTimeAgo, formatDateRange, renderFormattedDate } from "../utils/src/datetime.ts";
 
 const adapterFor = (system: CalendarSystem): CalendarAdapter => getCalendarAdapter(resolveCalendarSystem(system));
+
+/** One label plus the same Date rendered in both calendars. */
+const compareRow = (label: string, gregorian: string, persian: string) =>
+  console.log(`  ${label.padEnd(22)} ${gregorian.padEnd(22)} ${persian}`);
 
 const rule = (label = "") => console.log(`\n${"─".repeat(64)}${label ? `\n${label}` : ""}`);
 
@@ -162,4 +166,33 @@ rule("7. Degradation — what an unsupported host does");
   console.log(`  which reads back as Persian ${oorParts.year}/${oorParts.month}/${oorParts.day} — not 1700.`);
   console.log("  The guard refuses rather than extrapolating, so it cannot report a confident wrong year.");
   console.log(`  An unrecognized system string falls back to: ${resolveCalendarSystem("klingon")}`);
+}
+
+/* ------------------------------------------------------------------ 8. the real API */
+
+rule("8. What the product actually calls — packages/utils, with a calendar system threaded in");
+{
+  const now = new Date();
+  const due = new Date(now.getTime() + 3 * 86_400_000);
+
+  compareRow("renderFormattedDate", renderFormattedDate(due), renderFormattedDate(due, undefined, "persian"));
+  compareRow("  (no year)", renderFormattedDate(due, "MMM dd"), renderFormattedDate(due, "MMM dd", "persian"));
+  compareRow("calculateTimeAgo", calculateTimeAgo(due), calculateTimeAgo(due, "persian"));
+  compareRow("formatDateRange", formatDateRange(now, due), formatDateRange(now, due, "persian"));
+
+  console.log("\n  The Gregorian column is what every existing Plane user sees today, unchanged.");
+  console.log("  The Persian column is the same Date, rendered by the same functions.");
+  console.log("  An unrecognized system string falls back to the left column, never to a wrong calendar.");
+}
+
+/* ------------------------------------------------------------------ 9. the boundary */
+
+rule("9. The line that keeps storage Gregorian");
+{
+  const { renderFormattedPayloadDate } = await import("../utils/src/datetime.ts");
+  const d = new Date(2024, 7, 22); // 1 Shahrivar 1403
+  console.log(`  display    renderFormattedDate  -> ${renderFormattedDate(d, undefined, "persian")}`);
+  console.log(`  PERSISTED  renderFormattedPayloadDate -> ${renderFormattedPayloadDate(d)}`);
+  console.log("\n  Persian for a person, yyyy-MM-dd for the database. One Date, two contracts.");
+  console.log("  No filter, query, or API payload in Plane ever sees a Persian value.");
 }

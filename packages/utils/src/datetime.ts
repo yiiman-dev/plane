@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { getCalendarAdapter, resolveCalendarSystem } from "@plane/calendar";
+import { getCalendarAdapter, resolveCalendarSystem, toCalendarFormatOptions } from "@plane/calendar";
 import type { CalendarSystem } from "@plane/calendar";
 import { differenceInDays, format, formatDistanceToNow, isAfter, isEqual, isValid, parseISO } from "date-fns";
 import { isNumber } from "lodash-es";
@@ -15,11 +15,13 @@ import { isNumber } from "lodash-es";
  * @description Returns date in the formatted format. Pass a `system` to render in the user's
  * calendar; omitting it preserves the Gregorian output every existing call site depends on.
  * @param {Date | string} date
- * @param {string} formatToken (optional) // default MMM dd, yyyy — ignored in Persian mode
+ * @param {string} formatToken (optional) // default MMM dd, yyyy — in Persian mode the token is
+ * translated into the adapter's own format options; an unmappable token falls back to the full form
  * @param {CalendarSystem} system (optional) // default gregorian
  * @example renderFormattedDate("2024-01-01", "MM-DD-YYYY") // Jan 01, 2024
  * @example renderFormattedDate("2024-01-01") // Jan 01, 2024
  * @example renderFormattedDate("2024-01-01", undefined, "persian") // ۱۱ دی ۱۴۰۲
+ * @example renderFormattedDate("2024-01-01", "MMM dd", "persian") // ۱۱ دی
  */
 export const renderFormattedDate = (
   date: string | Date | undefined | null,
@@ -44,9 +46,13 @@ export const renderFormattedDate = (
     }
     return formattedDate;
   }
-  // Persian has no date-fns token equivalents, so the token cannot apply. Fall back to the adapter's
-  // long form, which is the Persian equivalent of "MMM dd, yyyy".
-  return adapter.format(parsedDate, { year: "numeric", month: "short", day: "numeric" });
+  // Persian has no date-fns token equivalents, so the token is translated into the adapter's own
+  // semantic options rather than passed through. `toCalendarFormatOptions` covers the tokens Plane
+  // actually passes; anything else is unmapped, and the fallback below mirrors the Gregorian
+  // `try/catch`: an unusable token renders the same full form the caller gets by omitting it,
+  // rather than throwing or rendering an empty string.
+  const formatOptions = toCalendarFormatOptions(formatToken) ?? { year: "numeric", month: "short", day: "numeric" };
+  return adapter.format(parsedDate, formatOptions);
 };
 
 /**

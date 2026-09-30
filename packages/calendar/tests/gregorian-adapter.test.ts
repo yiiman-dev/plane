@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { gregorianCalendar } from "../src/adapters/gregorian";
+import { gregorianCalendar, toCalendarFormatOptions } from "../src/adapters/gregorian";
 
 describe("gregorianCalendar", () => {
   it("reports parts for a known date", () => {
@@ -115,5 +115,29 @@ describe("gregorianCalendar", () => {
 
   it("is always supported", () => {
     expect(gregorianCalendar.isSupported()).toBe(true);
+  });
+});
+
+describe("toCalendarFormatOptions", () => {
+  it("maps the token strings Plane passes to renderFormattedDate", () => {
+    expect(toCalendarFormatOptions("MMM dd, yyyy")).toEqual({ year: "numeric", month: "short", day: "numeric" });
+    expect(toCalendarFormatOptions("MMM dd")).toEqual({ month: "short", day: "numeric" });
+    expect(toCalendarFormatOptions("MMM")).toEqual({ month: "short" });
+    expect(toCalendarFormatOptions("MMM, yyyy")).toEqual({ year: "numeric", month: "short" });
+    expect(toCalendarFormatOptions("MMMM dd")).toEqual({ month: "long", day: "numeric" });
+  });
+
+  it("distinguishes a numeric month from a month name", () => {
+    // "MM" and "MMM" share every character; the table is keyed on the whole token so they cannot
+    // be confused, which a scanner over M/d/y runs could not guarantee.
+    expect(toCalendarFormatOptions("dd/MM/yyyy")).toEqual({ year: "numeric", month: "2-digit", day: "2-digit" });
+  });
+
+  it("returns undefined for anything it does not cover", () => {
+    expect(toCalendarFormatOptions("not-a-token")).toBeUndefined();
+    expect(toCalendarFormatOptions("")).toBeUndefined();
+    // Inherited Object members are not tokens: a plain `table[token]` would return the function.
+    expect(toCalendarFormatOptions("toString")).toBeUndefined();
+    expect(toCalendarFormatOptions("constructor")).toBeUndefined();
   });
 });

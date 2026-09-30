@@ -51,6 +51,61 @@ describe("renderFormattedDate with a calendar system", () => {
   });
 });
 
+// The token is honoured in Persian mode. Before this, the Persian branch ignored the token entirely
+// and always rendered the full year/month/day form, so `renderFormattedDate(d, "MMM dd")` and
+// `renderFormattedDate(d)` produced the same Persian string — a caller asking for a compact date
+// silently got a year, and the Persian layout stopped corresponding to the Gregorian one.
+describe("renderFormattedDate honours the format token in Persian", () => {
+  // 22 August 2024 is 1 Shahrivar 1403.
+  const d = g(2024, 7, 22);
+
+  it("omits the year for the compact token", () => {
+    expect(renderFormattedDate(d, "MMM dd", "persian")).toBe("۱ شهریور");
+    // The Gregorian rendering of the same token, for the shape this is meant to mirror.
+    expect(renderFormattedDate(d, "MMM dd")).toBe("Aug 22");
+  });
+
+  it("leaves the default token's Persian output unchanged", () => {
+    // The no-token call is what ~60 production call sites make. It must not drift.
+    expect(renderFormattedDate(d, undefined, "persian")).toBe("۱ شهریور ۱۴۰۳");
+    // The explicit default token must resolve to the same options, not a different branch.
+    expect(renderFormattedDate(d, "MMM dd, yyyy", "persian")).toBe("۱ شهریور ۱۴۰۳");
+  });
+
+  it("falls back to the full form for an unmappable token", () => {
+    // Mirrors the Gregorian `try/catch` on a bad token: a Persian caller with an unmappable token
+    // gets the full form rather than a throw or an empty string.
+    expect(renderFormattedDate(d, "not-a-token", "persian")).toBe("۱ شهریور ۱۴۰۳");
+    // An inherited Object member is not a token: a bare table lookup would resolve this.
+    expect(renderFormattedDate(d, "toString", "persian")).toBe("۱ شهریور ۱۴۰۳");
+  });
+
+  it("renders the chart-axis tokens", () => {
+    // `apps/web/components/chart/utils.ts` passes exactly these two.
+    expect(renderFormattedDate(d, "MMM", "persian")).toBe("شهریور");
+    expect(renderFormattedDate(d, "MMM, yyyy", "persian")).toBe("شهریور ۱۴۰۳");
+    // Regression pin for the Gregorian side of the same two call sites.
+    expect(renderFormattedDate(d, "MMM")).toBe("Aug");
+    expect(renderFormattedDate(d, "MMM, yyyy")).toBe("Aug, 2024");
+  });
+
+  it("renders the date-picker format tokens", () => {
+    // `packages/blocks/src/property-select/date-range-select.tsx` ships these four as Plane's date
+    // formats. In Persian the field set is honoured; the separator and the field *order* are the
+    // locale's, since the adapter composes its own punctuation.
+    expect(renderFormattedDate(d, "yyyy-MM-dd", "persian")).toBe("۱۴۰۳/۰۶/۰۱");
+    expect(renderFormattedDate(d, "dd/MM/yyyy", "persian")).toBe("۱۴۰۳/۰۶/۰۱");
+    // Regression pin: Gregorian keeps the token's own order and separator exactly.
+    expect(renderFormattedDate(d, "yyyy-MM-dd")).toBe("2024-08-22");
+    expect(renderFormattedDate(d, "dd/MM/yyyy")).toBe("22/08/2024");
+  });
+
+  it("agrees with renderFormattedDateWithoutYear", () => {
+    // Two spellings of the same compact shape must not drift apart.
+    expect(renderFormattedDate(d, "MMM dd", "persian")).toBe(renderFormattedDateWithoutYear(d, "persian"));
+  });
+});
+
 describe("formatDateRange with a calendar system", () => {
   it("is unchanged in Gregorian", () => {
     expect(formatDateRange(g(2025, 0, 24), g(2025, 0, 28))).toBe("Jan 24 - 28, 2025");
