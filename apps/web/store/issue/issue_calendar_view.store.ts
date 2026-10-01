@@ -10,7 +10,7 @@ import { observable, action, makeObservable, runInAction, computed, reaction } f
 import { computedFn } from "mobx-utils";
 import type { ICalendarPayload, ICalendarWeek } from "@plane/types";
 import { EStartOfTheWeek } from "@plane/types";
-import { generateCalendarData, getWeekNumberOfDate } from "@plane/utils";
+import { generateCalendarData, getWeekNumberOfDate, renderFormattedPayloadDate } from "@plane/utils";
 // types
 import type { IIssueRootStore } from "./root.store";
 
@@ -146,9 +146,10 @@ export class CalendarStore implements ICalendarStore {
     if (!this.calendarPayload) return undefined;
 
     const { activeWeekDate } = this.calendarFilters;
+    // The payload is keyed Gregorian and 0-based, so the bucket is the Gregorian month
+    // `activeWeekDate` falls in — the same bucket the store navigates by everywhere else.
     const year = activeWeekDate.getFullYear();
     const month = activeWeekDate.getMonth();
-    const dayOfMonth = activeWeekDate.getDate();
 
     // Check if calendar data exists for this year and month
     const yearData = this.calendarPayload[`y-${year}`];
@@ -157,19 +158,22 @@ export class CalendarStore implements ICalendarStore {
     const monthData = yearData[`m-${month}`];
     if (!monthData) return undefined;
 
-    // Calculate firstDayOfMonth offset (same logic as calendar generation)
-    const startOfWeek = this.rootStore?.rootStore?.user?.userProfile?.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
-    const firstDayOfMonthRaw = new Date(year, month, 1).getDay();
-    const firstDayOfMonth = (firstDayOfMonthRaw - startOfWeek + 7) % 7;
+    // Find the week by the date's own key instead of recomputing the week index from an offset.
+    // The generator pages between `adapter.getMonthStart(...)`, so in a non-Gregorian calendar its
+    // first day is not the 1st of the *Gregorian* month — duplicating that offset math here silently
+    // picked the wrong week for about half of the Persian year (Esfand 1403 at startOfWeek 0:
+    // generator 2, this 4). The weeks are the generator's own cells, so asking them which one holds
+    // the date cannot drift from the layout. At most 6x7 entries, so the scan is free at render time.
+    const dateKey = renderFormattedPayloadDate(activeWeekDate);
+    if (!dateKey) return undefined;
 
-    // Calculate which sequential week this date falls into
-    const weekIndex = Math.floor((dayOfMonth - 1 + firstDayOfMonth) / 7);
-
-    const weekKey = `w-${weekIndex}`;
-    if (!(weekKey in monthData)) {
-      return undefined;
+    for (const week of Object.values(monthData)) {
+      if (dateKey in week) return week;
     }
-    return monthData[weekKey];
+
+    // The date is outside this month's grid, which is a legitimate state (e.g. the filters are
+    // mid-navigation), so return undefined rather than throwing.
+    return undefined;
   }
 
   getStartAndEndDate = computedFn((layout: "week" | "month") => {
