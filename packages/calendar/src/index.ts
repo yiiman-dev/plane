@@ -6,6 +6,7 @@
 
 export * from "./types";
 export * from "./adapters";
+export * from "./labels";
 // The picker is exported from the package root rather than a `./picker` subpath: the `exports` map
 // has a single `"."` entry, so a subpath would need a package.json change, and a subpath into
 // `dist/` would also break the single-entry `tsdown` build.
