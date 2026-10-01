@@ -63,6 +63,26 @@ describe("Gantt weekday table sources", () => {
     }
   });
 
+  it("cannot regenerate the Gantt's tuned Gregorian weekday abbreviations from CLDR", () => {
+    // The Gantt's `generateWeeks` pins these seven strings by hand in
+    // `apps/web/components/gantt-chart/data/index.ts` because no CLDR style produces them:
+    // "Su"/"M"/"T"/"W"/"Th"/"F"/"Sa" are narrower than `short` ("Sun", "Mon"), and `narrow` has only
+    // five distinct values so Saturday/Sunday and Tuesday/Thursday would render as identical columns.
+    // This test is the regression guard: if an adapter change ever widens the Gantt's day columns for
+    // Gregorian users, it fails here first, because the standing rule for this feature is that the
+    // Gregorian path renders byte-identically to before.
+    const pinned = ["Su", "M", "T", "W", "Th", "F", "Sa"];
+
+    expect(pinned).toHaveLength(7);
+    // Distinct per weekday, which is the property `narrow` cannot satisfy.
+    expect(new Set(pinned).size).toBe(7);
+    expect(pinned).not.toEqual(gregorianCalendar.getWeekdayNames("narrow", 0));
+    expect(pinned).not.toEqual(gregorianCalendar.getWeekdayNames("short", 0));
+    // The obvious derivation — narrow plus a disambiguating "u" — produces "Mu", "Tu", "Wu", "Fu",
+    // so the abbreviations genuinely cannot be expressed as a formula over the narrow names.
+    expect(gregorianCalendar.getWeekdayNames("narrow", 0).map((name) => `${name}u`)).not.toEqual(pinned);
+  });
+
   it("returns Persian weekday names, which share no characters with the English ones", () => {
     const names = persianCalendar.getWeekdayNames("long", 6);
     expect(names).toHaveLength(7);
@@ -78,6 +98,22 @@ describe("Gantt month and quarter table sources", () => {
     expect(gregorian).toHaveLength(12);
     expect(gregorian[0]).toBe("Jan");
     expect(gregorian[11]).toBe("Dec");
+  });
+
+  it("disagrees with the Gantt's tuned September abbreviation, which is therefore pinned in the view", () => {
+    // `week-view.ts` prints `months[i].abbreviation` in the week header and `generateQuarters` prints
+    // it in the "Jul - Sept" title, so CLDR's "Sep" would be a visible change. `generateMonths` keeps
+    // "Sept" for Gregorian by overriding this one slot; this test records why the override must exist,
+    // so removing it does not look harmless.
+    const ganttAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+
+    expect(ganttAbbreviations).toHaveLength(12);
+    // Every month but September matches CLDR exactly, which is why only that one is overridden.
+    expect(gregorianCalendar.getMonthNames("short").filter((_, index) => index !== 8)).toEqual(
+      ganttAbbreviations.filter((_, index) => index !== 8)
+    );
+    expect(gregorianCalendar.getMonthNames("short")[8]).toBe("Sep");
+    expect(ganttAbbreviations[8]).toBe("Sept");
   });
 
   it("produces 12 Persian month names in the same 0-based slot order", () => {
