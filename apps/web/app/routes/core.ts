@@ -15,6 +15,11 @@ export const coreRoutes: RouteConfigEntry[] = [
   // Home - Sign In
   layout("./(home)/layout.tsx", [index("./(home)/page.tsx")]),
 
+  // Scratch route for eyeballing the calendar pickers without signing in.
+  route("persian-preview", "./routes/persian-preview/page.tsx"),
+  // Dev-only passthrough so the app's sign-in reaches the real /auth/sign-in/ handler.
+  route("api/login", "./routes/persian-preview/login-proxy.ts"),
+
   // Sign Up
   layout("./(all)/sign-up/layout.tsx", [route("sign-up", "./(all)/sign-up/page.tsx")]),
 
