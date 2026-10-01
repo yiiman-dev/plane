@@ -5,6 +5,10 @@
  */
 
 import { getWeekOfMonth, isValid } from "date-fns";
+// `apps/web` depends on `@plane/blocks`, not `@plane/calendar`; the dependency edge runs
+// blocks → calendar, so importing the adapter through blocks adds no package dependency here.
+import { getCalendarAdapter, resolveCalendarSystem } from "@plane/blocks/property-select";
+import type { CalendarSystem } from "@plane/blocks/property-select";
 import { CHART_X_AXIS_DATE_PROPERTIES, ChartXAxisDateGrouping, TO_CAPITALIZE_PROPERTIES } from "@plane/constants";
 import type { ChartXAxisProperty, TChart, TChartDatum } from "@plane/types";
 import {
@@ -16,7 +20,11 @@ import {
 } from "@plane/utils";
 //
 
-const getDateGroupingName = (date: string, dateGrouping: ChartXAxisDateGrouping): string => {
+const getDateGroupingName = (
+  date: string,
+  dateGrouping: ChartXAxisDateGrouping,
+  system: CalendarSystem = "gregorian"
+): string => {
   if (!date || ["none", "null"].includes(date.toLowerCase())) return "None";
 
   const formattedData = new Date(date);
@@ -24,29 +32,35 @@ const getDateGroupingName = (date: string, dateGrouping: ChartXAxisDateGrouping)
 
   if (!isValidDate) return date;
 
-  const year = formattedData.getFullYear();
-  const currentYear = new Date().getFullYear();
-
-  const isCurrentYear = year === currentYear;
+  const adapter = getCalendarAdapter(resolveCalendarSystem(system));
+  // The current-year comparison must run in the *active* calendar. The Persian year boundary
+  // sits at Nowruz, ~621 years and 3 months off the Gregorian one, so comparing
+  // `getFullYear()` against `new Date().getFullYear()` picks the wrong branch in Persian and
+  // shows a year the user never sees.
+  const year = adapter.toParts(formattedData).year;
+  const isCurrentYear = year === adapter.toParts(new Date()).year;
 
   let parsedName: string | undefined;
 
   switch (dateGrouping) {
     case ChartXAxisDateGrouping.DAY:
-      if (isCurrentYear) parsedName = renderFormattedDateWithoutYear(formattedData);
-      else parsedName = renderFormattedDate(formattedData);
+      if (isCurrentYear) parsedName = renderFormattedDateWithoutYear(formattedData, system);
+      else parsedName = renderFormattedDate(formattedData, undefined, system);
       break;
     case ChartXAxisDateGrouping.WEEK: {
-      const month = renderFormattedDate(formattedData, "MMM");
+      const month = renderFormattedDate(formattedData, "MMM", system);
       parsedName = `${month}, Week ${getWeekOfMonth(formattedData)}`;
       break;
     }
     case ChartXAxisDateGrouping.MONTH:
-      if (isCurrentYear) parsedName = renderFormattedDate(formattedData, "MMM");
-      else parsedName = renderFormattedDate(formattedData, "MMM, yyyy");
+      if (isCurrentYear) parsedName = renderFormattedDate(formattedData, "MMM", system);
+      else parsedName = renderFormattedDate(formattedData, "MMM, yyyy", system);
       break;
     case ChartXAxisDateGrouping.YEAR:
-      parsedName = `${year}`;
+      // 2025 → ۱۴۰۴. This is the most visible change on the chart, and it is also the reason
+      // `year` above had to be adapter-derived rather than `getFullYear()`. For Gregorian the
+      // adapter formats `{ year: "numeric" }` to the same digits `${year}` produced.
+      parsedName = adapter.format(formattedData, { year: "numeric" });
       break;
     default:
       parsedName = date;
@@ -59,7 +73,8 @@ export const parseChartData = (
   data: TChart | null | undefined,
   xAxisProperty: ChartXAxisProperty | null | undefined,
   groupByProperty: ChartXAxisProperty | null | undefined,
-  xAxisDateGrouping: ChartXAxisDateGrouping | null | undefined
+  xAxisDateGrouping: ChartXAxisDateGrouping | null | undefined,
+  system: CalendarSystem = "gregorian"
 ): TChart => {
   if (!data) {
     return {
@@ -83,7 +98,7 @@ export const parseChartData = (
 
       // parse timestamp to visual date if xAxisProperty is in WIDGET_X_AXIS_DATE_PROPERTIES
       if (CHART_X_AXIS_DATE_PROPERTIES.includes(xAxisProperty)) {
-        datum.name = getDateGroupingName(datum.name, xAxisDateGrouping ?? ChartXAxisDateGrouping.DAY);
+        datum.name = getDateGroupingName(datum.name, xAxisDateGrouping ?? ChartXAxisDateGrouping.DAY, system);
       }
     }
 
@@ -104,7 +119,11 @@ export const parseChartData = (
 
     if (CHART_X_AXIS_DATE_PROPERTIES.includes(groupByProperty)) {
       Object.keys(updatedSchema).forEach((key) => {
-        updatedSchema[key] = getDateGroupingName(updatedSchema[key], xAxisDateGrouping ?? ChartXAxisDateGrouping.DAY);
+        updatedSchema[key] = getDateGroupingName(
+          updatedSchema[key],
+          xAxisDateGrouping ?? ChartXAxisDateGrouping.DAY,
+          system
+        );
       });
     }
   }

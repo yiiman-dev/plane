@@ -5,10 +5,13 @@
  */
 
 import React from "react";
+import { observer } from "mobx-react";
 // plane imports
 import { AreaChart } from "@plane/blocks/charts/area-chart";
 import type { TChartData, TModuleCompletionChartDistribution } from "@plane/types";
 import { renderFormattedDateWithoutYear } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 
 type Props = {
   distribution: TModuleCompletionChartDistribution;
@@ -17,9 +20,19 @@ type Props = {
   plotTitle?: string;
 };
 
-function ProgressChart({ distribution, totalIssues, className = "", plotTitle = "work items" }: Props) {
+// The burndown x-axis renders in the user's calendar, so the labels need the profile's system.
+// Wrapped in `observer` because the profile store loads asynchronously: a plain function
+// component reads `calendarSystem` without subscribing and would keep rendering Gregorian
+// labels if the profile landed after this chart mounted.
+const ProgressChart = observer(function ProgressChart({
+  distribution,
+  totalIssues,
+  className = "",
+  plotTitle = "work items",
+}: Props) {
+  const { calendarSystem } = useUserProfile();
   const chartData: TChartData<string, string>[] = Object.keys(distribution ?? []).map((key, index) => ({
-    name: renderFormattedDateWithoutYear(key),
+    name: renderFormattedDateWithoutYear(key, calendarSystem),
     current: distribution[key] ?? 0,
     ideal: totalIssues * (1 - index / (Object.keys(distribution ?? []).length - 1)),
   }));
@@ -71,6 +84,6 @@ function ProgressChart({ distribution, totalIssues, className = "", plotTitle = 
       />
     </div>
   );
-}
+});
 
 export default ProgressChart;
