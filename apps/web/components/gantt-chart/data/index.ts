@@ -24,6 +24,26 @@ import type { CalendarAdapter } from "@plane/blocks/property-select";
 const GREGORIAN_ADAPTER = getCalendarAdapter("gregorian");
 
 /**
+ * The seven Gregorian weekday abbreviations the Gantt has always rendered, indexed by the absolute
+ * weekday (`Date.getDay()`). An explicit lookup, not a formula: CLDR offers no style that
+ * regenerates these. `narrow` is only 5 distinct values — "S" is both Sunday and Saturday, "T" is both
+ * Tuesday and Thursday — so Sunday/Saturday and Tuesday/Thursday would render as identical columns.
+ * `short` is wider still ("Sun", "Mon"). The originals were hand-tuned to fit the ~60px day columns,
+ * and the standing rule for this feature is that the Gregorian path renders byte-identically to before,
+ * so they are pinned here rather than derived.
+ */
+const GREGORIAN_WEEKDAY_ABBREVIATIONS = ["Su", "M", "T", "W", "Th", "F", "Sa"] as const;
+
+/**
+ * The one Gregorian month abbreviation CLDR disagrees with: the hand-written table used "Sept" for
+ * September, `getMonthNames("short")` gives "Sep". Both `week-view.ts` (the week header, "Sept 2025")
+ * and `generateQuarters` (the "Jul - Sept" quarter title) print `abbreviation`, so this is visible.
+ * Every other month matches the CLDR short form exactly, which is why this is a single-entry override
+ * rather than a second twelve-element table.
+ */
+const GREGORIAN_SEPTEMBER_ABBREVIATION = "Sept";
+
+/**
  * Seven weekday rows, rotated so column 0 is the user's first day of the week.
  *
  * `key` stays the **absolute** weekday index (`Date.getDay()`'s 0 = Sunday … 6 = Saturday) rather
@@ -31,10 +51,15 @@ const GREGORIAN_ADAPTER = getCalendarAdapter("gregorian");
  * `chart/views/week.tsx` has to know which *day* a column is, and a key that tracked the position
  * would report Saturday for the first column the moment the week started on Saturday.
  *
- * `abbreviation` reads the CLDR short form ("Sun", "Sat") rather than the narrow one: en-US narrow
- * collapses Tuesday/Thursday to "T" and Saturday/Sunday to "S", and a Gantt axis has to tell those
- * columns apart. Persian has no case and no narrower ASCII form, so the short form is also all
- * CLDR offers there.
+ * `abbreviation` is the CLDR short form for Persian ("شن"), but for Gregorian it stays the hand-tuned
+ * table this Gantt has always rendered. The old literals were "Su", "M", "T", "W", "Th", "F", "Sa" —
+ * narrower than even the short form, because the Gantt's day columns are ~60px wide and "Sunday" does
+ * not fit. CLDR cannot regenerate them: the narrow style collapses to five distinct values ("S" for
+ * both Sunday and Saturday, "T" for both Tuesday and Thursday), so two columns would render
+ * identically, and the short style is what the table already replaced. Hence the explicit lookup,
+ * indexed by the absolute weekday, with the position-independent `key` doing the rotation.
+ *
+ * Persian has no case and no narrower ASCII form, so its short names are also all CLDR offers.
  */
 export const generateWeeks = (
   startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY,
@@ -43,12 +68,16 @@ export const generateWeeks = (
   const shortTitles = adapter.getWeekdayNames("short", startOfWeek);
   const titles = adapter.getWeekdayNames("long", startOfWeek);
 
-  return shortTitles.map((shortTitle, index) => ({
-    key: (startOfWeek + index) % 7,
-    shortTitle,
-    title: titles[index] ?? shortTitle,
-    abbreviation: shortTitle,
-  }));
+  return shortTitles.map((shortTitle, index) => {
+    const key = (startOfWeek + index) % 7;
+
+    return {
+      key,
+      shortTitle,
+      title: titles[index] ?? shortTitle,
+      abbreviation: adapter.system === "persian" ? shortTitle : (GREGORIAN_WEEKDAY_ABBREVIATIONS[key] ?? shortTitle),
+    };
+  });
 };
 
 /**
@@ -66,8 +95,10 @@ export const generateMonths = (adapter: CalendarAdapter = GREGORIAN_ADAPTER): We
     shortTitle,
     title: titles[index] ?? shortTitle,
     // The Gantt's month titles read the short form: the header prints `abbreviation` next to the
-    // year ("Jan 2025"), and the short form is what the hand-written table used.
-    abbreviation: shortTitle,
+    // year ("Jan 2025"), and the short form is what the hand-written table used. September is the
+    // one month CLDR abbreviates differently from the old table — "Sep" vs the "Sept" users see in
+    // the week header and in the "Jul - Sept" quarter title — so it is restored for Gregorian only.
+    abbreviation: adapter.system === "persian" || index !== 8 ? shortTitle : GREGORIAN_SEPTEMBER_ABBREVIATION,
   }));
 };
 
