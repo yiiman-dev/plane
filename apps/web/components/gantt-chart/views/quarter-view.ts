@@ -6,10 +6,17 @@
 
 //
 import type { ChartDataType } from "@plane/types";
-import { quarters } from "../data";
+import { generateQuarters } from "../data";
 import { getNumberOfDaysBetweenTwoDates } from "./helpers";
 import type { IMonthBlock } from "./month-view";
 import { getMonthsBetweenTwoDates } from "./month-view";
+
+/**
+ * The three-month groups each quarter block is titled from. Under the Persian adapter these are
+ * seasons rather than numbered quarters; which adapter is used is threaded in by task 6, so this
+ * still resolves to the Gregorian rows.
+ */
+const quarters = generateQuarters();
 
 export interface IQuarterMonthBlock {
   children: IMonthBlock[];

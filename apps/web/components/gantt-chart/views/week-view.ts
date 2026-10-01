@@ -7,7 +7,7 @@
 //
 import type { ChartDataType } from "@plane/types";
 import { EStartOfTheWeek } from "@plane/types";
-import { months, generateWeeks } from "../data";
+import { generateMonths, generateWeeks } from "../data";
 import { getNumberOfDaysBetweenTwoDates, getWeekNumberByDate } from "./helpers";
 export interface IDayBlock {
   date: Date;
@@ -145,6 +145,9 @@ export const getWeeksBetweenTwoDates = (
   const diff = (day + 7 - startOfWeek) % 7; // Calculate days to subtract to get to startOfWeek
   currentDate.setDate(currentDate.getDate() - diff);
 
+  // `currentDate` is advanced by `setDate` at the bottom of the loop, so the rule's "not modified
+  // in this loop" reading is a false positive — it does not track mutation through method calls.
+  // oxlint-disable-next-line no-unmodified-loop-condition
   while (currentDate <= endDate) {
     const weekStartDate = new Date(currentDate.getTime());
     const weekEndDate = new Date(currentDate.getTime() + 6 * 24 * 60 * 60 * 1000);
@@ -173,7 +176,7 @@ export const getWeeksBetweenTwoDates = (
       endYear: yearAtEndOfTheWeek,
       startDate: weekStartDate,
       endDate: weekEndDate,
-      today: today >= weekStartDate && today <= weekEndDate ? true : false,
+      today: today >= weekStartDate && today <= weekEndDate,
     });
 
     currentDate.setDate(currentDate.getDate() + 7);
@@ -187,6 +190,13 @@ export const getWeeksBetweenTwoDates = (
  * @param startDate
  * @returns
  */
+/**
+ * The month rows, used to title each week block. Built from the Gregorian adapter until the user's
+ * calendar system is threaded in from the store, so the titles are byte-identical to the English
+ * ones this file used before the tables moved to `../data`.
+ */
+const months = generateMonths();
+
 const populateDaysForWeek = (startDate: Date, startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY): IDayBlock[] => {
   const currentDate = new Date(startDate);
   const days: IDayBlock[] = [];

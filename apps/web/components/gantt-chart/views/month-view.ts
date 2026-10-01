@@ -8,10 +8,17 @@ import { cloneDeep, uniqBy } from "lodash-es";
 // plane imports
 import type { ChartDataType } from "@plane/types";
 // local imports
-import { months } from "../data";
+import { generateMonths } from "../data";
 import { getNumberOfDaysBetweenTwoDates, getNumberOfDaysInMonth } from "./helpers";
 import type { IWeekBlock } from "./week-view";
 import { getWeeksBetweenTwoDates } from "./week-view";
+
+/**
+ * The month rows each month block is titled from, indexed by the still-Gregorian
+ * `Date.getMonth()`. Threading the user's calendar adapter through `generateMonthChart` is task 6;
+ * until then this is the English table the Gantt has always rendered.
+ */
+const months = generateMonths();
 
 export interface IMonthBlock {
   today: boolean;
@@ -138,6 +145,9 @@ export const getMonthsBetweenTwoDates = (startDate: Date, endDate: Date): IMonth
 
   const currentDate = new Date(startYear, startMonth);
 
+  // `currentDate` is advanced by `setDate` at the bottom of the loop, so the rule's "not modified
+  // in this loop" reading is a false positive — it does not track mutation through method calls.
+  // oxlint-disable-next-line no-unmodified-loop-condition
   while (currentDate <= endDate) {
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth();
