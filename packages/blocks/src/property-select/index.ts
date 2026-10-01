@@ -18,7 +18,7 @@ export {
   resolveCalendarSystem,
   weekdayNames,
 } from "@plane/calendar";
-export type { CalendarMonthParts, CalendarSurfaceProps, CalendarSystem } from "@plane/calendar";
+export type { CalendarAdapter, CalendarMonthParts, CalendarSurfaceProps, CalendarSystem } from "@plane/calendar";
 export { CycleSelect } from "./cycle-select";
 export type { CycleOption, CycleSelectProps } from "./cycle-select";
 export { DateSelect } from "./date-select";
