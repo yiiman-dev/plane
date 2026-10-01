@@ -16,6 +16,7 @@ import type { IChartResponse, TChartData } from "@plane/types";
 import { renderFormattedDate } from "@plane/utils";
 // hooks
 import { useAnalytics } from "@/hooks/store/use-analytics";
+import { useUserProfile } from "@/hooks/store/user";
 // services
 import { AnalyticsService } from "@/services/analytics.service";
 // plane web components
@@ -35,6 +36,7 @@ const CreatedVsResolved = observer(function CreatedVsResolved() {
   } = useAnalytics();
   const params = useParams();
   const { t } = useTranslation();
+  const { calendarSystem } = useUserProfile();
   const workspaceSlug = params.workspaceSlug.toString();
   const { data: createdVsResolvedData, isLoading: isCreatedVsResolvedLoading } = useSWR(
     `created-vs-resolved-${workspaceSlug}-${selectedDuration}-${selectedProjects}-${selectedCycle}-${selectedModule}-${isPeekView}-${isEpic}`,
@@ -57,9 +59,9 @@ const CreatedVsResolved = observer(function CreatedVsResolved() {
     return createdVsResolvedData.data.map((datum) => ({
       ...datum,
       [datum.key]: datum.count,
-      name: renderFormattedDate(datum.key) ?? datum.key,
+      name: renderFormattedDate(datum.key, undefined, calendarSystem) ?? datum.key,
     }));
-  }, [createdVsResolvedData]);
+  }, [calendarSystem, createdVsResolvedData]);
 
   const areas = useMemo(
     () => [
