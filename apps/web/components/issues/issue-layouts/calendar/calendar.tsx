@@ -22,12 +22,13 @@ import type {
 import { EIssuesStoreType, EIssueLayoutTypes } from "@plane/types";
 // ui
 import { Spinner } from "@plane/blocks/spinner";
+import { getCalendarAdapter, monthName, resolveCalendarSystem } from "@plane/blocks/property-select";
 import { renderFormattedPayloadDate, cn } from "@plane/utils";
 // constants
-import { MONTHS_LIST } from "@plane/constants";
 // helpers
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
+import { useUserProfile } from "@/hooks/store/user";
 import useSize from "@/hooks/use-window-size";
 // store
 import type { ICycleIssuesFilter } from "@/store/issue/cycle";
@@ -42,6 +43,22 @@ import { CalendarHeader } from "./header";
 import { CalendarIssueBlocks } from "./issue-blocks";
 import { CalendarWeekDays } from "./week-days";
 import { CalendarWeekHeader } from "./week-header";
+
+/**
+ * The mobile heading above the selected day's issues.
+ *
+ * Hoisted because the mobile layout renders it in two places and the month name is no longer a
+ * constant lookup: it is read from the user's calendar, so it has to go through the adapter.
+ */
+const MobileSelectedDateTitle = ({ date }: { date: Date }) => {
+  const { data: userProfile } = useUserProfile();
+  const adapter = getCalendarAdapter(resolveCalendarSystem(userProfile?.calendar_system));
+  const parts = adapter.toParts(date);
+
+  return (
+    <p className="p-4 text-18 font-semibold">{`${parts.day} ${monthName(adapter, parts.month)}, ${parts.year}`}</p>
+  );
+};
 
 type Props = {
   issuesFilterStore: IProjectIssuesFilter | IModuleIssuesFilter | ICycleIssuesFilter | IProjectViewIssuesFilter;
@@ -154,13 +171,16 @@ export const CalendarChart = observer(function CalendarChart(props: Props) {
               {layout === "month" && (
                 <div className="grid h-full w-full grid-cols-1 divide-y-[0.5px] divide-subtle-1">
                   {allWeeksOfActiveMonth &&
-                    Object.values(allWeeksOfActiveMonth).map((week: ICalendarWeek, weekIndex) => (
+                    // Keyed on the week's first day rather than its position: the position is an
+                    // array index, which is what `no-array-index-key` warns about, and the day's
+                    // payload key is just as unique within a month and stable across renders.
+                    Object.values(allWeeksOfActiveMonth).map((week: ICalendarWeek) => (
                       <CalendarWeekDays
                         selectedDate={selectedDate}
                         setSelectedDate={setSelectedDate}
                         handleDragAndDrop={handleDragAndDrop}
                         issuesFilterStore={issuesFilterStore}
-                        key={weekIndex}
+                        key={Object.keys(week)[0]}
                         week={week}
                         issues={issues}
                         groupedIssueIds={groupedIssueIds}
@@ -205,11 +225,7 @@ export const CalendarChart = observer(function CalendarChart(props: Props) {
 
             {/* mobile view */}
             <div className="md:hidden">
-              <p className="p-4 text-18 font-semibold">
-                {`${selectedDate.getDate()} ${
-                  MONTHS_LIST[selectedDate.getMonth() + 1].title
-                }, ${selectedDate.getFullYear()}`}
-              </p>
+              <MobileSelectedDateTitle date={selectedDate} />
               <CalendarIssueBlocks
                 date={selectedDate}
                 issueIdList={issueIdList}
@@ -233,11 +249,7 @@ export const CalendarChart = observer(function CalendarChart(props: Props) {
 
         {/* mobile view */}
         <div className="md:hidden">
-          <p className="p-4 text-18 font-semibold">
-            {`${selectedDate.getDate()} ${
-              MONTHS_LIST[selectedDate.getMonth() + 1].title
-            }, ${selectedDate.getFullYear()}`}
-          </p>
+          <MobileSelectedDateTitle date={selectedDate} />
           <CalendarIssueBlocks
             date={selectedDate}
             issueIdList={issueIdList}

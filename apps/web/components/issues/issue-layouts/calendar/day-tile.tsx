@@ -15,10 +15,16 @@ import type { TGroupedIssues, TIssue, TIssueMap, TPaginationData, ICalendarDate 
 // ui
 // components
 import { cn, renderFormattedPayloadDate } from "@plane/utils";
+import {
+  getCalendarAdapter,
+  isWeekend as isWeekendDay,
+  monthName,
+  resolveCalendarSystem,
+} from "@plane/blocks/property-select";
 import { highlightIssueOnDrop } from "@/components/issues/issue-layouts/utils";
 // helpers
-import { MONTHS_LIST } from "@plane/constants";
-// helpers
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 // types
 import type { ICycleIssuesFilter } from "@/store/issue/cycle";
 import type { IModuleIssuesFilter } from "@/store/issue/module";
@@ -76,6 +82,10 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
   } = props;
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  const { data: userProfile } = useUserProfile();
+
+  const adapter = getCalendarAdapter(resolveCalendarSystem(userProfile?.calendar_system));
 
   const calendarLayout = issuesFilterStore?.issueFilters?.displayFilters?.calendar?.layout ?? "month";
 
@@ -138,8 +148,16 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
   const isToday = date.date.toDateString() === new Date().toDateString();
   const isSelectedDate = date.date.toDateString() == selectedDate.toDateString();
 
-  const isWeekend = [0, 6].includes(date.date.getDay());
+  // Aliased on import: this component's own `isWeekend` below is a *value*, and importing the
+  // helper under its own name would shadow it. The weekend is the boundary of the user's week, so
+  // it follows `start_of_the_week` rather than being the Sat/Sun literal it used to be.
+  const isWeekend = isWeekendDay(date.date, userProfile?.start_of_the_week);
   const isMonthLayout = calendarLayout === "month";
+
+  // The month a tile's day starts is the *calendar* month, so the "1st" marker has to fire on the
+  // user's month boundary — in Persian the 1st of a month is frequently the 22nd or 23rd of the
+  // preceding Gregorian month, and `getDate() === 1` would miss it entirely.
+  const dateParts = adapter.toParts(date.date);
 
   const normalBackground = isWeekend ? "bg-layer-1" : "bg-layer-transparent";
   const draggingOverBackground = isWeekend ? "bg-layer-1" : "bg-layer-transparent-hover";
@@ -157,7 +175,7 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
               : "font-medium" // if week layout, highlight all days
           } ${isWeekend ? "bg-layer-1" : "bg-layer-transparent"} `}
         >
-          {date.date.getDate() === 1 && MONTHS_LIST[date.date.getMonth() + 1].shortTitle + " "}
+          {dateParts.day === 1 && monthName(adapter, dateParts.month, "short") + " "}
           {isToday ? (
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent-primary text-on-color">
               {date.date.getDate()}
