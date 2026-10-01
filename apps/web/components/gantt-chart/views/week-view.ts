@@ -5,10 +5,11 @@
  */
 
 //
+import type { CalendarAdapter } from "@plane/blocks/property-select";
 import type { ChartDataType } from "@plane/types";
 import { EStartOfTheWeek } from "@plane/types";
 import { generateMonths, generateWeeks } from "../data";
-import { getNumberOfDaysBetweenTwoDates, getWeekNumberByDate } from "./helpers";
+import { defaultCalendarAdapter, getNumberOfDaysBetweenTwoDates, getWeekNumberByDate } from "./helpers";
 export interface IDayBlock {
   date: Date;
   day: number;
@@ -49,7 +50,8 @@ const generateWeekChart = (
   weekPayload: ChartDataType,
   side: null | "left" | "right",
   targetDate?: Date,
-  startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY
+  startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY,
+  adapter: CalendarAdapter = defaultCalendarAdapter()
 ) => {
   let renderState = weekPayload;
 
@@ -68,7 +70,7 @@ const generateWeekChart = (
     minusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - range, currentDate.getDate());
     plusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + range, currentDate.getDate());
 
-    if (minusDate && plusDate) filteredDates = getWeeksBetweenTwoDates(minusDate, plusDate, true, startOfWeek);
+    if (minusDate && plusDate) filteredDates = getWeeksBetweenTwoDates(minusDate, plusDate, true, startOfWeek, adapter);
 
     startDate = filteredDates[0].startDate;
     endDate = filteredDates[filteredDates.length - 1].endDate;
@@ -89,7 +91,7 @@ const generateWeekChart = (
     minusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - range, 1);
     plusDate = new Date(chartStartDate.getFullYear(), chartStartDate.getMonth(), chartStartDate.getDate() - 1);
 
-    if (minusDate && plusDate) filteredDates = getWeeksBetweenTwoDates(minusDate, plusDate, true, startOfWeek);
+    if (minusDate && plusDate) filteredDates = getWeeksBetweenTwoDates(minusDate, plusDate, true, startOfWeek, adapter);
 
     startDate = filteredDates[0].startDate;
     endDate = new Date(chartStartDate.getFullYear(), chartStartDate.getMonth(), chartStartDate.getDate() - 1);
@@ -106,7 +108,7 @@ const generateWeekChart = (
     minusDate = new Date(chartEndDate.getFullYear(), chartEndDate.getMonth(), chartEndDate.getDate() + 1);
     plusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + range, 1);
 
-    if (minusDate && plusDate) filteredDates = getWeeksBetweenTwoDates(minusDate, plusDate, true, startOfWeek);
+    if (minusDate && plusDate) filteredDates = getWeeksBetweenTwoDates(minusDate, plusDate, true, startOfWeek, adapter);
 
     startDate = new Date(chartEndDate.getFullYear(), chartEndDate.getMonth(), chartEndDate.getDate() + 1);
     endDate = filteredDates[filteredDates.length - 1].endDate;
@@ -133,9 +135,14 @@ export const getWeeksBetweenTwoDates = (
   startDate: Date,
   endDate: Date,
   shouldPopulateDaysForWeek: boolean = true,
-  startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY
+  startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY,
+  adapter: CalendarAdapter = defaultCalendarAdapter()
 ): IWeekBlock[] => {
   const weeks: IWeekBlock[] = [];
+
+  // The month rows each week block is titled from, rebuilt per call because they follow the
+  // adapter's month names. `generateMonths` is 0-based, so a calendar month `m` indexes row `m - 1`.
+  const months = generateMonths(adapter);
 
   const currentDate = new Date(startDate.getTime());
   const today = new Date();
@@ -152,20 +159,28 @@ export const getWeeksBetweenTwoDates = (
     const weekStartDate = new Date(currentDate.getTime());
     const weekEndDate = new Date(currentDate.getTime() + 6 * 24 * 60 * 60 * 1000);
 
-    const monthAtStartOfTheWeek = weekStartDate.getMonth();
-    const yearAtStartOfTheWeek = weekStartDate.getFullYear();
-    const monthAtEndOfTheWeek = weekEndDate.getMonth();
-    const yearAtEndOfTheWeek = weekEndDate.getFullYear();
+    // The adapter's numbering, not `Date.getMonth()`: a Persian month 12 is month 12 of the
+    // Persian year, and reading the Gregorian index here would title every week with the wrong
+    // name. `parts.month` is 1-based, so the row into the 0-based `months` table is `month - 1`.
+    const startParts = adapter.toParts(weekStartDate);
+    const endParts = adapter.toParts(weekEndDate);
+
+    const monthAtStartOfTheWeek = startParts.month - 1;
+    const yearAtStartOfTheWeek = startParts.year;
+    const monthAtEndOfTheWeek = endParts.month - 1;
+    const yearAtEndOfTheWeek = endParts.year;
 
     const weekNumber = getWeekNumberByDate(currentDate);
 
     weeks.push({
-      children: shouldPopulateDaysForWeek ? populateDaysForWeek(weekStartDate, startOfWeek) : undefined,
+      children: shouldPopulateDaysForWeek ? populateDaysForWeek(weekStartDate, startOfWeek, adapter) : undefined,
       weekNumber,
       weekData: {
         shortTitle: `w${weekNumber}`,
         title: `Week ${weekNumber}`,
       },
+      // Byte-identical under Gregorian: `toParts` reports `getMonth() + 1` and `getFullYear()`, so
+      // the row index and year are the ones the old `Date.getMonth()` lookup produced.
       title:
         monthAtStartOfTheWeek === monthAtEndOfTheWeek
           ? `${months[monthAtStartOfTheWeek].abbreviation} ${yearAtStartOfTheWeek}`
@@ -190,18 +205,15 @@ export const getWeeksBetweenTwoDates = (
  * @param startDate
  * @returns
  */
-/**
- * The month rows, used to title each week block. Built from the Gregorian adapter until the user's
- * calendar system is threaded in from the store, so the titles are byte-identical to the English
- * ones this file used before the tables moved to `../data`.
- */
-const months = generateMonths();
-
-const populateDaysForWeek = (startDate: Date, startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY): IDayBlock[] => {
+const populateDaysForWeek = (
+  startDate: Date,
+  startOfWeek: EStartOfTheWeek = EStartOfTheWeek.SUNDAY,
+  adapter: CalendarAdapter = defaultCalendarAdapter()
+): IDayBlock[] => {
   const currentDate = new Date(startDate);
   const days: IDayBlock[] = [];
   const today = new Date();
-  const weekDays = generateWeeks(startOfWeek);
+  const weekDays = generateWeeks(startOfWeek, adapter);
 
   for (let i = 0; i < 7; i++) {
     days.push({

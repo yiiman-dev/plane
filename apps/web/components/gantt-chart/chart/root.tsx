@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { observer } from "mobx-react";
 import { createPortal } from "react-dom";
 // plane imports
+import { getCalendarAdapter, resolveCalendarSystem } from "@plane/blocks/property-select";
 // components
 import type { ChartDataType, IBlockUpdateData, IBlockUpdateDependencyData, TGanttViews } from "@plane/types";
 import { cn } from "@plane/utils";
@@ -91,7 +92,7 @@ export const ChartViewRoot = observer(function ChartViewRoot(props: ChartViewRoo
     updateRenderView,
     updateAllBlocksOnChartChangeWhileDragging,
   } = useTimeLineChartStore();
-  const { data } = useUserProfile();
+  const { data, calendarSystem } = useUserProfile();
   const startOfWeek = data?.start_of_the_week;
 
   const updateCurrentViewRenderPayload = (side: null | "left" | "right", view: TGanttViews, targetDate?: Date) => {
@@ -104,7 +105,17 @@ export const ChartViewRoot = observer(function ChartViewRoot(props: ChartViewRoo
     if (selectedCurrentViewData === undefined) return;
 
     const currentViewHelpers = timelineViewHelpers[selectedCurrentView];
-    const currentRender = currentViewHelpers.generateChart(selectedCurrentViewData, side, targetDate, startOfWeek);
+    // Resolved here rather than in each view: the store exposes a system, the generators take an
+    // adapter, and this is the single funnel both the initial render and the infinite-scroll
+    // handlers go through. `getCalendarAdapter` also falls back to Gregorian on a runtime without
+    // Persian support, so an unsupported request degrades to the labels the user has today.
+    const currentRender = currentViewHelpers.generateChart(
+      selectedCurrentViewData,
+      side,
+      targetDate,
+      startOfWeek,
+      getCalendarAdapter(resolveCalendarSystem(calendarSystem))
+    );
     const mergeRenderPayloads = currentViewHelpers.mergeRenderPayloads as (
       a: IWeekBlock[] | IMonthView | IMonthBlock[],
       b: IWeekBlock[] | IMonthView | IMonthBlock[]

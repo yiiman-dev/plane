@@ -5,10 +5,13 @@
  */
 
 import { observer } from "mobx-react";
+// calendar labels come through `@plane/blocks` — `apps/web` has no `@plane/calendar` dependency
+import { getCalendarAdapter, resolveCalendarSystem } from "@plane/blocks/property-select";
 // plane utils
 import { cn } from "@plane/utils";
 // hooks
 import { useTimeLineChartStore } from "@/hooks/use-timeline-chart";
+import { useUserProfile } from "@/hooks/store/user";
 //
 import { HEADER_HEIGHT, SIDEBAR_WIDTH } from "../../constants";
 import type { IMonthBlock, IQuarterMonthBlock } from "../../views";
@@ -16,9 +19,16 @@ import { groupMonthsToQuarters } from "../../views";
 
 export const QuarterChartView = observer(function QuarterChartView(_props: any) {
   const { currentViewData, renderView } = useTimeLineChartStore();
+  // The grouping runs at render time rather than in the generator, so it re-derives the adapter
+  // from the profile instead of inheriting one — otherwise the quarter titles here would ignore the
+  // user's calendar system while the month blocks underneath them followed it.
+  const { calendarSystem } = useUserProfile();
   const monthBlocks: IMonthBlock[] = renderView;
 
-  const quarterBlocks: IQuarterMonthBlock[] = groupMonthsToQuarters(monthBlocks);
+  const quarterBlocks: IQuarterMonthBlock[] = groupMonthsToQuarters(
+    monthBlocks,
+    getCalendarAdapter(resolveCalendarSystem(calendarSystem))
+  );
 
   return (
     <div className={`absolute top-0 left-0 flex h-max min-h-full w-max`}>
