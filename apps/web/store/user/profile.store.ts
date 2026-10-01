@@ -27,6 +27,8 @@ export interface IUserProfileStore {
   isLoading: boolean;
   error: TError | undefined;
   data: TUserProfile;
+  // getters
+  calendarSystem: ECalendarSystem;
   // actions
   fetchUserProfile: () => Promise<TUserProfile | undefined>;
   updateUserProfile: (data: Partial<TUserProfile>) => Promise<TUserProfile | undefined>;
@@ -86,6 +88,15 @@ export class ProfileStore implements IUserProfileStore {
     });
     // services
     this.userService = new UserService();
+  }
+
+  // derived values
+  /**
+   * Narrowed so a malformed or pre-migration API response cannot put the UI into a state no
+   * adapter handles — `getCalendarAdapter` also falls back, but components read this directly.
+   */
+  get calendarSystem(): ECalendarSystem {
+    return this.data.calendar_system === ECalendarSystem.PERSIAN ? ECalendarSystem.PERSIAN : ECalendarSystem.GREGORIAN;
   }
 
   // helper action
