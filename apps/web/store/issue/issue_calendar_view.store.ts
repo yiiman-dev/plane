@@ -14,6 +14,12 @@ import { generateCalendarData, getWeekNumberOfDate } from "@plane/utils";
 // types
 import type { IIssueRootStore } from "./root.store";
 
+/**
+ * The 4th argument of `generateCalendarData`. Named structurally rather than imported from
+ * `@plane/calendar`, which `apps/web` deliberately does not depend on.
+ */
+type CalendarSystemArg = Parameters<typeof generateCalendarData>[3];
+
 export interface ICalendarStore {
   calendarFilters: {
     activeMonthDate: Date;
@@ -74,14 +80,32 @@ export class CalendarStore implements ICalendarStore {
     this.rootStore = _rootStore;
     this.initCalendar();
 
-    // Watch for changes in startOfWeek preference and regenerate calendar
+    // Watch for changes in startOfWeek preference and the user's calendar system, and regenerate
+    // the calendar. Reading both inside one data function is deliberate: MobX tracks every
+    // observable touched while the data function evaluates, so this reaction now depends on
+    // `start_of_the_week` *and* on `calendar_system` (read through the profile store's narrowed
+    // getter, which reads `data.calendar_system`). The returned array is a new reference on every
+    // evaluation, so the default identity comparer fires the effect whenever either input changes
+    // and never otherwise — the reaction only re-evaluates when a tracked observable changes.
     reaction(
-      () => this.rootStore.rootStore.user.userProfile.data?.start_of_the_week,
+      () => [this.rootStore.rootStore.user.userProfile.data?.start_of_the_week, this.calendarSystem] as const,
       () => {
-        // Regenerate calendar when startOfWeek preference changes
+        // Regenerate calendar when the startOfWeek preference or the calendar system changes
         this.regenerateCalendar();
       }
     );
+  }
+
+  /**
+   * The calendar the grid is laid out in. Narrowed by the profile store, so a malformed or
+   * pre-migration API value degrades to Gregorian instead of reaching an adapter as garbage.
+   *
+   * Only ever forwarded to `generateCalendarData`. The payload is API-facing and stays keyed
+   * Gregorian and 0-based (`y-${getFullYear()}` / `m-${getMonth()}`), which is what the lookups
+   * above read, so this value must never be used to key or locate a cell.
+   */
+  private get calendarSystem(): CalendarSystemArg {
+    return this.rootStore?.rootStore?.user?.userProfile?.calendarSystem as CalendarSystemArg;
   }
 
   get allWeeksOfActiveMonth() {
@@ -184,13 +208,13 @@ export class CalendarStore implements ICalendarStore {
     const startOfWeek = this.rootStore.rootStore.user.userProfile.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
 
     runInAction(() => {
-      this.calendarPayload = generateCalendarData(this.calendarPayload, nextDate, startOfWeek);
+      this.calendarPayload = generateCalendarData(this.calendarPayload, nextDate, startOfWeek, this.calendarSystem);
     });
   };
 
   initCalendar = () => {
     const startOfWeek = this.rootStore.rootStore.user.userProfile.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
-    const newCalendarPayload = generateCalendarData(null, new Date(), startOfWeek);
+    const newCalendarPayload = generateCalendarData(null, new Date(), startOfWeek, this.calendarSystem);
 
     runInAction(() => {
       this.calendarPayload = newCalendarPayload;
@@ -199,14 +223,14 @@ export class CalendarStore implements ICalendarStore {
 
   /**
    * Force complete regeneration of calendar data
-   * This should be called when startOfWeek preference changes
+   * This should be called when the startOfWeek preference or the calendar system changes
    */
   regenerateCalendar = () => {
     const startOfWeek = this.rootStore.rootStore.user.userProfile.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
     const { activeMonthDate } = this.calendarFilters;
 
     // Force complete regeneration by passing null to clear all cached data
-    const newCalendarPayload = generateCalendarData(null, activeMonthDate, startOfWeek);
+    const newCalendarPayload = generateCalendarData(null, activeMonthDate, startOfWeek, this.calendarSystem);
 
     runInAction(() => {
       this.calendarPayload = newCalendarPayload;
