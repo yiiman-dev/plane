@@ -16,7 +16,7 @@ import { useUserProfile, useUser } from "@/hooks/store/user";
 import { TourRoot } from "@/components/onboarding/tour/root";
 // local imports
 import { DashboardWidgets } from "./home-dashboard-widgets";
-import { UserGreetingsView } from "./user-greetings";
+import { UserGreetingsView } from "../user/user-greetings";
 import { HomePeekOverviewsRoot } from "../issues/peek-overview/peek-overviews";
 
 export const WorkspaceHomeView = observer(function WorkspaceHomeView() {

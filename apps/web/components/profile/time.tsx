@@ -6,6 +6,9 @@
 
 // hooks
 import { useCurrentTime } from "@/hooks/use-current-time";
+import { useUserProfile } from "@/hooks/store/user";
+// helpers
+import { getClockTime } from "@/helpers/calendar-display";
 
 type Props = {
   timeZone: string | undefined;
@@ -15,15 +18,10 @@ export function ProfileSidebarTime(props: Props) {
   const { timeZone } = props;
   // current time hook
   const { currentTime } = useCurrentTime();
+  const { calendarSystem } = useUserProfile();
 
-  // Create a date object for the current time in the specified timezone
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timeZone,
-    hour12: false, // Use 24-hour format
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  const timeString = formatter.format(currentTime);
+  // Localized so the clock agrees with the adapter-rendered dates elsewhere on the profile.
+  const timeString = getClockTime(currentTime, calendarSystem, timeZone);
 
   return (
     <span>
