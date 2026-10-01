@@ -7,7 +7,17 @@
 // The calendar-aware month grid, re-exported rather than reached for at `@plane/calendar`
 // directly: `apps/web` depends on this package, not on `@plane/calendar`, and the dependency edge
 // runs blocks → calendar so a web file importing it from here adds no package dependency of its own.
-export { CalendarSurface, getCalendarAdapter } from "@plane/calendar";
+// The label helpers and the system resolver ride along for the same reason: the issue calendar
+// layout renders its own month titles and weekday columns rather than reusing `CalendarSurface`,
+// and it must read those names from the same adapter the grid is drawn in.
+export {
+  CalendarSurface,
+  getCalendarAdapter,
+  isWeekend,
+  monthName,
+  resolveCalendarSystem,
+  weekdayNames,
+} from "@plane/calendar";
 export type { CalendarMonthParts, CalendarSurfaceProps, CalendarSystem } from "@plane/calendar";
 export { CycleSelect } from "./cycle-select";
 export type { CycleOption, CycleSelectProps } from "./cycle-select";

@@ -12,8 +12,10 @@ import { useTranslation } from "@plane/i18n";
 import { ChevronLeftOutline, ChevronRightOutline } from "@makeplane/propel/icons";
 import type { TSupportedFilterForUpdate } from "@plane/types";
 import { Row } from "@plane/blocks/layout";
+import { getCalendarAdapter, resolveCalendarSystem } from "@plane/blocks/property-select";
 // icons
 import { useCalendarView } from "@/hooks/store/use-calendar-view";
+import { useUserProfile } from "@/hooks/store/user";
 import type { ICycleIssuesFilter } from "@/store/issue/cycle";
 import type { IModuleIssuesFilter } from "@/store/issue/module";
 import type { IProjectIssuesFilter } from "@/store/issue/project";
@@ -41,17 +43,25 @@ export const CalendarHeader = observer(function CalendarHeader(props: ICalendarH
 
   const { activeMonthDate, activeWeekDate } = issueCalendarView.calendarFilters;
 
+  const { data: userProfile } = useUserProfile();
+
+  // `activeMonthDate` is a Gregorian `Date` because that is what the calendar payload is keyed by,
+  // but the month the user is paging through is their own calendar's. Stepping it by hand with
+  // `getMonth() === 0 ? 11 : getMonth() - 1` walks Gregorian months while the title beside these
+  // arrows renders the calendar month's name, so the two disagree in every non-Gregorian mode.
+  const adapter = getCalendarAdapter(resolveCalendarSystem(userProfile?.calendar_system));
+
+  const stepActiveMonth = (delta: number) => {
+    const nextParts = adapter.addMonths(adapter.toParts(activeMonthDate), delta);
+
+    issueCalendarView.updateCalendarFilters({
+      activeMonthDate: adapter.getMonthStart(nextParts),
+    });
+  };
+
   const handlePrevious = () => {
     if (calendarLayout === "month") {
-      const previousMonthYear =
-        activeMonthDate.getMonth() === 0 ? activeMonthDate.getFullYear() - 1 : activeMonthDate.getFullYear();
-      const previousMonthMonth = activeMonthDate.getMonth() === 0 ? 11 : activeMonthDate.getMonth() - 1;
-
-      const previousMonthFirstDate = new Date(previousMonthYear, previousMonthMonth, 1);
-
-      issueCalendarView.updateCalendarFilters({
-        activeMonthDate: previousMonthFirstDate,
-      });
+      stepActiveMonth(-1);
     } else {
       const previousWeekDate = new Date(
         activeWeekDate.getFullYear(),
@@ -67,15 +77,7 @@ export const CalendarHeader = observer(function CalendarHeader(props: ICalendarH
 
   const handleNext = () => {
     if (calendarLayout === "month") {
-      const nextMonthYear =
-        activeMonthDate.getMonth() === 11 ? activeMonthDate.getFullYear() + 1 : activeMonthDate.getFullYear();
-      const nextMonthMonth = (activeMonthDate.getMonth() + 1) % 12;
-
-      const nextMonthFirstDate = new Date(nextMonthYear, nextMonthMonth, 1);
-
-      issueCalendarView.updateCalendarFilters({
-        activeMonthDate: nextMonthFirstDate,
-      });
+      stepActiveMonth(1);
     } else {
       const nextWeekDate = new Date(
         activeWeekDate.getFullYear(),
@@ -91,7 +93,9 @@ export const CalendarHeader = observer(function CalendarHeader(props: ICalendarH
 
   const handleToday = () => {
     const today = new Date();
-    const firstDayOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    // First day of the user's *current* month, not of the Gregorian month today falls in — the two
+    // differ in Persian, and only the former is the month the grid is laid out over.
+    const firstDayOfCurrentMonth = adapter.getMonthStart(adapter.toParts(today));
 
     issueCalendarView.updateCalendarFilters({
       activeMonthDate: firstDayOfCurrentMonth,

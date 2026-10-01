@@ -15,9 +15,15 @@ export default defineConfig({
   // resolves the import without depending on `packages/utils/dist`, so the tests also run on a
   // clean checkout with nothing prebuilt. `fileURLToPath` rather than `URL.pathname`, which
   // yields a leading-slash path on Windows that resolves to the wrong drive.
+  //
+  // `@plane/constants` is aliased the same way for a different reason: this package ships against
+  // no dependency on it, but `tests/calendar-layout-labels.test.ts` needs `MONTHS_LIST` /
+  // `DAYS_LIST` to pin the adapter's output against the tables the web layout used to read.
+  // Aliasing to source keeps that assertion from requiring `packages/constants/dist` to exist.
   resolve: {
     alias: {
       "@plane/utils": fileURLToPath(new URL("../utils/src/index.ts", import.meta.url)),
+      "@plane/constants": fileURLToPath(new URL("../constants/src/index.ts", import.meta.url)),
     },
   },
   test: {
