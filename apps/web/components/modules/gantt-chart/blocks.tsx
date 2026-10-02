@@ -17,6 +17,7 @@ import { getBlockViewDetails } from "@/components/issues/issue-layouts/utils";
 // constants
 // hooks
 import { useModule } from "@/hooks/store/use-module";
+import { useUserProfile } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 
@@ -31,6 +32,7 @@ export const ModuleGanttBlock = observer(function ModuleGanttBlock(props: Props)
   const { workspaceSlug } = useParams();
   // store hooks
   const { getModuleById } = useModule();
+  const { data: userProfile } = useUserProfile();
   // derived values
   const moduleDetails = getModuleById(moduleId);
   // hooks
@@ -38,7 +40,8 @@ export const ModuleGanttBlock = observer(function ModuleGanttBlock(props: Props)
 
   const { message, blockStyle } = getBlockViewDetails(
     moduleDetails,
-    MODULE_STATUS.find((s) => s.value === moduleDetails?.status)?.color ?? ""
+    MODULE_STATUS.find((s) => s.value === moduleDetails?.status)?.color ?? "",
+    userProfile?.calendar_system
   );
 
   return (

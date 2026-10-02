@@ -24,6 +24,7 @@ import { getFileIcon } from "@/components/icons";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 
 type TIssueAttachmentsListItem = {
@@ -38,6 +39,7 @@ export const IssueAttachmentsListItem = observer(function IssueAttachmentsListIt
   const { attachmentId, disabled, issueServiceType = EIssueServiceType.ISSUES } = props;
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   const {
     attachment: { getAttachmentById },
     toggleDeleteAttachmentModal,
@@ -79,7 +81,7 @@ export const IssueAttachmentsListItem = observer(function IssueAttachmentsListIt
                 <Tooltip
                   label={`${
                     getUserDetails(attachment?.created_by)?.display_name ?? ""
-                  } uploaded on ${renderFormattedDate(attachment.updated_at)}`}
+                  } uploaded on ${renderFormattedDate(attachment.updated_at, undefined, calendarSystem)}`}
                   layout="stacked"
                   disabled={isMobile}
                 >

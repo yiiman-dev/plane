@@ -20,6 +20,7 @@ import { calculateTimeAgo, copyTextToClipboard } from "@plane/utils";
 // helpers
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 import type { TLinkOperationsModal } from "./create-update-link-modal";
 
@@ -40,6 +41,7 @@ export const IssueLinkItem = observer(function IssueLinkItem(props: TIssueLinkIt
     setIssueLinkData,
     link: { getLinkById },
   } = useIssueDetail(issueServiceType);
+  const { calendarSystem } = useUserProfile();
   const { isMobile } = usePlatformOS();
   const linkDetail = getLinkById(linkId);
   if (!linkDetail) return <></>;
@@ -82,7 +84,7 @@ export const IssueLinkItem = observer(function IssueLinkItem(props: TIssueLinkIt
         </div>
         <div className="flex flex-shrink-0 items-center gap-1">
           <p className="group-hover-text-secondary p-1 align-bottom text-caption-sm-regular leading-5 text-placeholder">
-            {calculateTimeAgo(linkDetail.created_at)}
+            {calculateTimeAgo(linkDetail.created_at, calendarSystem)}
           </p>
           <button
             type="button"
