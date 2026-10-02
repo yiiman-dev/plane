@@ -19,6 +19,7 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
+import { useUserProfile } from "@/hooks/store/user";
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-redirection";
 import { usePlatformOS } from "@/hooks/use-platform-os";
@@ -42,6 +43,7 @@ export const IssueGanttBlock = observer(function IssueGanttBlock(props: Props) {
   const {
     issue: { getIssueById },
   } = useIssueDetail();
+  const { data: userProfile } = useUserProfile();
   // hooks
   const { isMobile } = usePlatformOS();
   const { handleRedirection } = useIssuePeekOverviewRedirection(isEpic);
@@ -51,7 +53,7 @@ export const IssueGanttBlock = observer(function IssueGanttBlock(props: Props) {
   const stateDetails =
     issueDetails && getProjectStates(issueDetails?.project_id)?.find((state) => state?.id == issueDetails?.state_id);
 
-  const { blockStyle } = getBlockViewDetails(issueDetails, stateDetails?.color ?? "");
+  const { blockStyle } = getBlockViewDetails(issueDetails, stateDetails?.color ?? "", userProfile?.calendar_system);
 
   const handleIssuePeekOverview = () => handleRedirection(workspaceSlug, issueDetails, isMobile);
 

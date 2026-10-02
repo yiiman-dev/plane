@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { observer } from "mobx-react";
 import { DeleteOutline, EditOutline, NewTabOutline } from "@makeplane/propel/icons";
 import { setToast } from "@plane/blocks/toast";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
@@ -11,6 +12,7 @@ import { getIconForLink, copyTextToClipboard, calculateTimeAgo } from "@plane/ut
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // types
 import type { TLinkOperationsModal } from "./create-update-link-modal";
@@ -21,7 +23,10 @@ export type TIssueLinkDetail = {
   isNotAllowed: boolean;
 };
 
-export function IssueLinkDetail(props: TIssueLinkDetail) {
+// Wrapped in `observer` because the profile store loads asynchronously: without a subscription this
+// component reads `calendarSystem` once and would keep rendering Gregorian dates if the profile
+// landed after this row mounted.
+export const IssueLinkDetail = observer(function IssueLinkDetail(props: TIssueLinkDetail) {
   // props
   const { linkId, linkOperations, isNotAllowed } = props;
   // hooks
@@ -31,6 +36,7 @@ export function IssueLinkDetail(props: TIssueLinkDetail) {
     setIssueLinkData,
   } = useIssueDetail();
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   const { isMobile } = usePlatformOS();
   const linkDetail = getLinkById(linkId);
   if (!linkDetail) return <></>;
@@ -111,7 +117,7 @@ export function IssueLinkDetail(props: TIssueLinkDetail) {
 
         <div className="px-5">
           <p className="mt-0.5 stroke-[1.5] text-11 text-tertiary">
-            Added {calculateTimeAgo(linkDetail.created_at)}
+            Added {calculateTimeAgo(linkDetail.created_at, calendarSystem)}
             <br />
             {createdByDetails && (
               <>
@@ -123,4 +129,4 @@ export function IssueLinkDetail(props: TIssueLinkDetail) {
       </div>
     </div>
   );
-}
+});
