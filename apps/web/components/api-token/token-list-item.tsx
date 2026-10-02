@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { observer } from "mobx-react";
 import { CloseCircleOutline } from "@makeplane/propel/icons";
 // plane imports
 import { Tooltip } from "@makeplane/propel/components/tooltip";
@@ -13,18 +14,20 @@ import { renderFormattedDate, calculateTimeAgo, renderFormattedTime } from "@pla
 // components
 import { DeleteApiTokenModal } from "@/components/api-token/delete-token-modal";
 // hooks
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 
 type Props = {
   token: IApiToken;
 };
 
-export function ApiTokenListItem(props: Props) {
+export const ApiTokenListItem = observer(function ApiTokenListItem(props: Props) {
   const { token } = props;
   // states
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   // hooks
   const { isMobile } = usePlatformOS();
+  const { calendarSystem } = useUserProfile();
 
   return (
     <>
@@ -55,12 +58,12 @@ export function ApiTokenListItem(props: Props) {
           <p className="mb-1 text-11 leading-6 text-placeholder">
             {token.is_active
               ? token.expired_at
-                ? `Expires ${renderFormattedDate(token.expired_at)} at ${renderFormattedTime(token.expired_at)}`
+                ? `Expires ${renderFormattedDate(token.expired_at, undefined, calendarSystem)} at ${renderFormattedTime(token.expired_at)}`
                 : "Never expires"
-              : `Expired ${calculateTimeAgo(token.expired_at)}`}
+              : `Expired ${calculateTimeAgo(token.expired_at, calendarSystem)}`}
           </p>
         </div>
       </div>
     </>
   );
-}
+});

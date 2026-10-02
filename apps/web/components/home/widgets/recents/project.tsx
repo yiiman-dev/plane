@@ -5,6 +5,7 @@
  */
 
 import { useRouter } from "next/navigation";
+import { observer } from "mobx-react";
 // plane types
 import { Logo } from "@plane/blocks/emoji-icon-picker";
 import type { TActivityEntityData, TProjectEntityData } from "@plane/types";
@@ -12,6 +13,8 @@ import { calculateTimeAgo } from "@plane/utils";
 // components
 import { ListItem } from "@/components/core/list";
 import { MemberSelect } from "@/components/dropdowns/member/member-select";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 // helpers
 
 type BlockProps = {
@@ -19,10 +22,12 @@ type BlockProps = {
   ref: React.RefObject<HTMLDivElement | null>;
   workspaceSlug: string;
 };
-export function RecentProject(props: BlockProps) {
+export const RecentProject = observer(function RecentProject(props: BlockProps) {
   const { activity, ref, workspaceSlug } = props;
   // router
   const router = useRouter();
+  // store hooks
+  const { calendarSystem } = useUserProfile();
   // derived values
   const projectDetails: TProjectEntityData = activity.entity_data as TProjectEntityData;
 
@@ -45,7 +50,7 @@ export function RecentProject(props: BlockProps) {
       }
       appendTitleElement={
         <div className="flex-shrink-0 text-11 font-medium text-placeholder">
-          {calculateTimeAgo(activity.visited_at)}
+          {calculateTimeAgo(activity.visited_at, calendarSystem)}
         </div>
       }
       quickActionElement={
@@ -75,4 +80,4 @@ export function RecentProject(props: BlockProps) {
       }}
     />
   );
-}
+});

@@ -14,6 +14,8 @@ import type { IApiToken } from "@plane/types";
 import { renderFormattedDate, csvDownload } from "@plane/utils";
 // constants
 import { API_TOKENS_LIST } from "@plane/constants";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 // local imports
 import { CreateApiTokenForm } from "./form";
 import { GeneratedTokenDetails } from "./generated-token-details";
@@ -31,6 +33,8 @@ export function CreateApiTokenModal(props: Props) {
   // states
   const [neverExpires, setNeverExpires] = useState<boolean>(false);
   const [generatedToken, setGeneratedToken] = useState<IApiToken | null | undefined>(null);
+  // store hooks
+  const { calendarSystem } = useUserProfile();
 
   const handleClose = () => {
     onClose();
@@ -45,7 +49,9 @@ export function CreateApiTokenModal(props: Props) {
     const csvData = {
       Title: data.label,
       Description: data.description,
-      Expiry: data.expired_at ? (renderFormattedDate(data.expired_at)?.replace(",", " ") ?? "") : "Never expires",
+      Expiry: data.expired_at
+        ? (renderFormattedDate(data.expired_at, undefined, calendarSystem)?.replace(",", " ") ?? "")
+        : "Never expires",
       "Secret key": data.token ?? "",
     };
 
