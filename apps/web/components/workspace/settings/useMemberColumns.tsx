@@ -13,7 +13,7 @@ import { MemberHeaderColumn } from "@/components/project/member-header-column";
 import type { RowData } from "@/components/workspace/settings/member-columns";
 import { AccountTypeColumn, NameColumn } from "@/components/workspace/settings/member-columns";
 import { useMember } from "@/hooks/store/use-member";
-import { useUser, useUserPermissions } from "@/hooks/store/user";
+import { useUser, useUserPermissions, useUserProfile } from "@/hooks/store/user";
 import type { IMemberFilters } from "@/store/member/utils";
 
 export const useMemberColumns = () => {
@@ -24,6 +24,9 @@ export const useMemberColumns = () => {
 
   const { data: currentUser } = useUser();
   const { allowPermissions } = useUserPermissions();
+  // Called from an `observer` component, so reading the profile here re-renders the table when
+  // the async profile load lands.
+  const { calendarSystem } = useUserProfile();
   const {
     workspace: {
       filtersStore: { filters, updateFilters },
@@ -123,7 +126,9 @@ export const useMemberColumns = () => {
       key: "Joining date",
       content: t("workspace_settings.settings.members.details.joining_date"),
       tdRender: (rowData: RowData) =>
-        isSuspended(rowData) ? null : <div>{renderFormattedDate(rowData?.member?.joining_date)}</div>,
+        isSuspended(rowData) ? null : (
+          <div>{renderFormattedDate(rowData?.member?.joining_date, undefined, calendarSystem)}</div>
+        ),
       thRender: () => (
         <MemberHeaderColumn
           property="joining_date"

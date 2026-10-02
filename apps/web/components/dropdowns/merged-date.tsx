@@ -8,6 +8,8 @@ import React from "react";
 import { observer } from "mobx-react";
 // helpers
 import { formatDateRange, getDate } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 
 type Props = {
   startDate: Date | string | null | undefined;
@@ -24,12 +26,14 @@ type Props = {
  */
 export const MergedDateDisplay = observer(function MergedDateDisplay(props: Props) {
   const { startDate, endDate, className = "" } = props;
+  const { calendarSystem } = useUserProfile();
 
   // Parse dates
   const parsedStartDate = getDate(startDate);
   const parsedEndDate = getDate(endDate);
 
-  const displayText = formatDateRange(parsedStartDate, parsedEndDate);
+  // The calendar system is the third parameter, not the second.
+  const displayText = formatDateRange(parsedStartDate, parsedEndDate, calendarSystem);
 
   if (!displayText) {
     return null;
