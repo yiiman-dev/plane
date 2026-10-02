@@ -25,7 +25,7 @@ import { CoverImage } from "@/components/common/cover-image";
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useCommandPalette } from "@/hooks/store/use-command-palette";
 import { useProject } from "@/hooks/store/use-project";
-import { useUser } from "@/hooks/store/user";
+import { useUser, useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // components
 import { ProfileSidebarTime } from "./time";
@@ -43,6 +43,7 @@ export const ProfileSidebar = observer(function ProfileSidebar(props: TProfileSi
   const { userId } = useParams();
   // store hooks
   const { data: currentUser } = useUser();
+  const { calendarSystem } = useUserProfile();
   const { profileSidebarCollapsed, toggleProfileSidebar } = useAppTheme();
   const { getProjectById } = useProject();
   const { toggleProfileSettingsModal } = useCommandPalette();
@@ -62,7 +63,7 @@ export const ProfileSidebar = observer(function ProfileSidebar(props: TProfileSi
   const userDetails = [
     {
       i18n_label: "profile.details.joined_on",
-      value: renderFormattedDate(userData?.date_joined ?? ""),
+      value: renderFormattedDate(userData?.date_joined ?? "", undefined, calendarSystem),
     },
     {
       i18n_label: "profile.details.time_zone",
