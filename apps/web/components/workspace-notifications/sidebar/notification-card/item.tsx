@@ -16,6 +16,7 @@ import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { useNotification } from "@/hooks/store/notifications/use-notification";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useWorkspace } from "@/hooks/store/use-workspace";
+import { useUserProfile } from "@/hooks/store/user";
 // local imports
 import { NotificationContent } from "./content";
 import { NotificationOption } from "./options";
@@ -32,6 +33,7 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
   const { asJson: notification, markNotificationAsRead } = useNotification(notificationId);
   const { getIsIssuePeeked, setPeekIssue } = useIssueDetail();
   const { getWorkspaceBySlug } = useWorkspace();
+  const { calendarSystem } = useUserProfile();
   // states
   const [isSnoozeStateModalOpen, setIsSnoozeStateModalOpen] = useState(false);
   const [customSnoozeModal, setCustomSnoozeModal] = useState(false);
@@ -127,13 +129,13 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
                 <p className="flex flex-shrink-0 items-center justify-end gap-x-1 text-tertiary">
                   <ClockOutline className="h-4 w-4" />
                   <span>
-                    Till {renderFormattedDate(notification.snoozed_till)},&nbsp;
+                    Till {renderFormattedDate(notification.snoozed_till, undefined, calendarSystem)},&nbsp;
                     {renderFormattedTime(notification.snoozed_till, "12-hour")}
                   </span>
                 </p>
               ) : (
                 <p className="mt-auto flex-shrink-0 text-tertiary">
-                  {notification.created_at && calculateTimeAgo(notification.created_at)}
+                  {notification.created_at && calculateTimeAgo(notification.created_at, calendarSystem)}
                 </p>
               )}
             </div>

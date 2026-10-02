@@ -20,7 +20,7 @@ import { ActivityMessage, IssueLink } from "@/components/core/activity";
 import { USER_PROFILE_ACTIVITY } from "@plane/constants";
 // helpers
 // hooks
-import { useUser } from "@/hooks/store/user";
+import { useUser, useUserProfile } from "@/hooks/store/user";
 // services
 import { UserService } from "@/services/user.service";
 
@@ -30,6 +30,7 @@ export const ProfileActivity = observer(function ProfileActivity() {
   const { workspaceSlug, userId } = useParams();
   // store hooks
   const { data: currentUser } = useUser();
+  const { calendarSystem } = useUserProfile();
   const { t } = useTranslation();
 
   const { data: userProfileActivity } = useSWR(
@@ -77,7 +78,9 @@ export const ProfileActivity = observer(function ProfileActivity() {
                       </span>
                     )}
                   </p>
-                  <p className="text-11 whitespace-nowrap text-secondary">{calculateTimeAgo(activity.created_at)}</p>
+                  <p className="text-11 whitespace-nowrap text-secondary">
+                    {calculateTimeAgo(activity.created_at, calendarSystem)}
+                  </p>
                 </div>
               </div>
             ))}
