@@ -32,6 +32,7 @@ import { RichTextEditor } from "@/components/editor/rich-text";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 import { useWorkspace } from "@/hooks/store/use-workspace";
+import { useUserProfile } from "@/hooks/store/user";
 import { IconButton } from "@makeplane/propel/components/icon-button";
 import { Icon } from "@makeplane/propel/components/icon";
 
@@ -68,6 +69,7 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
   // store hooks
   const { getUserDetails } = useMember();
   const { getWorkspaceBySlug } = useWorkspace();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const activeVersionId = activeVersionDetails?.id;
   const workspaceId = getWorkspaceBySlug(workspaceSlug)?.id;
@@ -115,7 +117,7 @@ export const DescriptionVersionsModal = observer(function DescriptionVersionsMod
                 </span>
               </p>
               <p className="flex-shrink-0 text-secondary">
-                {calculateTimeAgo(activeVersionDetails?.last_saved_at ?? "")}
+                {calculateTimeAgo(activeVersionDetails?.last_saved_at ?? "", calendarSystem)}
               </p>
             </div>
             <div className="flex flex-shrink-0 items-center">

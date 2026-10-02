@@ -13,6 +13,7 @@ import type { TDescriptionVersion } from "@plane/types";
 import { calculateTimeAgo, cn } from "@plane/utils";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 // local imports
 import { DescriptionVersionsDropdownItem } from "./dropdown-item";
 import type { TDescriptionVersionEntityInformation } from "./root";
@@ -28,6 +29,7 @@ export const DescriptionVersionsDropdown = observer(function DescriptionVersions
   const { disabled, entityInformation, onVersionClick, versions } = props;
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const latestVersion = versions?.[0];
   const lastUpdatedAt = latestVersion?.created_at ?? entityInformation.createdAt;
@@ -58,7 +60,7 @@ export const DescriptionVersionsDropdown = observer(function DescriptionVersions
           <p className="text-11">
             {t("description_versions.last_edited_by")}{" "}
             <span className="font-medium">{lastUpdatedByUserDisplayName ?? t("common.deactivated_user")}</span>{" "}
-            {calculateTimeAgo(lastUpdatedAt)}
+            {calculateTimeAgo(lastUpdatedAt, calendarSystem)}
           </p>
         </div>
         {!disabled && <ChevronDownOutline className="size-3.5" />}

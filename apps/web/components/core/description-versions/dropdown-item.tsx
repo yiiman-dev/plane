@@ -13,6 +13,7 @@ import type { TDescriptionVersion } from "@plane/types";
 import { calculateTimeAgo, getFileURL } from "@plane/utils";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 
 type Props = {
   onClick: (versionId: string) => void;
@@ -23,6 +24,7 @@ export const DescriptionVersionsDropdownItem = observer(function DescriptionVers
   const { onClick, version } = props;
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const versionCreator = version.owned_by ? getUserDetails(version.owned_by) : null;
   // translation
@@ -39,7 +41,7 @@ export const DescriptionVersionsDropdownItem = observer(function DescriptionVers
         />
       }
       label={versionCreator?.display_name ?? t("common.deactivated_user")}
-      secondaryText={calculateTimeAgo(version.last_saved_at)}
+      secondaryText={calculateTimeAgo(version.last_saved_at, calendarSystem)}
       onClick={() => onClick(version.id)}
     />
   );

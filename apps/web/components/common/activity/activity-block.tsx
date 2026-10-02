@@ -5,6 +5,7 @@
  */
 
 import type { FC, ReactNode } from "react";
+import { observer } from "mobx-react";
 import { HierarchyOutline } from "@makeplane/propel/icons";
 // types
 import { Tooltip } from "@makeplane/propel/components/tooltip";
@@ -14,6 +15,7 @@ import type { TWorkspaceBaseActivity } from "@plane/types";
 import { renderFormattedTime, renderFormattedDate, calculateTimeAgo } from "@plane/utils";
 // hooks
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useUserProfile } from "@/hooks/store/user";
 // local components
 import { User } from "./user";
 
@@ -25,10 +27,14 @@ type TActivityBlockComponent = {
   customUserName?: string;
 };
 
-export function ActivityBlockComponent(props: TActivityBlockComponent) {
+// Wrapped in `observer` because the profile store loads asynchronously: without a subscription this
+// component reads `calendarSystem` once and would keep rendering Gregorian dates if the profile
+// landed after this block mounted.
+export const ActivityBlockComponent = observer(function ActivityBlockComponent(props: TActivityBlockComponent) {
   const { icon: Icon, activity, ends, children, customUserName } = props;
   // hooks
   const { isMobile } = usePlatformOS();
+  const { calendarSystem } = useUserProfile();
 
   if (!activity) return <></>;
   return (
@@ -46,15 +52,15 @@ export function ActivityBlockComponent(props: TActivityBlockComponent) {
         </div>
         <div className="mt-1">
           <Tooltip
-            label={`${renderFormattedDate(activity.created_at)}, ${renderFormattedTime(activity.created_at)}`}
+            label={`${renderFormattedDate(activity.created_at, undefined, calendarSystem)}, ${renderFormattedTime(activity.created_at)}`}
             disabled={isMobile}
           >
             <span className="cursor-help font-medium whitespace-nowrap text-tertiary">
-              {calculateTimeAgo(activity.created_at)}
+              {calculateTimeAgo(activity.created_at, calendarSystem)}
             </span>
           </Tooltip>
         </div>
       </div>
     </div>
   );
-}
+});

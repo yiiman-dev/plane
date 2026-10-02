@@ -5,6 +5,7 @@
  */
 
 import type { ReactNode } from "react";
+import { observer } from "mobx-react";
 // plane imports
 import type { TNotification } from "@plane/types";
 import {
@@ -13,6 +14,9 @@ import {
   sanitizeCommentForNotification,
   stripAndTruncateHTML,
 } from "@plane/utils";
+import type { CalendarSystem } from "@plane/blocks/property-select";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 // components
 import { LiteTextEditor } from "@/components/editor/lite-text";
 import {
@@ -36,7 +40,14 @@ export type TNotificationContentDetails = {
   showConnector?: boolean;
 };
 
-export type TNotificationContentHandler = (data: TNotificationFieldData) => TNotificationContentDetails | null;
+// Handlers are module-level constants, so the calendar system is threaded in as a trailing argument
+// rather than read from the store. `renderCommentBox` already occupied the second slot, so the
+// system goes third. Both are optional to keep existing CE/EE handlers assignable.
+export type TNotificationContentHandler = (
+  data: TNotificationFieldData,
+  renderCommentBox?: boolean,
+  calendarSystem?: CalendarSystem
+) => TNotificationContentDetails | null;
 
 export type TNotificationContentMap = {
   [key: string]: TNotificationContentHandler;
@@ -57,14 +68,14 @@ export const BASE_NOTIFICATION_CONTENT_MAP: TNotificationContentMap = {
     value: newValue !== "" ? newValue : oldValue,
     showConnector: false,
   }),
-  start_date: ({ newValue }) => ({
+  start_date: ({ newValue }, renderCommentBox, calendarSystem) => ({
     action: newValue !== "" ? "set start date" : "removed the start date",
-    value: renderFormattedDate(newValue),
+    value: renderFormattedDate(newValue, undefined, calendarSystem),
     showConnector: false,
   }),
-  target_date: ({ newValue }) => ({
+  target_date: ({ newValue }, renderCommentBox, calendarSystem) => ({
     action: newValue !== "" ? "set due date" : "removed the due date",
-    value: renderFormattedDate(newValue),
+    value: renderFormattedDate(newValue, undefined, calendarSystem),
     showConnector: false,
   }),
   labels: ({ newValue, oldValue }) => ({
@@ -119,34 +130,33 @@ export const BASE_NOTIFICATION_CONTENT_MAP: TNotificationContentMap = {
 // Helper to get content details from maps
 const getNotificationContentDetails = (
   fieldData: TNotificationFieldData,
-  renderCommentBox?: boolean
+  renderCommentBox?: boolean,
+  calendarSystem?: CalendarSystem
 ): TNotificationContentDetails | null => {
   const { field } = fieldData;
   if (!field) return null;
 
-  // Check base map first
+  // Check base map first. Every handler now takes the same trailing arguments — `renderCommentBox`
+  // (used by `comment`) and `calendarSystem` (used by the date fields) — so no per-field special
+  // casing is needed.
   const baseHandler = BASE_NOTIFICATION_CONTENT_MAP[field];
   if (baseHandler) {
-    // Special case for comment field that needs renderCommentBox
-    if (field === "comment") {
-      return (baseHandler as (data: TNotificationFieldData, renderCommentBox?: boolean) => TNotificationContentDetails)(
-        fieldData,
-        renderCommentBox
-      );
-    }
-    return baseHandler(fieldData);
+    return baseHandler(fieldData, renderCommentBox, calendarSystem);
   }
 
   // Check additional map from plane-web (EE extensions)
   const additionalHandler = ADDITIONAL_NOTIFICATION_CONTENT_MAP[field];
   if (additionalHandler) {
-    return additionalHandler(fieldData);
+    return additionalHandler(fieldData, renderCommentBox, calendarSystem);
   }
 
   return null;
 };
 
-export function NotificationContent({
+// Wrapped in `observer` because the profile store loads asynchronously: `NotificationContent` reads
+// `calendarSystem` to build the date fields' `value`, and without a subscription it would keep
+// rendering Gregorian dates if the profile landed after the notification list mounted.
+export const NotificationContent = observer(function NotificationContent({
   notification,
   workspaceId,
   workspaceSlug,
@@ -159,6 +169,7 @@ export function NotificationContent({
   projectId: string;
   renderCommentBox?: boolean;
 }) {
+  const { calendarSystem } = useUserProfile();
   const { data, triggered_by_details: triggeredBy } = notification;
   const notificationField = data?.issue_activity.field;
   const newValue = data?.issue_activity.new_value;
@@ -179,7 +190,7 @@ export function NotificationContent({
   );
 
   // Get content details from map
-  const contentDetails = getNotificationContentDetails(fieldData, renderCommentBox);
+  const contentDetails = getNotificationContentDetails(fieldData, renderCommentBox, calendarSystem);
 
   // Render action - use map value if defined, otherwise fall through to default handler
   // Note: undefined = fall through to default, null = explicitly no action text
@@ -231,4 +242,4 @@ export function NotificationContent({
       )}
     </>
   );
-}
+});
