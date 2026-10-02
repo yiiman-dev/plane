@@ -4,12 +4,15 @@
  * See the LICENSE file for details.
  */
 
+import { observer } from "mobx-react";
 import { useState } from "react";
 // ui
 import { Button } from "@makeplane/propel/components/button";
 import type { IExportData } from "@plane/types";
 // helpers
 import { getDate, renderFormattedDate } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 // types
 
 type Props = {
@@ -17,8 +20,10 @@ type Props = {
   refreshing: boolean;
 };
 
-export function SingleExport({ service, refreshing }: Props) {
+export const SingleExport = observer(function SingleExport({ service, refreshing }: Props) {
   const provider = service.provider;
+  // store hooks
+  const { calendarSystem } = useUserProfile();
 
   const [isLoading] = useState(false);
   const downloadLabel = isLoading ? "Downloading..." : "Download";
@@ -58,7 +63,7 @@ export function SingleExport({ service, refreshing }: Props) {
           </span>
         </h4>
         <div className="mt-2 flex items-center gap-2 text-11 text-secondary">
-          <span>{renderFormattedDate(service.created_at)}</span>|
+          <span>{renderFormattedDate(service.created_at, undefined, calendarSystem)}</span>|
           <span>Exported by {service?.initiated_by_detail?.display_name}</span>
         </div>
       </div>
@@ -86,4 +91,4 @@ export function SingleExport({ service, refreshing }: Props) {
       )}
     </div>
   );
-}
+});

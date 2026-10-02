@@ -37,6 +37,7 @@ import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifi
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
+import { useUserProfile } from "@/hooks/store/user";
 import { useIntersectionObserver } from "@/hooks/use-intersection-observer";
 import useLocalStorage from "@/hooks/use-local-storage";
 // store
@@ -71,6 +72,7 @@ export const ActiveCycleStats = observer(function ActiveCycleStats(props: Active
   const {
     issues: { fetchNextActiveCycleIssues },
   } = useIssues(EIssuesStoreType.CYCLE);
+  const { calendarSystem } = useUserProfile();
   const {
     issue: { getIssueById },
     setPeekIssue,
@@ -155,11 +157,13 @@ export const ActiveCycleStats = observer(function ActiveCycleStats(props: Active
                               tooltip
                             />
                             {issue.target_date && (
-                              <Tooltip label={`Target Date: ${renderFormattedDate(issue.target_date) ?? ""}`}>
+                              <Tooltip
+                                label={`Target Date: ${renderFormattedDate(issue.target_date, undefined, calendarSystem) ?? ""}`}
+                              >
                                 <div className="flex h-full cursor-pointer items-center gap-1.5 truncate rounded-sm bg-layer-1 px-2 py-0.5 text-11 group-hover:bg-surface-1">
                                   <CompletedAtOutline className="h-3 w-3 flex-shrink-0" />
                                   <span className="truncate text-11">
-                                    {renderFormattedDateWithoutYear(issue.target_date)}
+                                    {renderFormattedDateWithoutYear(issue.target_date, calendarSystem)}
                                   </span>
                                 </div>
                               </Tooltip>

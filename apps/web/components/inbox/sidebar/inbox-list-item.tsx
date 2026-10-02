@@ -19,6 +19,7 @@ import { ButtonAvatars } from "@/components/dropdowns/member/avatar";
 // hooks
 import { useLabel } from "@/hooks/store/use-label";
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 import { useProjectInbox } from "@/hooks/store/use-project-inbox";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // local imports
@@ -42,6 +43,7 @@ export const InboxIssueListItem = observer(function InboxIssueListItem(props: In
   const { projectLabels } = useLabel();
   const { isMobile } = usePlatformOS();
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   const inboxIssue = getIssueInboxByIssueId(inboxIssueId);
   const issue = inboxIssue?.issue;
 
@@ -82,8 +84,13 @@ export const InboxIssueListItem = observer(function InboxIssueListItem(props: In
 
           <div className="flex items-center justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              <Tooltip label={`Created on: ${renderFormattedDate(issue.created_at ?? "") ?? ""}`} disabled={isMobile}>
-                <div className="text-11 text-secondary">{renderFormattedDate(issue.created_at ?? "")}</div>
+              <Tooltip
+                label={`Created on: ${renderFormattedDate(issue.created_at ?? "", undefined, calendarSystem) ?? ""}`}
+                disabled={isMobile}
+              >
+                <div className="text-11 text-secondary">
+                  {renderFormattedDate(issue.created_at ?? "", undefined, calendarSystem)}
+                </div>
               </Tooltip>
 
               <div className="rounded-full border-2 border-strong-1" />
