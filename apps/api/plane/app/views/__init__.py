@@ -235,6 +235,11 @@ from .webhook.base import (
 from .error_404 import custom_404_view
 
 from .notification.base import MarkAllReadNotificationViewSet
+from .notification.channel import (
+    NotificationChannelEndpoint,
+    NotificationChannelPreferenceEndpoint,
+    NotificationChannelTestEndpoint,
+)
 from .user.base import AccountEndpoint, ProfileEndpoint, UserSessionEndpoint
 
 from .timezone.base import TimezoneEndpoint

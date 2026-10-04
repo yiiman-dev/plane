@@ -30,6 +30,8 @@ from django.db.models import Subquery
 from celery import shared_task
 from bs4 import BeautifulSoup
 
+from plane.bgtasks.notification_channel_task import queue_notification_channel_logs
+
 
 # =========== Issue Description Html Parsing and notification Functions ======================
 
@@ -668,6 +670,8 @@ def notifications(
             # Bulk create notifications
             Notification.objects.bulk_create(bulk_notifications, batch_size=100)
             EmailNotificationLog.objects.bulk_create(bulk_email_logs, batch_size=100, ignore_conflicts=True)
+            # queue the same events on the external channels, ie SMS and Bale
+            queue_notification_channel_logs(bulk_notifications)
         return
     except Exception as e:
         print(e)

@@ -6,6 +6,7 @@ from django.urls import path
 
 from plane.license.api.views import (
     EmailCredentialCheckEndpoint,
+    NotificationChannelCredentialCheckEndpoint,
     InstanceAdminEndpoint,
     InstanceAdminSignInEndpoint,
     InstanceAdminSignUpEndpoint,
@@ -64,6 +65,11 @@ urlpatterns = [
         "email-credentials-check/",
         EmailCredentialCheckEndpoint.as_view(),
         name="email-credential-check",
+    ),
+    path(
+        "notification-channel-credentials-check/",
+        NotificationChannelCredentialCheckEndpoint.as_view(),
+        name="notification-channel-credential-check",
     ),
     path(
         "workspace-slug-check/",
