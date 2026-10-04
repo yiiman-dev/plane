@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from .base import BaseAPIView
 from plane.license.api.permissions import InstanceAdminPermission
 from plane.license.models import InstanceConfiguration
+from plane.utils.notifications import NotificationChannelError, NotificationChannelValidationError, get_provider
 from plane.license.api.serializers import InstanceConfigurationSerializer
 from plane.license.utils.encryption import encrypt_data
 from plane.utils.cache import cache_response, invalidate_cache
@@ -169,3 +170,38 @@ class EmailCredentialCheckEndpoint(BaseAPIView):
                 {"error": "Could not send email. Please check your configuration"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class NotificationChannelCredentialCheckEndpoint(BaseAPIView):
+    """Validate the instance wide credentials of the external notification channels
+
+    The secret values are never echoed back, only the configured state is returned.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+
+    def post(self, request):
+        channel = str(request.data.get("channel") or "").strip()
+        try:
+            provider = get_provider(channel)
+        except NotificationChannelValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            provider.check_config()
+        except NotificationChannelError as e:
+            return Response(
+                {"channel": channel, "is_configured": False, "error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            return Response(
+                {
+                    "channel": channel,
+                    "is_configured": True,
+                    "error": "Could not reach the provider, please verify the credentials.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({"channel": channel, "is_configured": True}, status=status.HTTP_200_OK)

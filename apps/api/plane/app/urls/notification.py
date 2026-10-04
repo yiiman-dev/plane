@@ -10,6 +10,9 @@ from plane.app.views import (
     UnreadNotificationEndpoint,
     MarkAllReadNotificationViewSet,
     UserNotificationPreferenceEndpoint,
+    NotificationChannelEndpoint,
+    NotificationChannelPreferenceEndpoint,
+    NotificationChannelTestEndpoint,
 )
 
 
@@ -48,5 +51,20 @@ urlpatterns = [
         "users/me/notification-preferences/",
         UserNotificationPreferenceEndpoint.as_view(),
         name="user-notification-preferences",
+    ),
+    path(
+        "users/me/notification-channels/",
+        NotificationChannelEndpoint.as_view(),
+        name="user-notification-channels",
+    ),
+    path(
+        "users/me/notification-channel-preferences/",
+        NotificationChannelPreferenceEndpoint.as_view(),
+        name="user-notification-channel-preferences",
+    ),
+    path(
+        "users/me/notification-channels/test/",
+        NotificationChannelTestEndpoint.as_view(),
+        name="user-notification-channel-test",
     ),
 ]

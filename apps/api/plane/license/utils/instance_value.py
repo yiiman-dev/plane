@@ -39,6 +39,23 @@ def get_configuration_value(keys):
     return tuple(environment_list)
 
 
+def get_kavenegar_configuration():
+    return get_configuration_value(
+        [
+            {"key": "KAVENEGAR_API_KEY", "default": os.environ.get("KAVENEGAR_API_KEY")},
+            {"key": "KAVENEGAR_SENDER_LINE", "default": os.environ.get("KAVENEGAR_SENDER_LINE")},
+        ]
+    )
+
+
+def get_bale_configuration():
+    return get_configuration_value(
+        [
+            {"key": "BALE_BOT_TOKEN", "default": os.environ.get("BALE_BOT_TOKEN")},
+        ]
+    )
+
+
 def get_email_configuration():
     return get_configuration_value(
         [

@@ -59,6 +59,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=128, unique=True)
     # user fields
     mobile_number = models.CharField(max_length=255, blank=True, null=True)
+    # Bale messenger chat id or @username, used for bot notifications
+    bale_chat_id = models.CharField(max_length=128, blank=True, null=True)
     email = models.CharField(max_length=255, null=True, blank=True, unique=True)
 
     # identity

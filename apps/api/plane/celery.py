@@ -53,6 +53,10 @@ app.conf.beat_schedule = {
         "task": "plane.bgtasks.issue_automation_task.unsnooze_expired_intake_issues",
         "schedule": crontab(minute="*/5"),  # Every 5 minutes
     },
+    "check-every-minute-to-send-notification-channel-notifications": {
+        "task": "plane.bgtasks.notification_channel_task.stack_notification_channel",
+        "schedule": crontab(minute="*"),  # Every minute
+    },
     "push-instance-metrics": {
         "task": "plane.license.bgtasks.telemetry_metrics.push_instance_metrics",
         "schedule": schedule(run_every=timedelta(minutes=METRICS_PUSH_INTERVAL_MINUTES)),
