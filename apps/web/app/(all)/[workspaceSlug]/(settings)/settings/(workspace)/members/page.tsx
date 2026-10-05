@@ -22,6 +22,7 @@ import { MemberListFiltersDropdown } from "@/components/project/dropdowns/filter
 import { WorkspaceMembersList } from "@/components/workspace/settings/members-list";
 import { SettingsContentWrapper } from "@/components/settings/content-wrapper";
 import { SendWorkspaceInvitationModal } from "@/components/workspace/members";
+import { formatPersianNumber } from "@/components/workspace/billing/constants";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 import { useWorkspace } from "@/hooks/store/use-workspace";
@@ -63,15 +64,28 @@ const WorkspaceMembersSettingsPage = observer(function WorkspaceMembersSettingsP
         message: t("workspace_settings.settings.members.invitations_sent_successfully"),
       });
     } catch (error: unknown) {
-      let message = undefined;
-      if (error instanceof Error) {
-        const err = error as Error & { error?: string };
-        message = err.error;
-      }
+      // The invitation service rethrows the parsed response body, so a 403 arrives as a plain
+      // object and never passes `instanceof Error`. Reading the fields directly is what makes the
+      // Persian server message reach the user instead of the generic fallback.
+      const err = error as {
+        code?: string;
+        error?: string;
+        message?: string;
+        seat_limit?: number | null;
+        seats_used?: number;
+      };
+      const isSeatLimitReached = err?.code === "seat_limit_reached";
+      const message = err?.error ?? err?.message;
       setToast({
         type: "error",
-        title: "Error!",
-        message: `${message ?? t("something_went_wrong_please_try_again")}`,
+        title: isSeatLimitReached ? "سقف صندلی تکمیل است" : "خطا در ارسال دعوت‌نامه",
+        message: isSeatLimitReached
+          ? `${message ?? "سقف صندلی این ورک‌اسپیس تکمیل است و دعوت‌نامه‌ای ارسال نشد."}${
+              err.seat_limit === null || err.seat_limit === undefined
+                ? ""
+                : ` (${formatPersianNumber(err.seats_used ?? 0)} از ${formatPersianNumber(err.seat_limit)} صندلی)`
+            }`
+          : `${message ?? t("something_went_wrong_please_try_again")}`,
       });
 
       throw error;

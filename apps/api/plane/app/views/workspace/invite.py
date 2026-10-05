@@ -27,6 +27,7 @@ from plane.app.serializers import (
 )
 from plane.app.views.base import BaseAPIView
 from plane.bgtasks.workspace_invitation_task import workspace_invitation
+from plane.billing.services.entitlements import seat_limit_rejection
 from plane.db.models import User, Workspace, WorkspaceMember, WorkspaceMemberInvite
 from plane.utils.cache import invalidate_cache, invalidate_cache_directly
 from plane.utils.host import base_host
@@ -108,6 +109,21 @@ class WorkspaceInvitationsViewset(BaseViewSet):
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+        # A pending invitation already holds a seat, so only genuinely new
+        # addresses consume capacity and the whole batch is checked at once.
+        already_pending = set(
+            WorkspaceMemberInvite.objects.filter(
+                workspace=workspace,
+                responded_at__isnull=True,
+                email__in=[invitation.email for invitation in workspace_invitations],
+            ).values_list("email", flat=True)
+        )
+        new_seats = len([invitation for invitation in workspace_invitations if invitation.email not in already_pending])
+
+        rejection = seat_limit_rejection(workspace, additional=new_seats)
+        if rejection is not None:
+            return Response(rejection, status=status.HTTP_403_FORBIDDEN)
+
         # Create workspace member invite
         workspace_invitations = WorkspaceMemberInvite.objects.bulk_create(
             workspace_invitations, batch_size=10, ignore_conflicts=True
@@ -172,6 +188,13 @@ class WorkspaceJoinEndpoint(BaseAPIView):
                 {"error": "You do not have permission to accept this invitation"},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
+        # The invitation itself already holds a seat, so accepting it does not
+        # consume a new one, but the workspace may have filled up in between
+        # the invite and this acceptance.
+        rejection = seat_limit_rejection(workspace_invite.workspace, additional=0)
+        if rejection is not None:
+            return Response(rejection, status=status.HTTP_403_FORBIDDEN)
 
         # If already responded then return error
         if workspace_invite.responded_at is None:

@@ -363,6 +363,17 @@ export const coreRoutes: RouteConfigEntry[] = [
     layout("./(all)/settings/profile/layout.tsx", [
       route("settings/profile/:profileTabId", "./(all)/settings/profile/[profileTabId]/page.tsx"),
     ]),
+
+    // --------------------------------------------------------------------
+    // BILLING (plan checkout and payment result)
+    // --------------------------------------------------------------------
+    // The gateway callback lands here, and the result page polls the order status endpoint.
+    // Both live outside the workspace context, so they are registered as standalone routes.
+
+    layout("./(all)/billing/layout.tsx", [
+      route("billing", "./(all)/billing/page.tsx"),
+      route("billing/result/:transactionId", "./(all)/billing/result/[transactionId]/page.tsx"),
+    ]),
   ]),
 
   // ========================================================================

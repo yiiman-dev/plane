@@ -10,6 +10,7 @@ from datetime import datetime
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 # Third Party imports
@@ -24,6 +25,7 @@ from plane.app.serializers import (
     ProjectMemberInvitePublicSerializer,
 )
 from plane.app.permissions import allow_permission, ROLE
+from plane.billing.services.entitlements import SEAT_LIMIT_REACHED_PROJECT_MESSAGE, seat_limit_rejection
 from plane.db.models import (
     ProjectMember,
     Workspace,
@@ -226,58 +228,78 @@ class ProjectJoinEndpoint(BaseAPIView):
                     {"error": "`accepted` must be a boolean"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            project_invite.accepted = accepted
-            project_invite.responded_at = timezone.now()
-            project_invite.save()
 
-            if project_invite.accepted:
-                # Use the authenticated user directly — they've already been
-                # validated as the invite recipient above.
-                user = request.user
+            # Use the authenticated user directly — they've already been
+            # validated as the invite recipient above.
+            user = request.user
 
-                # Check if user is a part of workspace
-                workspace_member = WorkspaceMember.objects.filter(workspace__slug=slug, member=user).first()
-                # Add him to workspace
-                if workspace_member is None:
-                    _ = WorkspaceMember.objects.create(
-                        workspace_id=project_invite.workspace_id,
-                        member=user,
-                        role=(15 if project_invite.role >= 15 else project_invite.role),
+            # Accepting a project invitation also makes the invitee a member of
+            # the workspace, so the plan seat cap has to hold here exactly as it
+            # does when a workspace invitation is accepted.  The workspace row
+            # is locked for the whole block: without it two simultaneous
+            # acceptances read the same seat count and both get through.
+            with transaction.atomic():
+                workspace = Workspace.objects.select_for_update().get(pk=project_invite.workspace_id)
+                workspace_member = WorkspaceMember.objects.filter(workspace=workspace, member=user).first()
+                # Declining costs no seat, so the cap only guards an acceptance.
+                # Only a brand new or reactivated membership consumes one, an
+                # already active member holds one.
+                if accepted:
+                    additional_seats = 0 if workspace_member is not None and workspace_member.is_active else 1
+                    rejection = seat_limit_rejection(
+                        workspace,
+                        additional=additional_seats,
+                        message=SEAT_LIMIT_REACHED_PROJECT_MESSAGE,
                     )
-                else:
-                    # Else make him active
-                    workspace_member.is_active = True
-                    workspace_member.save()
+                    if rejection is not None:
+                        return Response(rejection, status=status.HTTP_403_FORBIDDEN)
 
-                # Check if the user was already a member of the invited project
-                # then activate the user.  The lookup must be scoped to
-                # `project_id` — a workspace-wide lookup reactivates whatever
-                # membership the user already had (typically a project they were
-                # removed from) and leaves the invited project without a member
-                # row (SECUR-234).
-                project_member = ProjectMember.objects.filter(
-                    workspace_id=project_invite.workspace_id,
-                    project_id=project_id,
-                    member=user,
-                ).first()
-                if project_member is None:
-                    # Create a Project Member
-                    _ = ProjectMember.objects.create(
+                project_invite.accepted = accepted
+                project_invite.responded_at = timezone.now()
+                project_invite.save()
+
+                if project_invite.accepted:
+                    # Add him to workspace
+                    if workspace_member is None:
+                        _ = WorkspaceMember.objects.create(
+                            workspace=workspace,
+                            member=user,
+                            role=(15 if project_invite.role >= 15 else project_invite.role),
+                        )
+                    else:
+                        # Else make him active
+                        workspace_member.is_active = True
+                        workspace_member.save()
+
+                    # Check if the user was already a member of the invited project
+                    # then activate the user.  The lookup must be scoped to
+                    # `project_id` — a workspace-wide lookup reactivates whatever
+                    # membership the user already had (typically a project they were
+                    # removed from) and leaves the invited project without a member
+                    # row (SECUR-234).
+                    project_member = ProjectMember.objects.filter(
+                        workspace_id=project_invite.workspace_id,
                         project_id=project_id,
                         member=user,
-                        role=project_invite.role,
-                    )
-                else:
-                    # The invitation's role is what the inviting admin chose; the
-                    # stale role on a deactivated row must not survive the rejoin.
-                    project_member.is_active = True
-                    project_member.role = project_invite.role
-                    project_member.save()
+                    ).first()
+                    if project_member is None:
+                        # Create a Project Member
+                        _ = ProjectMember.objects.create(
+                            project_id=project_id,
+                            member=user,
+                            role=project_invite.role,
+                        )
+                    else:
+                        # The invitation's role is what the inviting admin chose; the
+                        # stale role on a deactivated row must not survive the rejoin.
+                        project_member.is_active = True
+                        project_member.role = project_invite.role
+                        project_member.save()
 
-                return Response(
-                    {"message": "Project Invitation Accepted"},
-                    status=status.HTTP_200_OK,
-                )
+                    return Response(
+                        {"message": "Project Invitation Accepted"},
+                        status=status.HTTP_200_OK,
+                    )
 
             return Response(
                 {"message": "Project Invitation was not accepted"},
