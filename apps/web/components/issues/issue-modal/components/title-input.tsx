@@ -27,6 +27,7 @@ type TIssueTitleInputProps = {
   issueTitleRef: React.MutableRefObject<HTMLInputElement | null>;
   formState: FormState<TIssue>;
   handleFormChange: () => void;
+  disabled?: boolean;
 };
 
 export const IssueTitleInput = observer(function IssueTitleInput(props: TIssueTitleInputProps) {
@@ -35,6 +36,7 @@ export const IssueTitleInput = observer(function IssueTitleInput(props: TIssueTi
     issueTitleRef,
     formState: { errors },
     handleFormChange,
+    disabled = false,
   } = props;
   // store hooks
   const { isMobile } = usePlatformOS();
@@ -70,6 +72,7 @@ export const IssueTitleInput = observer(function IssueTitleInput(props: TIssueTi
                 name="name"
                 type="text"
                 value={value}
+                disabled={disabled}
                 onChange={(e) => {
                   onChange(e.target.value);
                   handleFormChange();

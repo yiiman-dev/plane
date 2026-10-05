@@ -78,6 +78,7 @@ from plane.db.models import (
     CycleIssue,
     Workspace,
 )
+from plane.utils.issue_name_lock import get_issue_name_edit_error
 from plane.settings.storage import S3Storage
 from plane.utils.path_validator import sanitize_filename
 from plane.utils.order_queryset import (
@@ -780,6 +781,18 @@ class IssueDetailAPIEndpoint(BaseAPIView):
         """
         issue = Issue.objects.get(workspace__slug=slug, project_id=project_id, pk=pk)
         project = Project.objects.get(pk=project_id)
+
+        # Only admins may rename an existing work item.
+        name_edit_error = get_issue_name_edit_error(
+            user=request.user,
+            slug=slug,
+            project_id=project_id,
+            request_data=request.data,
+            current_name=issue.name,
+        )
+        if name_edit_error is not None:
+            return Response(name_edit_error, status=status.HTTP_403_FORBIDDEN)
+
         current_instance = json.dumps(IssueSerializer(issue).data, cls=DjangoJSONEncoder)
         requested_data = json.dumps(self.request.data, cls=DjangoJSONEncoder)
         serializer = IssueSerializer(

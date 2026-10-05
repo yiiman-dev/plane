@@ -224,6 +224,13 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
     workspaceSlug,
     projectId
   );
+  // renaming a work item is restricted to project admins
+  const isTitleEditable = allowPermissions(
+    [EUserPermissions.ADMIN],
+    EUserPermissionsLevel.PROJECT,
+    workspaceSlug,
+    projectId
+  );
 
   return (
     <>
@@ -247,6 +254,7 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
               issueOperations={issueOperations}
               isEditable={isEditable}
               isArchived={is_archived}
+              isTitleEditable={isTitleEditable}
             />
           </div>
           <div

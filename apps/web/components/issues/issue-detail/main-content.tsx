@@ -42,10 +42,11 @@ type Props = {
   issueOperations: TIssueOperations;
   isEditable: boolean;
   isArchived: boolean;
+  isTitleEditable: boolean;
 };
 
 export const IssueMainContent = observer(function IssueMainContent(props: Props) {
-  const { workspaceSlug, projectId, issueId, issueOperations, isEditable, isArchived } = props;
+  const { workspaceSlug, projectId, issueId, issueOperations, isEditable, isArchived, isTitleEditable } = props;
   // refs
   const editorRef = useRef<EditorRefApi>(null);
   // states
@@ -102,7 +103,7 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
           isSubmitting={isSubmitting}
           setIsSubmitting={(value) => setIsSubmitting(value)}
           issueOperations={issueOperations}
-          disabled={isArchived || !isEditable}
+          disabled={isArchived || !isEditable || !isTitleEditable}
           value={issue.name}
         />
 

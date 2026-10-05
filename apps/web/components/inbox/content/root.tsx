@@ -75,6 +75,13 @@ export const InboxContentRoot = observer(function InboxContentRoot(props: TInbox
   const isEditable =
     allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.PROJECT, workspaceSlug, projectId) ||
     inboxIssue?.issue.created_by === currentUser?.id;
+  // renaming an existing work item is restricted to project admins
+  const isTitleEditable = allowPermissions(
+    [EUserPermissions.ADMIN],
+    EUserPermissionsLevel.PROJECT,
+    workspaceSlug,
+    projectId
+  );
 
   const isGuest = getProjectRoleByWorkspaceSlugAndProjectId(workspaceSlug, projectId) === EUserPermissions.GUEST;
   const isOwner = inboxIssue?.issue.created_by === currentUser?.id;
@@ -105,6 +112,7 @@ export const InboxContentRoot = observer(function InboxContentRoot(props: TInbox
             projectId={projectId}
             inboxIssue={inboxIssue}
             isEditable={isEditable && !isIssueDisabled && !readOnly}
+            isTitleEditable={isTitleEditable}
             isSubmitting={isSubmitting}
             setIsSubmitting={setIsSubmitting}
           />
