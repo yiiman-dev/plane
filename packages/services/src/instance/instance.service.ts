@@ -7,11 +7,15 @@
 // plane imports
 import { API_BASE_URL } from "@plane/constants";
 import type {
+  IBaleWebhookState,
+  IBaleWebhookUnregistration,
   IFormattedInstanceConfiguration,
   IInstance,
   IInstanceAdmin,
   IInstanceConfiguration,
   IInstanceInfo,
+  INotificationChannelCredentialsCheck,
+  TInstanceNotificationChannel,
   TPage,
 } from "@plane/types";
 // api service
@@ -123,6 +127,61 @@ export class InstanceService extends APIService {
     return this.post("/api/instances/email-credentials-check/", {
       receiver_email: receiverEmail,
     })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Validates the notification channel credentials currently saved on this instance
+   * @param {TInstanceNotificationChannel} channel Notification channel to validate
+   * @returns {Promise<INotificationChannelCredentialsCheck>} Promise resolving to the check result
+   * @throws {Error} If the API request fails or the credentials are rejected by the provider
+   */
+  async checkNotificationChannelCredentials(
+    channel: TInstanceNotificationChannel
+  ): Promise<INotificationChannelCredentialsCheck> {
+    return this.post("/api/instances/notification-channel-credentials-check/", { channel })
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Registers the Plane webhook URL on the Bale bot saved on this instance
+   * @returns {Promise<IBaleWebhookState>} Promise resolving to the webhook state after registration
+   * @throws {Error} If the API request fails or Bale rejects the registration
+   */
+  async registerBaleWebhook(): Promise<IBaleWebhookState> {
+    return this.post("/api/instances/bale-webhook/register/")
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Removes the Plane webhook URL from the Bale bot saved on this instance
+   * @returns {Promise<IBaleWebhookUnregistration>} Promise resolving to the unregistration result
+   * @throws {Error} If the API request fails or Bale rejects the removal
+   */
+  async unregisterBaleWebhook(): Promise<IBaleWebhookUnregistration> {
+    return this.post("/api/instances/bale-webhook/unregister/")
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Reads the webhook state of the Bale bot saved on this instance
+   * @returns {Promise<IBaleWebhookState>} Promise resolving to the current webhook state
+   * @throws {Error} If the API request fails or Bale rejects the request
+   */
+  async baleWebhookStatus(): Promise<IBaleWebhookState> {
+    return this.post("/api/instances/bale-webhook/status/")
       .then((response) => response?.data)
       .catch((error) => {
         throw error?.response?.data;
