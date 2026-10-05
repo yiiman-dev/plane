@@ -227,6 +227,10 @@ class Profile(TimeAuditModel):
         GREGORIAN = "gregorian", _("Gregorian")
         PERSIAN = "persian", _("Persian")
 
+    class TextDirection(models.TextChoices):
+        RIGHT_TO_LEFT = "rtl", _("Right-to-left")
+        LEFT_TO_RIGHT = "ltr", _("Left-to-right")
+
     id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True, primary_key=True)
     # User
     user = models.OneToOneField("db.User", on_delete=models.CASCADE, related_name="profile")
@@ -264,6 +268,15 @@ class Profile(TimeAuditModel):
         max_length=16,
         choices=CalendarSystem.choices,
         default=CalendarSystem.GREGORIAN,
+    )
+    # Direction used when rendering this user's markdown / rich-text content. RTL is the
+    # default so Persian and English text sit side by side correctly. This is a per-user
+    # content preference only: it never flips the direction of the surrounding app chrome,
+    # so it is read at render time instead of being applied to a root element.
+    text_direction = models.CharField(
+        max_length=3,
+        choices=TextDirection.choices,
+        default=TextDirection.RIGHT_TO_LEFT,
     )
     goals = models.JSONField(default=dict)
     background_color = models.CharField(max_length=255, default=get_random_color)
