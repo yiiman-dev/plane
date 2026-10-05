@@ -15,6 +15,11 @@ import type {
   IUserProfileProjectSegregation,
   IUserSettings,
   IUserEmailNotificationSettings,
+  IUserNotificationChannels,
+  INotificationChannelUpdatePayload,
+  INotificationChannelPreferencePayload,
+  INotificationChannelPreferences,
+  INotificationChannelTestPayload,
   TIssuesResponse,
   TUserProfile,
   IEmailCheckResponse,
@@ -139,6 +144,42 @@ export class UserService extends APIService {
 
   async updateCurrentUserEmailNotificationSettings(data: Partial<IUserEmailNotificationSettings>): Promise<any> {
     return this.patch("/api/users/me/notification-preferences/", data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async currentUserNotificationChannels(): Promise<IUserNotificationChannels> {
+    return this.get("/api/users/me/notification-channels/")
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response;
+      });
+  }
+
+  async updateCurrentUserNotificationChannel(
+    data: INotificationChannelUpdatePayload
+  ): Promise<IUserNotificationChannels> {
+    return this.patch("/api/users/me/notification-channels/", data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async updateCurrentUserNotificationChannelPreference(
+    data: INotificationChannelPreferencePayload
+  ): Promise<INotificationChannelPreferences> {
+    return this.patch("/api/users/me/notification-channel-preferences/", data)
+      .then((response) => response?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async sendCurrentUserNotificationChannelTest(data: INotificationChannelTestPayload): Promise<any> {
+    return this.post("/api/users/me/notification-channels/test/", data)
       .then((response) => response?.data)
       .catch((error) => {
         throw error?.response?.data;
