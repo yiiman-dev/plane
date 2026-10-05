@@ -298,3 +298,35 @@ class NotificationChannelLog(BaseModel):
     def __str__(self):
         """Return the receiver, channel and event"""
         return f"<{self.receiver}>:{self.channel}:{self.event}"
+
+
+class NotificationChannelPairingCode(BaseModel):
+    """One time pairing code handed to a user so a chat bot can be linked to their account
+
+    Only the sha256 hash of the code is persisted, the raw code is shown once and never stored.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_channel_pairing_codes",
+    )
+    channel = models.CharField(max_length=20, choices=NOTIFICATION_CHANNEL_CHOICES, default=NOTIFICATION_CHANNEL_BALE)
+    # sha256 hexdigest of the raw code, never the raw code itself
+    code = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    consumed_chat_id = models.CharField(max_length=128, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Notification Channel Pairing Code"
+        verbose_name_plural = "Notification Channel Pairing Codes"
+        db_table = "notification_channel_pairing_codes"
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["channel", "expires_at"], name="notif_pairing_expiry_idx"),
+        ]
+
+    def __str__(self):
+        """Return the user and channel"""
+        return f"<{self.user}>:{self.channel}"

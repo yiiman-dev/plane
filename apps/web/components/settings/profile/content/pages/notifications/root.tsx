@@ -15,6 +15,7 @@ import { EmailSettingsLoader } from "@/components/ui/loader/settings/email";
 import { UserService } from "@/services/user.service";
 // local imports
 import { NotificationsProfileSettingsForm } from "./email-notification-form";
+import { NotificationChannelsSettings } from "./notification-channels-settings";
 
 const userService = new UserService();
 
@@ -37,6 +38,9 @@ export const NotificationsProfileSettings = observer(function NotificationsProfi
       />
       <div className="mt-7">
         <NotificationsProfileSettingsForm data={data} />
+        <div className="mt-7">
+          <NotificationChannelsSettings />
+        </div>
       </div>
     </div>
   );

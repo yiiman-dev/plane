@@ -15,6 +15,10 @@ from plane.app.views import (
     NotificationChannelTestEndpoint,
 )
 
+# Imported directly so the shared views __init__ stays untouched
+from plane.app.views.notification.bale_webhook import BaleWebhookEndpoint
+from plane.app.views.notification.channel import NotificationChannelPairingEndpoint
+
 
 urlpatterns = [
     path(
@@ -66,5 +70,15 @@ urlpatterns = [
         "users/me/notification-channels/test/",
         NotificationChannelTestEndpoint.as_view(),
         name="user-notification-channel-test",
+    ),
+    path(
+        "users/me/notification-channels/bale/pairing/",
+        NotificationChannelPairingEndpoint.as_view(),
+        name="user-notification-channel-bale-pairing",
+    ),
+    path(
+        "integrations/bale/webhook/<str:webhook_secret>/",
+        BaleWebhookEndpoint.as_view(),
+        name="bale-webhook",
     ),
 ]
