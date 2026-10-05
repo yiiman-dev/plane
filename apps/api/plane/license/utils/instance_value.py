@@ -39,6 +39,23 @@ def get_configuration_value(keys):
     return tuple(environment_list)
 
 
+def get_workspace_free_seat_limit():
+    """Raw value of the free plan seat limit configured on this instance.
+
+    The value is returned unparsed on purpose: an empty or malformed value has
+    to stay distinguishable from a real number so the billing entitlements
+    service can treat it as "no limit" instead of silently capping seats.
+    """
+    return get_configuration_value(
+        [
+            {
+                "key": "WORKSPACE_FREE_SEAT_LIMIT",
+                "default": os.environ.get("WORKSPACE_FREE_SEAT_LIMIT"),
+            },
+        ]
+    )
+
+
 def get_kavenegar_configuration():
     return get_configuration_value(
         [
@@ -53,6 +70,28 @@ def get_bale_configuration():
         [
             {"key": "BALE_BOT_TOKEN", "default": os.environ.get("BALE_BOT_TOKEN")},
         ]
+    )
+
+
+def get_bale_bot_configuration():
+    """Return the full bot configuration of the bale channel
+
+    The token is the only value that is required, every other key degrades to a safe
+    default so a partially configured instance can still serve the pairing endpoints.
+    """
+    token, username, base_url, secret = get_configuration_value(
+        [
+            {"key": "BALE_BOT_TOKEN", "default": os.environ.get("BALE_BOT_TOKEN")},
+            {"key": "BALE_BOT_USERNAME", "default": os.environ.get("BALE_BOT_USERNAME")},
+            {"key": "BALE_WEBHOOK_BASE_URL", "default": os.environ.get("BALE_WEBHOOK_BASE_URL")},
+            {"key": "BALE_WEBHOOK_SECRET", "default": os.environ.get("BALE_WEBHOOK_SECRET")},
+        ]
+    )
+    return (
+        (token or "").strip(),
+        (username or "").strip(),
+        (base_url or "").strip() or (settings.WEB_URL or "").strip(),
+        (secret or "").strip() or (os.environ.get("BALE_WEBHOOK_SECRET") or "").strip(),
     )
 
 
