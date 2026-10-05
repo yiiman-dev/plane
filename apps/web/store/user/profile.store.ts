@@ -11,7 +11,7 @@ import { setLanguage } from "@plane/i18n";
 import type { TLanguage } from "@plane/i18n";
 // types
 import type { IUserTheme, TUserProfile } from "@plane/types";
-import { ECalendarSystem, EStartOfTheWeek } from "@plane/types";
+import { ECalendarSystem, EStartOfTheWeek, ETextDirection } from "@plane/types";
 // services
 import { UserService } from "@/services/user.service";
 // store
@@ -29,6 +29,7 @@ export interface IUserProfileStore {
   data: TUserProfile;
   // getters
   calendarSystem: ECalendarSystem;
+  textDirection: ETextDirection;
   // actions
   fetchUserProfile: () => Promise<TUserProfile | undefined>;
   updateUserProfile: (data: Partial<TUserProfile>) => Promise<TUserProfile | undefined>;
@@ -69,6 +70,7 @@ export class ProfileStore implements IUserProfileStore {
     language: "",
     start_of_the_week: EStartOfTheWeek.SUNDAY,
     calendar_system: ECalendarSystem.GREGORIAN,
+    text_direction: ETextDirection.RTL,
   };
 
   // services
@@ -97,6 +99,15 @@ export class ProfileStore implements IUserProfileStore {
    */
   get calendarSystem(): ECalendarSystem {
     return this.data.calendar_system === ECalendarSystem.PERSIAN ? ECalendarSystem.PERSIAN : ECalendarSystem.GREGORIAN;
+  }
+
+  /**
+   * Narrowed for the same reason as `calendarSystem`: a pre-migration payload must not reach
+   * the DOM as an unexpected `dir` value. RTL matches the backend default, so an unknown
+   * value renders exactly like a user who never touched the setting.
+   */
+  get textDirection(): ETextDirection {
+    return this.data.text_direction === ETextDirection.LTR ? ETextDirection.LTR : ETextDirection.RTL;
   }
 
   // helper action

@@ -32,6 +32,17 @@ export enum ECalendarSystem {
   PERSIAN = "persian",
 }
 
+/**
+ * @description Direction used when rendering this user's markdown / rich-text content.
+ * Applies to content only — the surrounding app chrome keeps its own direction. RTL is the
+ * default so Persian and English text sit side by side correctly.
+ * @enum {string}
+ */
+export enum ETextDirection {
+  RTL = "rtl",
+  LTR = "ltr",
+}
+
 export interface IUserLite {
   avatar_url: string;
   display_name: string;
@@ -93,6 +104,7 @@ export type TUserProfile = {
   updated_at: Date | string;
   start_of_the_week: EStartOfTheWeek;
   calendar_system: ECalendarSystem;
+  text_direction: ETextDirection;
 };
 
 export interface IInstanceAdminStatus {

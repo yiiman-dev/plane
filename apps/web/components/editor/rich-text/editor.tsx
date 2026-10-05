@@ -13,7 +13,7 @@ import { cn } from "@plane/utils";
 // components
 import { EditorMentionsRoot } from "@/components/editor/embeds/mentions";
 // hooks
-import { useEditorConfig, useEditorMention } from "@/hooks/editor";
+import { useContentTextDirection, useEditorConfig, useEditorMention } from "@/hooks/editor";
 import { useMember } from "@/hooks/store/use-member";
 import { useParseEditorContent } from "@/hooks/use-parse-editor-content";
 // plane web hooks
@@ -54,6 +54,8 @@ export const RichTextEditor = forwardRef(function RichTextEditor(
   } = props;
   // store hooks
   const { getUserDetails } = useMember();
+  // content text direction
+  const contentDirection = useContentTextDirection();
   // editor flaggings
   const { richText: richTextEditorExtensions } = useEditorFlagging({
     workspaceSlug,
@@ -73,6 +75,7 @@ export const RichTextEditor = forwardRef(function RichTextEditor(
 
   return (
     <RichTextEditorWithRef
+      contentDirection={contentDirection}
       ref={ref}
       disabledExtensions={[...richTextEditorExtensions.disabled, ...(additionalDisabledExtensions ?? [])]}
       editable={editable}

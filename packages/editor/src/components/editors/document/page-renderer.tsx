@@ -7,6 +7,7 @@
 import type { HocuspocusProvider } from "@hocuspocus/provider";
 import type { Editor } from "@tiptap/react";
 // plane imports
+import type { ETextDirection } from "@plane/types";
 import { cn } from "@plane/utils";
 // components
 import { DocumentContentLoader, EditorContainer, EditorContentWrapper } from "@/components/editors";
@@ -24,6 +25,7 @@ import type {
 type Props = {
   aiHandler?: TAIHandler;
   bubbleMenuEnabled: boolean;
+  contentDirection?: ETextDirection;
   disabledExtensions: IEditorProps["disabledExtensions"];
   displayConfig: TDisplayConfig;
   documentLoaderClassName?: string;
@@ -44,6 +46,7 @@ type Props = {
 export function PageRenderer(props: Props) {
   const {
     bubbleMenuEnabled,
+    contentDirection,
     disabledExtensions,
     displayConfig,
     documentLoaderClassName,
@@ -79,6 +82,7 @@ export function PageRenderer(props: Props) {
                 displayConfig={displayConfig}
               >
                 <EditorContentWrapper
+                  contentDirection={contentDirection}
                   editor={titleEditor}
                   id={id + "-title"}
                   tabIndex={tabIndex}
@@ -96,7 +100,7 @@ export function PageRenderer(props: Props) {
             provider={provider}
             state={state}
           >
-            <EditorContentWrapper editor={editor} id={id} tabIndex={tabIndex} />
+            <EditorContentWrapper contentDirection={contentDirection} editor={editor} id={id} tabIndex={tabIndex} />
             {editor.isEditable && !isTouchDevice && (
               <div>
                 {bubbleMenuEnabled && (
