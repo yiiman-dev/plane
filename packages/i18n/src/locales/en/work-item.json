@@ -85,7 +85,13 @@
     },
     "states": {
       "active": "Active",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "State change blocked",
+          "message": "This work item is blocked by {blockers}. Complete the blocking work items before moving it into progress."
+        }
+      }
     },
     "comments": {
       "placeholder": "Add comment",
