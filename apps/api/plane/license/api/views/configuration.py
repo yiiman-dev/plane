@@ -14,6 +14,7 @@ from smtplib import (
 # Django imports
 from django.core.mail import BadHeaderError, EmailMultiAlternatives, get_connection
 from django.db.models import Q, Case, When, Value
+from django.utils.crypto import get_random_string
 
 # Third party imports
 from rest_framework import status
@@ -28,6 +29,14 @@ from plane.license.api.serializers import InstanceConfigurationSerializer
 from plane.license.utils.encryption import encrypt_data
 from plane.utils.cache import cache_response, invalidate_cache
 from plane.license.utils.instance_value import get_email_configuration
+from plane.utils.notifications.bale import (
+    build_webhook_url,
+    delete_webhook,
+    get_bale_bot_username,
+    get_me,
+    get_webhook_info,
+    set_webhook,
+)
 
 
 class InstanceConfigurationEndpoint(BaseAPIView):
@@ -205,3 +214,115 @@ class NotificationChannelCredentialCheckEndpoint(BaseAPIView):
             )
 
         return Response({"channel": channel, "is_configured": True}, status=status.HTTP_200_OK)
+
+
+def save_instance_configuration_value(key, value):
+    """Create or update a single instance configuration row, encrypted when required"""
+    configuration, _created = InstanceConfiguration.objects.get_or_create(
+        key=key, defaults={"category": "SECRET", "is_encrypted": False}
+    )
+    configuration.value = encrypt_data(value) if configuration.is_encrypted else value
+    configuration.save(update_fields=["value"])
+    return configuration
+
+
+class BaleWebhookRegisterEndpoint(BaseAPIView):
+    """Register the webhook of the bale bot and resolve the public identity of the bot"""
+
+    permission_classes = [InstanceAdminPermission]
+
+    def post(self, request):
+        _token, _username, _base_url, secret = get_bale_bot_configuration()
+        if not _token:
+            return Response(
+                {"error": "BALE_BOT_TOKEN is not configured on this instance"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not secret:
+            # The secret is what authenticates every incoming webhook call
+            secret = get_random_string(48)
+            save_instance_configuration_value("BALE_WEBHOOK_SECRET", secret)
+            invalidate_cache(path="/api/instances/configurations/", user=False)
+
+        webhook_url = build_webhook_url()
+        if webhook_url is None:
+            return Response(
+                {"error": "Could not build the webhook url, check the instance web url"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            set_webhook(webhook_url)
+            identity = get_me()
+        except NotificationChannelError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response(
+                {"error": "Could not reach Bale, please verify the bot token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        username = identity.get("username")
+        if username:
+            save_instance_configuration_value("BALE_BOT_USERNAME", username)
+            invalidate_cache(path="/api/instances/configurations/", user=False)
+
+        return Response(
+            {
+                "channel": "BALE",
+                "is_registered": True,
+                "webhook_url": webhook_url,
+                "bot_username": f"@{username}" if username and not username.startswith("@") else username,
+                "bot_id": str(identity.get("id")) if identity.get("id") else None,
+                "bot_first_name": identity.get("first_name"),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class BaleWebhookUnregisterEndpoint(BaseAPIView):
+    """Remove the webhook registration so the bot stops delivering updates"""
+
+    permission_classes = [InstanceAdminPermission]
+
+    def post(self, request):
+        try:
+            delete_webhook()
+        except NotificationChannelError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response(
+                {"error": "Could not reach Bale, please verify the bot token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({"channel": "BALE", "is_registered": False}, status=status.HTTP_200_OK)
+
+
+class BaleWebhookStatusEndpoint(BaseAPIView):
+    """Report the webhook the bot currently calls and the identity it answers to"""
+
+    permission_classes = [InstanceAdminPermission]
+
+    def post(self, request):
+        try:
+            info = get_webhook_info()
+        except NotificationChannelError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response(
+                {"error": "Could not reach Bale, please verify the bot token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        username = get_bale_bot_username()
+        return Response(
+            {
+                "channel": "BALE",
+                "is_registered": bool(info.get("url")),
+                "webhook_url": info.get("url") or "",
+                "bot_username": username,
+            },
+            status=status.HTTP_200_OK,
+        )

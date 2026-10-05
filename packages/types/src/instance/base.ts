@@ -10,6 +10,7 @@ import type {
   TInstanceEmailConfigurationKeys,
   TInstanceImageConfigurationKeys,
   TInstanceAuthenticationKeys,
+  TInstanceNotificationChannelConfigurationKeys,
   TInstanceWorkspaceConfigurationKeys,
   TCoreLoginMediums,
 } from "./";
@@ -59,6 +60,8 @@ export interface IInstanceConfig {
   has_llm_configured: boolean;
   file_size_limit: number | undefined;
   is_smtp_configured: boolean;
+  has_bale_configured?: boolean;
+  has_kavenegar_configured?: boolean;
   app_base_url: string | undefined;
   space_base_url: string | undefined;
   admin_base_url: string | undefined;
@@ -83,6 +86,7 @@ export type TInstanceConfigurationKeys =
   | TInstanceEmailConfigurationKeys
   | TInstanceImageConfigurationKeys
   | TInstanceAuthenticationKeys
+  | TInstanceNotificationChannelConfigurationKeys
   | TInstanceWorkspaceConfigurationKeys;
 
 export interface IInstanceConfiguration {

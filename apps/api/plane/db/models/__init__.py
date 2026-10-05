@@ -65,6 +65,7 @@ from .notification import (
     EmailNotificationLog,
     Notification,
     NotificationChannelLog,
+    NotificationChannelPairingCode,
     NotificationChannelPreference,
     UserNotificationChannel,
     UserNotificationPreference,
