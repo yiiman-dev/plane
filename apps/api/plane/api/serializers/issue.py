@@ -31,6 +31,7 @@ from plane.utils.content_validator import (
     validate_html_content,
     validate_binary_data,
 )
+from plane.utils.issue_blocking import validate_state_transition_allowed
 
 from .base import BaseSerializer
 from .cycle import CycleLiteSerializer, CycleSerializer
@@ -138,6 +139,10 @@ class IssueSerializer(BaseSerializer):
             and not State.objects.filter(project_id=self.context.get("project_id"), pk=data.get("state").id).exists()
         ):
             raise serializers.ValidationError("State is not valid please pass a valid state_id")
+
+        # A blocked work item may not enter a started state until every blocker is completed
+        if data.get("state"):
+            validate_state_transition_allowed(self.instance, data["state"])
 
         # Check parent issue is from workspace as it can be cross workspace
         if (
