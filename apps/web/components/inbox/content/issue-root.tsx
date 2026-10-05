@@ -41,12 +41,13 @@ type Props = {
   projectId: string;
   inboxIssue: IInboxIssueStore;
   isEditable: boolean;
+  isTitleEditable: boolean;
   isSubmitting: TNameDescriptionLoader;
   setIsSubmitting: Dispatch<SetStateAction<TNameDescriptionLoader>>;
 };
 
 export const InboxIssueMainContent = observer(function InboxIssueMainContent(props: Props) {
-  const { workspaceSlug, projectId, inboxIssue, isEditable, isSubmitting, setIsSubmitting } = props;
+  const { workspaceSlug, projectId, inboxIssue, isEditable, isTitleEditable, isSubmitting, setIsSubmitting } = props;
   // refs
   const editorRef = useRef<EditorRefApi>(null);
   // store hooks
@@ -133,7 +134,7 @@ export const InboxIssueMainContent = observer(function InboxIssueMainContent(pro
           isSubmitting={isSubmitting}
           setIsSubmitting={(value) => setIsSubmitting(value)}
           issueOperations={issueOperations}
-          disabled={!isEditable}
+          disabled={!isEditable || !isTitleEditable}
           value={issue.name}
         />
 

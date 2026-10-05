@@ -39,14 +39,24 @@ type Props = {
   issueId: string;
   issueOperations: TIssueOperations;
   disabled: boolean;
+  titleDisabled?: boolean;
   isArchived: boolean;
   isSubmitting: TNameDescriptionLoader;
   setIsSubmitting: (value: TNameDescriptionLoader) => void;
 };
 
 export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetails(props: Props) {
-  const { editorRef, workspaceSlug, issueId, issueOperations, disabled, isArchived, isSubmitting, setIsSubmitting } =
-    props;
+  const {
+    editorRef,
+    workspaceSlug,
+    issueId,
+    issueOperations,
+    disabled,
+    titleDisabled = false,
+    isArchived,
+    isSubmitting,
+    setIsSubmitting,
+  } = props;
   // store hooks
   const { data: currentUser } = useUser();
   const {
@@ -101,7 +111,7 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
         isSubmitting={isSubmitting}
         setIsSubmitting={(value) => setIsSubmitting(value)}
         issueOperations={issueOperations}
-        disabled={disabled || isArchived}
+        disabled={disabled || isArchived || titleDisabled}
         value={issue.name}
       />
 

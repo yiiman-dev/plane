@@ -35,6 +35,7 @@ interface IIssueView {
   isError?: boolean;
   is_archived: boolean;
   disabled?: boolean;
+  titleDisabled?: boolean;
   embedIssue?: boolean;
   embedRemoveCurrentNotification?: () => void;
   issueOperations: TIssueOperations;
@@ -49,6 +50,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
     isError,
     is_archived,
     disabled = false,
+    titleDisabled = false,
     embedIssue = false,
     embedRemoveCurrentNotification,
     issueOperations,
@@ -182,6 +184,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                       issueId={issueId}
                       issueOperations={issueOperations}
                       disabled={disabled}
+                      titleDisabled={titleDisabled}
                       isArchived={is_archived}
                       isSubmitting={isSubmitting}
                       setIsSubmitting={(value) => setIsSubmitting(value)}
@@ -223,6 +226,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                           issueId={issueId}
                           issueOperations={issueOperations}
                           disabled={disabled}
+                          titleDisabled={titleDisabled}
                           isArchived={is_archived}
                           isSubmitting={isSubmitting}
                           setIsSubmitting={(value) => setIsSubmitting(value)}
