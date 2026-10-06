@@ -462,6 +462,12 @@ class WorkspaceFeatureFlag(BaseModel):
 class LedgerAccount(BaseModel):
     """One side of every money movement. Codes are stable and referenced in code."""
 
+    # Soft deleted rows keep this uniqueness: ``delete()`` only sets ``deleted_at``
+    # (see ``SoftDeleteModel``), so the code stays taken and a second
+    # ``get_or_create(code=...)`` for a workspace whose account was deleted raises
+    # ``IntegrityError``, because the default manager hides the deleted row so
+    # ``get_or_create`` tries to insert a duplicate. Callers must look the code up
+    # through ``all_objects`` and revive it (``deleted_at=None``) instead.
     code = models.CharField(max_length=255, unique=True, db_index=True)
     kind = models.CharField(max_length=32, choices=LedgerAccountKind.choices, default=LedgerAccountKind.ASSET)
     title = models.CharField(max_length=255, blank=True)
@@ -501,6 +507,12 @@ class LedgerEntry(BaseModel):
     transaction = models.ForeignKey(
         "billing.PaymentTransaction", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
     )
+    # Unique across soft deleted rows too: ``delete()`` only sets ``deleted_at``,
+    # so retrying an operation whose entry was deleted still raises
+    # ``IntegrityError`` rather than posting the movement a second time. Retry
+    # logic must therefore look the key up through ``all_objects`` (the default
+    # manager hides soft deleted rows) and revive the row instead of creating a
+    # new one.
     idempotency_key = models.CharField(max_length=255, unique=True)
 
     class Meta:
