@@ -17,6 +17,7 @@ from django.utils import timezone as django_timezone
 
 # Module imports
 from plane.billing.models import LedgerAccount, LedgerAccountKind, LedgerEntry, LedgerSource, Wallet
+from plane.billing.services import money
 
 pytestmark = pytest.mark.django_db
 
@@ -217,17 +218,22 @@ def test_is_debit_normal_follows_kind():
 
 
 def test_wallet_account_codes_are_stable():
-    # Local imports
-    from plane.billing.services import money
-
     assert money.WalletAccountCode.wallet_default("abc-123") == "wallet:default:abc-123"
     assert money.WalletAccountCode.wallet_hold("abc-123") == "wallet:hold:abc-123"
-    assert money.WalletAccountCode.gateway_receivable("zarinpal") == "gateway:zarinpal:receivable"
+
+
+def test_gateway_receivable_is_not_a_wallet_account():
+    """A gateway receivable is not one of the two sides of a workspace wallet."""
+    assert not hasattr(money.WalletAccountCode, "gateway_receivable")
+    assert money.LedgerAccountCode.gateway_receivable("zarinpal") == "gateway:zarinpal:receivable"
+
+
+def test_admin_grant_pool_is_a_global_account_code():
+    """Task 4 charges against this pool; it has no workspace, so it is a constant."""
+    assert money.ADMIN_GRANT_POOL == "admin_grant_pool"
 
 
 def test_post_entry_creates_one_balanced_row(workspace_factory):
-    from plane.billing.services import money
-
     workspace = workspace_factory(name="تیم ۳")
     debit = money.get_or_create_account("d3", LedgerAccountKind.ASSET, "بدهکار")
     credit = money.get_or_create_account("c3", LedgerAccountKind.ADMIN_POOL, "بستانه")
@@ -247,8 +253,6 @@ def test_post_entry_creates_one_balanced_row(workspace_factory):
 
 
 def test_post_entry_is_idempotent_and_returns_the_first_row():
-    from plane.billing.services import money
-
     debit = money.get_or_create_account("d4", LedgerAccountKind.ASSET, "بدهکار")
     credit = money.get_or_create_account("c4", LedgerAccountKind.ADMIN_POOL, "بستانه")
 
@@ -266,8 +270,6 @@ def test_post_entry_is_idempotent_and_returns_the_first_row():
 
 
 def test_wallet_balance_counts_debits_minus_credits(workspace_factory):
-    from plane.billing.services import money
-
     workspace = workspace_factory(name="تیم ۴")
     default = money.get_or_create_account(
         money.WalletAccountCode.wallet_default(workspace.pk), LedgerAccountKind.ASSET, "کیف پول قابل خرج", workspace
@@ -306,8 +308,6 @@ def test_wallet_balance_counts_debits_minus_credits(workspace_factory):
 
 
 def test_round_to_toman_rounds_to_the_nearest_thousand():
-    from plane.billing.services import money
-
     assert money.round_to_toman(Decimal("1234.4")) == 1000
     # The brief asserted 2000 here, but 1234.5 is 234.5 from 1000 and 765.5
     # from 2000, so the nearest thousand is 1000. HALF_UP decides the tie, not
@@ -318,10 +318,26 @@ def test_round_to_toman_rounds_to_the_nearest_thousand():
     assert money.round_to_toman(Decimal("999")) == 1000
 
 
+def test_round_to_toman_edge_cases():
+    assert money.round_to_toman(Decimal("0")) == 0
+    # 499 is more than half a thousand away from 1000, so it rounds DOWN to zero.
+    assert money.round_to_toman(Decimal("499")) == 0
+    # 500 is exactly half a thousand from 1000; HALF_UP sends it up.
+    assert money.round_to_toman(Decimal("500")) == 1000
+    # 2500 is exactly half a thousand from 2000 and from 3000; HALF_UP sends it up.
+    assert money.round_to_toman(Decimal("2500")) == 3000
+
+
+def test_round_to_toman_rounds_negatives_away_from_zero():
+    """Symmetry matters: -1500 is 500 from both -1000 and -2000 and HALF_UP
+    decides a Decimal tie by magnitude, so it lands on -2000."""
+    assert money.round_to_toman(Decimal("-1500")) == -2000
+    assert money.round_to_toman(Decimal("-1234.4")) == -1000
+    assert money.round_to_toman(Decimal("-499")) == 0
+
+
 def test_get_or_create_account_revives_a_soft_deleted_row():
     """A deleted account keeps its unique code, so the lookup must revive it."""
-    from plane.billing.services import money
-
     first = money.get_or_create_account("revive-me", LedgerAccountKind.ASSET, "کیف پول")
     # ``delete()`` would stamp the same field but also fire a Celery task, which
     # needs a broker the test stack does not run. Stamp it directly instead.
@@ -335,3 +351,193 @@ def test_get_or_create_account_revives_a_soft_deleted_row():
     assert revived.pk == first.pk
     assert revived.deleted_at is None
     assert LedgerAccount.all_objects.filter(code="revive-me").count() == 1
+
+
+# --------------------------------------------------------------------------
+# post_entry guards
+# --------------------------------------------------------------------------
+
+
+def _two_accounts(prefix: str):
+    debit = money.get_or_create_account(f"{prefix}-debit", LedgerAccountKind.ASSET, "بدهکار")
+    credit = money.get_or_create_account(f"{prefix}-credit", LedgerAccountKind.ADMIN_POOL, "بستانه")
+    return debit, credit
+
+
+def test_post_entry_rejects_the_same_account_on_both_sides():
+    debit, _credit = _two_accounts("same")
+    with pytest.raises(ValueError, match="must differ"):
+        money.post_entry(
+            debit=debit, credit=debit, amount_toman=1000, source=LedgerSource.ADMIN_GRANT, idempotency_key="same-acct"
+        )
+    assert not LedgerEntry.all_objects.filter(idempotency_key="same-acct").exists()
+
+
+@pytest.mark.parametrize("amount", [0, -1, -1000])
+def test_post_entry_rejects_a_non_positive_amount(amount):
+    debit, credit = _two_accounts(f"amount{abs(amount)}")
+    with pytest.raises(ValueError, match="must be positive"):
+        money.post_entry(
+            debit=debit,
+            credit=credit,
+            amount_toman=amount,
+            source=LedgerSource.ADMIN_GRANT,
+            idempotency_key=f"amount-{amount}",
+        )
+    assert not LedgerEntry.all_objects.filter(idempotency_key=f"amount-{amount}").exists()
+
+
+def test_post_entry_revives_a_soft_deleted_entry_instead_of_crashing(workspace_factory):
+    """C1: the key is unique across soft-deleted rows, so the retry hits
+    IntegrityError and the old default-manager lookup raised DoesNotExist."""
+    debit, credit = _two_accounts("revive-entry")
+    first = money.post_entry(
+        debit=debit, credit=credit, amount_toman=4000, source=LedgerSource.ADMIN_GRANT, idempotency_key="revive-entry"
+    )
+    # delete() would fire a Celery task the test stack has no broker for.
+    LedgerEntry.all_objects.filter(pk=first.pk).update(deleted_at=django_timezone.now())
+    assert LedgerEntry.objects.filter(idempotency_key="revive-entry").count() == 0
+    assert LedgerEntry.all_objects.filter(idempotency_key="revive-entry").count() == 1
+
+    again = money.post_entry(
+        debit=debit, credit=credit, amount_toman=4000, source=LedgerSource.ADMIN_GRANT, idempotency_key="revive-entry"
+    )
+
+    assert again.pk == first.pk
+    assert again.deleted_at is None
+    assert LedgerEntry.all_objects.filter(idempotency_key="revive-entry").count() == 1
+    # the revival must not have double-posted the movement
+    assert money.account_balance(debit) == 4000
+
+
+def test_post_entry_reraises_an_unrelated_integrity_error(monkeypatch):
+    """I2: a PROTECT/CHECK/FK failure is not an idempotency race. It must surface
+    as itself, not as a DoesNotExist for a key that was never posted."""
+    debit, credit = _two_accounts("unrelated")
+
+    def boom(*args, **kwargs):
+        raise IntegrityError("PROTECT violation on debit_account")
+
+    monkeypatch.setattr(LedgerEntry.objects, "create", boom)
+
+    with pytest.raises(IntegrityError, match="PROTECT"):
+        money.post_entry(
+            debit=debit,
+            credit=credit,
+            amount_toman=1000,
+            source=LedgerSource.ADMIN_GRANT,
+            idempotency_key="unrelated",
+        )
+
+
+def test_post_entry_returns_the_winner_of_a_lost_race(monkeypatch):
+    """Covers the IntegrityError branch on its own.
+
+    The end-to-end idempotency test cannot isolate it: delete the early return
+    and the handler still catches the violation, delete the handler and the
+    guard still prevents one. Here the first key lookup is forced to miss (as it
+    would if a concurrent transaction committed between our read and our insert)
+    so the create really does hit the unique constraint.
+    """
+    debit, credit = _two_accounts("race")
+    winner = money.post_entry(
+        debit=debit, credit=credit, amount_toman=2000, source=LedgerSource.ADMIN_GRANT, idempotency_key="race"
+    )
+    real_find = money._find_entry_any_state
+    calls = {"n": 0}
+
+    def blind_first_call(key):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None  # as if the concurrent commit landed after our read
+        return real_find(key)
+
+    monkeypatch.setattr(money, "_find_entry_any_state", blind_first_call)
+
+    result = money.post_entry(
+        debit=debit, credit=credit, amount_toman=2000, source=LedgerSource.ADMIN_GRANT, idempotency_key="race"
+    )
+
+    assert result.pk == winner.pk
+    assert LedgerEntry.all_objects.filter(idempotency_key="race").count() == 1
+    assert money.account_balance(debit) == 2000
+
+
+def test_post_entry_rejects_a_key_reused_for_a_different_amount():
+    """I4: a key collision with a different payload must not silently succeed."""
+    debit, credit = _two_accounts("collision")
+    first = money.post_entry(
+        debit=debit, credit=credit, amount_toman=1000, source=LedgerSource.ADMIN_GRANT, idempotency_key="collide"
+    )
+    with pytest.raises(ValueError, match="different movement"):
+        money.post_entry(
+            debit=debit,
+            credit=credit,
+            amount_toman=9000,
+            source=LedgerSource.ADMIN_GRANT,
+            idempotency_key="collide",
+        )
+    assert LedgerEntry.all_objects.filter(idempotency_key="collide").get().pk == first.pk
+    assert money.account_balance(debit) == 1000
+
+
+def test_post_entry_rejects_a_key_reused_for_different_legs():
+    debit, credit = _two_accounts("legs-a")
+    other = money.get_or_create_account("legs-b-debit", LedgerAccountKind.ASSET, "بدهکار دیگر")
+    money.post_entry(
+        debit=debit, credit=credit, amount_toman=1000, source=LedgerSource.ADMIN_GRANT, idempotency_key="legs"
+    )
+    with pytest.raises(ValueError, match="different movement"):
+        money.post_entry(
+            debit=other, credit=credit, amount_toman=1000, source=LedgerSource.ADMIN_GRANT, idempotency_key="legs"
+        )
+
+
+# --------------------------------------------------------------------------
+# balance scoping and the clamp (I3 / I5)
+# --------------------------------------------------------------------------
+
+
+def test_wallet_account_balance_counts_entries_posted_without_a_workspace(workspace_factory):
+    """I5: post_entry accepts workspace=None, and filtering the entry by its own
+    (nullable) workspace would hide that posting and under-count the wallet."""
+    workspace = workspace_factory(name="تیم بی‌ورک‌اسپیس")
+    spendable, _held = money.get_or_create_wallet_accounts(workspace)
+    pool = money.get_or_create_account(money.ADMIN_GRANT_POOL, LedgerAccountKind.ADMIN_POOL, "استخر اعتبار")
+
+    money.post_entry(
+        debit=spendable, credit=pool, amount_toman=60_000, source=LedgerSource.ADMIN_GRANT, idempotency_key="no-ws"
+    )
+
+    assert LedgerEntry.all_objects.filter(idempotency_key="no-ws").get().workspace_id is None
+    assert money.wallet_balance(workspace) == 60_000
+
+
+def test_wallet_balance_clamp_is_reported_honestly(workspace_factory):
+    """I3: the clamp hides the overdraw, so the unclamped value must be reachable."""
+    workspace = workspace_factory(name="تیم بیش‌برداشت")
+    spendable, _held = money.get_or_create_wallet_accounts(workspace)
+    pool = money.get_or_create_account(money.ADMIN_GRANT_POOL, LedgerAccountKind.ADMIN_POOL, "استخر اعتبار")
+
+    money.post_entry(
+        debit=spendable, credit=pool, amount_toman=10_000, source=LedgerSource.ADMIN_GRANT, idempotency_key="in"
+    )
+    money.post_entry(
+        debit=pool, credit=spendable, amount_toman=25_000, source=LedgerSource.REFUND, idempotency_key="out"
+    )
+
+    assert money.wallet_balance(workspace) == 0
+    assert money.wallet_balance(workspace, clamp_negative=False) == -15_000
+    assert money.wallet_balance_is_enough(workspace, 1) is False
+    assert money.wallet_balance_is_enough(workspace, -15_000) is True
+
+
+def test_wallet_balance_is_enough_on_a_healthy_wallet(workspace_factory):
+    workspace = workspace_factory(name="تیم سالم")
+    spendable, _held = money.get_or_create_wallet_accounts(workspace)
+    pool = money.get_or_create_account(money.ADMIN_GRANT_POOL, LedgerAccountKind.ADMIN_POOL, "استخر اعتبار")
+    money.post_entry(
+        debit=spendable, credit=pool, amount_toman=50_000, source=LedgerSource.ADMIN_GRANT, idempotency_key="healthy"
+    )
+    assert money.wallet_balance_is_enough(workspace, 50_000) is True
+    assert money.wallet_balance_is_enough(workspace, 50_001) is False
