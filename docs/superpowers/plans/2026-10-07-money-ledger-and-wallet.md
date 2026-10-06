@@ -22,7 +22,12 @@
 - Copy is Persian. Every user-facing string and every admin-facing `LedgerAccount.title` is Persian, matching the existing billing app.
 - Money arithmetic uses `Decimal`; conversion to `int` happens once, at the end, rounding to the nearest 1,000 Toman.
 - Python files start with the existing copyright header, then a section-comment header (`# Python imports`, `# Django imports`, `# Module imports`) as in `apps/api/plane/billing/models.py:1-13`.
-- Backend tests run in Docker: `docker compose -f docker-compose-test.yml run --rm api-tests pytest -m unit`. Never run pytest directly against a local environment.
+- Backend tests run in Docker. **`minio` cannot be pulled in this environment, so always start the DB and redis yourself and skip the rest of the stack.** The working invocation is:
+  ```bash
+  docker compose -f docker-compose-test.yml up -d test-db test-redis
+  docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest <path> -v
+  ```
+  Never drop `--no-deps --pull never`: without them the run tries to pull `pgsty/minio` and fails, and `--no-deps` alone leaves the DB hostname unresolvable. Never run pytest against a local environment.
 - Every new endpoint gets a test that a **role 15 workspace member** is rejected. `WorkSpaceAdminPermission` accepts role 15 and must never guard financial data.
 
 ---
@@ -182,7 +187,7 @@ def test_balance_is_the_sum_of_entries_not_a_column():
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_money.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_money.py -v
 ```
 
 Expected: collection error — `ImportError: cannot import name 'LedgerAccount'`
@@ -302,7 +307,7 @@ Expected: a file named `0003_*.py`. Rename it to `0003_wallet_ledger.py`, then r
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_money.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_money.py -v
 ```
 
 Expected: 6 passed
@@ -420,7 +425,7 @@ Add `from decimal import Decimal` to the imports at the top of the file.
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_money.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_money.py -v
 ```
 
 Expected: collection error — `ModuleNotFoundError: No module named 'plane.billing.services.money'`
@@ -595,7 +600,7 @@ from django.db.models import Sum
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_money.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_money.py -v
 ```
 
 Expected: 12 passed
@@ -679,7 +684,7 @@ def test_existing_workspace_admin_permission_accepts_role_15():
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_ledger_security.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_ledger_security.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'plane.billing.api.permissions'`
@@ -736,7 +741,7 @@ class WorkspaceBillingLedgerPermission(BasePermission):
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_ledger_security.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_ledger_security.py -v
 ```
 
 Expected: 1 passed
@@ -967,7 +972,7 @@ def test_concurrent_charges_do_not_overdraw(race_workspace):
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_wallet.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_wallet.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'plane.billing.services.wallet'`
@@ -1186,7 +1191,7 @@ def refund_to_spendable(*, workspace, amount_toman: int, reason: str, idempotenc
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_wallet.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_wallet.py -v
 ```
 
 Expected: 13 passed
@@ -1325,7 +1330,7 @@ from plane.billing.services import ledger
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_ledger_security.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_ledger_security.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'plane.billing.services.ledger'`
@@ -1516,7 +1521,7 @@ from plane.billing.services import money as money_service
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_ledger_security.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_ledger_security.py -v
 ```
 
 Expected: 5 passed
@@ -1704,7 +1709,7 @@ def test_instance_admin_sees_the_internal_description(client, member_and_admin_r
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_ledger_security.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_ledger_security.py -v
 ```
 
 Expected: 404 responses, `assert response.status_code == 403` fails with 404
@@ -1930,7 +1935,7 @@ from plane.billing.api.views.wallet_views import (
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_ledger_security.py -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_ledger_security.py -v
 ```
 
 Expected: 16 passed
@@ -1940,7 +1945,7 @@ Expected: 16 passed
 Run:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing -v
 ```
 
 Expected: all passed, no failures. In particular `test_api_views.py::test_admin_endpoints_reject_a_plain_user` must still pass — if a new URL accidentally sits outside `InstanceAdminPermission`, that test is your canary.
@@ -1972,7 +1977,7 @@ four different attempts to smuggle a scope through the query string."
 - [ ] **Step 1: Run the full billing test suite**
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing -v
 ```
 
 Expected: all passed
@@ -2011,7 +2016,7 @@ def test_every_workspace_balance_is_derivable_and_non_negative():
 Run it:
 
 ```bash
-docker compose -f docker-compose-test.yml run --rm api-tests pytest plane/billing/tests/test_money.py::test_every_workspace_balance_is_derivable_and_non_negative -v
+docker compose -f docker-compose-test.yml run --rm --no-deps --pull never api-tests pytest plane/billing/tests/test_money.py::test_every_workspace_balance_is_derivable_and_non_negative -v
 ```
 
 Expected: 1 passed
