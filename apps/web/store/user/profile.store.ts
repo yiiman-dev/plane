@@ -11,7 +11,7 @@ import { setLanguage } from "@plane/i18n";
 import type { TLanguage } from "@plane/i18n";
 // types
 import type { IUserTheme, TUserProfile } from "@plane/types";
-import { EStartOfTheWeek } from "@plane/types";
+import { ECalendarSystem, EStartOfTheWeek, ETextDirection } from "@plane/types";
 // services
 import { UserService } from "@/services/user.service";
 // store
@@ -27,6 +27,9 @@ export interface IUserProfileStore {
   isLoading: boolean;
   error: TError | undefined;
   data: TUserProfile;
+  // getters
+  calendarSystem: ECalendarSystem;
+  textDirection: ETextDirection;
   // actions
   fetchUserProfile: () => Promise<TUserProfile | undefined>;
   updateUserProfile: (data: Partial<TUserProfile>) => Promise<TUserProfile | undefined>;
@@ -66,6 +69,8 @@ export class ProfileStore implements IUserProfileStore {
     updated_at: "",
     language: "",
     start_of_the_week: EStartOfTheWeek.SUNDAY,
+    calendar_system: ECalendarSystem.GREGORIAN,
+    text_direction: ETextDirection.RTL,
   };
 
   // services
@@ -85,6 +90,24 @@ export class ProfileStore implements IUserProfileStore {
     });
     // services
     this.userService = new UserService();
+  }
+
+  // derived values
+  /**
+   * Narrowed so a malformed or pre-migration API response cannot put the UI into a state no
+   * adapter handles — `getCalendarAdapter` also falls back, but components read this directly.
+   */
+  get calendarSystem(): ECalendarSystem {
+    return this.data.calendar_system === ECalendarSystem.PERSIAN ? ECalendarSystem.PERSIAN : ECalendarSystem.GREGORIAN;
+  }
+
+  /**
+   * Narrowed for the same reason as `calendarSystem`: a pre-migration payload must not reach
+   * the DOM as an unexpected `dir` value. RTL matches the backend default, so an unknown
+   * value renders exactly like a user who never touched the setting.
+   */
+  get textDirection(): ETextDirection {
+    return this.data.text_direction === ETextDirection.LTR ? ETextDirection.LTR : ETextDirection.RTL;
   }
 
   // helper action

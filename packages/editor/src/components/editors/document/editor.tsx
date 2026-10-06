@@ -27,6 +27,7 @@ import type { EditorRefApi, IDocumentEditorProps } from "@/types";
 function DocumentEditor(props: IDocumentEditorProps) {
   const {
     bubbleMenuEnabled = false,
+    contentDirection,
     containerClassName,
     disabledExtensions,
     displayConfig = DEFAULT_DISPLAY_CONFIG,
@@ -96,6 +97,7 @@ function DocumentEditor(props: IDocumentEditorProps) {
   return (
     <PageRenderer
       bubbleMenuEnabled={bubbleMenuEnabled}
+      contentDirection={contentDirection}
       displayConfig={displayConfig}
       editor={editor}
       editorContainerClassName={cn(editorContainerClassName, "document-editor")}

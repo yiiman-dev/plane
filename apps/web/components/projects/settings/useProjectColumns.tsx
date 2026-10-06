@@ -14,7 +14,7 @@ import { MemberHeaderColumn } from "@/components/project/member-header-column";
 import { AccountTypeColumn, NameColumn } from "@/components/project/settings/member-columns";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
-import { useUser, useUserPermissions } from "@/hooks/store/user";
+import { useUser, useUserPermissions, useUserProfile } from "@/hooks/store/user";
 import type { IMemberFilters } from "@/store/member/utils";
 
 export interface RowData extends Pick<TProjectMembership, "original_role"> {
@@ -34,6 +34,9 @@ export const useProjectColumns = (props: TUseProjectColumnsProps) => {
   // store hooks
   const { data: currentUser } = useUser();
   const { allowPermissions, getProjectRoleByWorkspaceSlugAndProjectId } = useUserPermissions();
+  // Called from an `observer` component, so reading the profile here re-renders the table when
+  // the async profile load lands.
+  const { calendarSystem } = useUserProfile();
   const {
     project: {
       filters: { getFilters, updateFilters },
@@ -131,7 +134,9 @@ export const useProjectColumns = (props: TUseProjectColumnsProps) => {
           handleDisplayFilterUpdate={handleDisplayFilterUpdate}
         />
       ),
-      tdRender: (rowData: RowData) => <div>{renderFormattedDate(rowData?.member?.joining_date)}</div>,
+      tdRender: (rowData: RowData) => (
+        <div>{renderFormattedDate(rowData?.member?.joining_date, undefined, calendarSystem)}</div>
+      ),
     },
   ];
   return {

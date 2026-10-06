@@ -5,6 +5,7 @@
  */
 
 // plane imports
+import { observer } from "mobx-react";
 import { Icon as PropelIcon } from "@makeplane/propel/components/icon";
 import { IconButton } from "@makeplane/propel/components/icon-button";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@makeplane/propel/components/menu";
@@ -13,6 +14,8 @@ import { getRenderableItems, resolveItemVariant } from "@plane/blocks/context-me
 import type { TContextMenuItem } from "@plane/blocks/context-menu";
 import { useTranslation } from "@plane/i18n";
 import { calculateTimeAgo, getIconForLink } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 
 export type TLinkItemBlockProps = {
   title: string;
@@ -22,11 +25,12 @@ export type TLinkItemBlockProps = {
   onClick?: () => void;
 };
 
-export function LinkItemBlock(props: TLinkItemBlockProps) {
+export const LinkItemBlock = observer(function LinkItemBlock(props: TLinkItemBlockProps) {
   // props
   const { title, url, createdAt, menuItems, onClick } = props;
   // plane hooks
   const { t } = useTranslation();
+  const { calendarSystem } = useUserProfile();
   // icons
   const Icon = getIconForLink(url);
   return (
@@ -43,7 +47,9 @@ export function LinkItemBlock(props: TLinkItemBlockProps) {
         <span className="block flex-1 truncate">
           <span className="block truncate text-13 font-medium">{title}</span>
           {createdAt && (
-            <span className="block text-11 font-medium text-placeholder">{calculateTimeAgo(createdAt)}</span>
+            <span className="block text-11 font-medium text-placeholder">
+              {calculateTimeAgo(createdAt, calendarSystem)}
+            </span>
           )}
         </span>
       </button>
@@ -78,4 +84,4 @@ export function LinkItemBlock(props: TLinkItemBlockProps) {
       )}
     </div>
   );
-}
+});

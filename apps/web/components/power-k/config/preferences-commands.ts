@@ -11,7 +11,7 @@ import { CalendarOutline, GlobeOutline, PaletteOutline } from "@makeplane/propel
 // plane imports
 import { useTranslation } from "@plane/i18n";
 import { setToast } from "@plane/blocks/toast";
-import type { EStartOfTheWeek, TUserProfile } from "@plane/types";
+import type { ECalendarSystem, EStartOfTheWeek, TUserProfile } from "@plane/types";
 // components
 import type { TPowerKCommandConfig } from "@/components/power-k/core/types";
 // hooks
@@ -144,6 +144,21 @@ export const usePowerKPreferencesCommands = (): TPowerKCommandConfig[] => {
       onSelect: (data) => {
         const startOfWeek = data as EStartOfTheWeek;
         handleUpdateUserProfile({ start_of_the_week: startOfWeek });
+      },
+      isEnabled: () => true,
+      isVisible: () => true,
+      closeOnSelect: true,
+    },
+    {
+      id: "update_calendar_system",
+      group: "preferences",
+      page: "update-calendar-system",
+      type: "change-page",
+      i18n_title: "power_k.preferences_actions.update_calendar_system",
+      icon: CalendarOutline,
+      onSelect: (data) => {
+        const calendarSystem = data as ECalendarSystem;
+        handleUpdateUserProfile({ calendar_system: calendarSystem });
       },
       isEnabled: () => true,
       isVisible: () => true,

@@ -10,6 +10,7 @@ import { CloseOutline } from "@makeplane/propel/icons";
 import type { TInboxIssueFilterDateKeys } from "@plane/types";
 import { renderFormattedDate } from "@plane/utils";
 import { useProjectInbox } from "@/hooks/store/use-project-inbox";
+import { useUserProfile } from "@/hooks/store/user";
 
 type InboxIssueAppliedFiltersDate = {
   filterKey: TInboxIssueFilterDateKeys;
@@ -22,6 +23,7 @@ export const InboxIssueAppliedFiltersDate = observer(function InboxIssueAppliedF
   const { filterKey, label } = props;
   // hooks
   const { inboxFilters, handleInboxIssueFilters } = useProjectInbox();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const filteredValues = inboxFilters?.[filterKey] || [];
   const currentOptionDetail = (date: string) => {
@@ -29,7 +31,11 @@ export const InboxIssueAppliedFiltersDate = observer(function InboxIssueAppliedF
     if (currentDate) return currentDate;
     const dateSplit = date.split(";");
     return {
-      name: `${dateSplit[1].charAt(0).toUpperCase() + dateSplit[1].slice(1)} ${renderFormattedDate(dateSplit[0])}`,
+      name: `${dateSplit[1].charAt(0).toUpperCase() + dateSplit[1].slice(1)} ${renderFormattedDate(
+        dateSplit[0],
+        undefined,
+        calendarSystem
+      )}`,
       value: date,
     };
   };

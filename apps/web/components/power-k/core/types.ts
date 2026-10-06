@@ -50,6 +50,7 @@ export type TPowerKPageType =
   | "update-theme"
   | "update-timezone"
   | "update-start-of-week"
+  | "update-calendar-system"
   | "update-language";
 
 export type TPowerKCommandGroup =

@@ -6,10 +6,12 @@
 
 // plane types
 import { useTranslation } from "@plane/i18n";
-// hooks
 import type { IUser } from "@plane/types";
+// hooks
 import { useCurrentTime } from "@/hooks/use-current-time";
-// types
+import { useUserProfile } from "@/hooks/store/user";
+// helpers
+import { getClockTime, getGreetingBucket, getShortDate, getWeekdayName } from "@/helpers/calendar-display";
 
 export interface IUserGreetingsView {
   user: IUser;
@@ -21,29 +23,15 @@ export function UserGreetingsView(props: IUserGreetingsView) {
   const { currentTime } = useCurrentTime();
   // store hooks
   const { t } = useTranslation();
+  const { calendarSystem } = useUserProfile();
 
-  const hour = new Intl.DateTimeFormat("en-US", {
-    hour12: false,
-    hour: "numeric",
-  }).format(currentTime);
+  // The greeting bucket is a local-time notion, so it reads the local hour directly. The clock and
+  // the date line are localized, since they sit next to adapter-rendered Persian dates.
+  const greeting = getGreetingBucket(currentTime.getHours());
 
-  const date = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }).format(currentTime);
-
-  const weekDay = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-  }).format(currentTime);
-
-  const timeString = new Intl.DateTimeFormat("en-US", {
-    timeZone: user?.user_timezone,
-    hour12: false, // Use 24-hour format
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(currentTime);
-
-  const greeting = parseInt(hour, 10) < 12 ? "morning" : parseInt(hour, 10) < 18 ? "afternoon" : "evening";
+  const weekDay = getWeekdayName(currentTime, calendarSystem);
+  const date = getShortDate(currentTime, calendarSystem);
+  const timeString = getClockTime(currentTime, calendarSystem, user?.user_timezone);
 
   return (
     <div className="my-6 flex flex-col items-center">

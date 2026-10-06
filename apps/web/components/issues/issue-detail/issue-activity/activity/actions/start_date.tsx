@@ -9,6 +9,7 @@ import { CalendarOutline } from "@makeplane/propel/icons";
 // hooks
 import { renderFormattedDate } from "@plane/utils";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { useUserProfile } from "@/hooks/store/user";
 // components
 import { IssueActivityBlockComponent, IssueLink } from "./";
 // helpers
@@ -21,6 +22,7 @@ export const IssueStartDateActivity = observer(function IssueStartDateActivity(p
   const {
     activity: { getActivityById },
   } = useIssueDetail();
+  const { calendarSystem } = useUserProfile();
 
   const activity = getActivityById(activityId);
 
@@ -35,7 +37,9 @@ export const IssueStartDateActivity = observer(function IssueStartDateActivity(p
         {activity.new_value ? `set the start date to ` : `removed the start date `}
         {activity.new_value && (
           <>
-            <span className="font-medium text-primary">{renderFormattedDate(activity.new_value)}</span>
+            <span className="font-medium text-primary">
+              {renderFormattedDate(activity.new_value, undefined, calendarSystem)}
+            </span>
           </>
         )}
         {showIssue && (activity.new_value ? ` for ` : ` from `)}

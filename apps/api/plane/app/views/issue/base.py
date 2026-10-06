@@ -70,6 +70,7 @@ from plane.utils.grouper import (
 )
 from plane.utils.host import base_host
 from plane.utils.issue_filters import issue_filters
+from plane.utils.issue_name_lock import get_issue_name_edit_error
 from plane.utils.order_queryset import order_issue_queryset
 from plane.utils.paginator import GroupedOffsetPaginator, SubGroupedOffsetPaginator
 from plane.utils.timezone_converter import user_timezone_converter
@@ -674,6 +675,18 @@ class IssueViewSet(BaseViewSet):
         if not issue:
             return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        # Only admins may rename an existing work item. Every other field, and
+        # creating a work item with a title, stays open to members.
+        name_edit_error = get_issue_name_edit_error(
+            user=request.user,
+            slug=slug,
+            project_id=project_id,
+            request_data=request.data,
+            current_name=issue.name,
+        )
+        if name_edit_error is not None:
+            return Response(name_edit_error, status=status.HTTP_403_FORBIDDEN)
+
         current_instance = json.dumps(IssueDetailSerializer(issue).data, cls=DjangoJSONEncoder)
 
         requested_data = json.dumps(self.request.data, cls=DjangoJSONEncoder)
@@ -712,6 +725,25 @@ class IssueViewSet(BaseViewSet):
                 )
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, slug, project_id, pk=None):
+        # PUT is not overridden by IssueViewSet, so it would fall through to the
+        # default ModelViewSet handler. Apply the same title rule as PATCH.
+        issue = Issue.objects.filter(workspace__slug=slug, project_id=project_id, pk=pk).first()
+        if issue is None:
+            return Response({"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        name_edit_error = get_issue_name_edit_error(
+            user=request.user,
+            slug=slug,
+            project_id=project_id,
+            request_data=request.data,
+            current_name=issue.name,
+        )
+        if name_edit_error is not None:
+            return Response(name_edit_error, status=status.HTTP_403_FORBIDDEN)
+
+        return super().update(request, slug, project_id, pk=pk)
 
     @allow_permission([ROLE.ADMIN], creator=True, model=Issue)
     def destroy(self, request, slug, project_id, pk=None):

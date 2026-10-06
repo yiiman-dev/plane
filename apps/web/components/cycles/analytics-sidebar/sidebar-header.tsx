@@ -184,6 +184,7 @@ export const CycleSidebarHeader = observer(function CycleSidebarHeader(props: Pr
                       showTooltip={!!cycleDetails.start_date && !!cycleDetails.end_date}
                       disabled={!isEditingAllowed || isArchived || isCompleted}
                       weekStartsOn={userProfile?.start_of_the_week}
+                      calendarSystem={userProfile?.calendar_system}
                     />
                   </div>
                 )}

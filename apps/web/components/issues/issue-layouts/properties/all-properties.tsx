@@ -259,6 +259,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
             showTooltip
             tooltipHeading={t("project_cycles.date_range")}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             variant="pill-sm"
           />
         </div>
@@ -283,6 +284,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
             showTooltip
             tooltipHeading={t("common.order_by.start_date")}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             variant="pill-sm"
           />
         </div>
@@ -310,6 +312,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
             showTooltip
             tooltipHeading={t("common.order_by.due_date")}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             variant="pill-sm"
           />
         </div>

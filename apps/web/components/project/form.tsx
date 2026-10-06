@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { observer } from "mobx-react";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { InfoOutline, LockOutline } from "@makeplane/propel/icons";
@@ -29,6 +30,7 @@ import { TimezoneSelect } from "@/components/global";
 import { handleCoverImageChange } from "@/helpers/cover-image.helper";
 // hooks
 import { useProject } from "@/hooks/store/use-project";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // services
 import { ProjectService } from "@/services/project";
@@ -43,7 +45,7 @@ export interface IProjectDetailsForm {
 }
 const projectService = new ProjectService();
 
-export function ProjectDetailsForm(props: IProjectDetailsForm) {
+export const ProjectDetailsForm = observer(function ProjectDetailsForm(props: IProjectDetailsForm) {
   const { project, workspaceSlug, projectId, isAdmin } = props;
   const { t } = useTranslation();
   // states
@@ -51,6 +53,7 @@ export function ProjectDetailsForm(props: IProjectDetailsForm) {
   const [isLoading, setIsLoading] = useState(false);
   // store hooks
   const { updateProject } = useProject();
+  const { calendarSystem } = useUserProfile();
   const { isMobile } = usePlatformOS();
 
   // form info
@@ -463,11 +466,11 @@ export function ProjectDetailsForm(props: IProjectDetailsForm) {
               disabled={!isAdmin}
             />
             <span className="text-13 text-placeholder italic">
-              {t("common.created_on")} {renderFormattedDate(project?.created_at)}
+              {t("common.created_on")} {renderFormattedDate(project?.created_at, undefined, calendarSystem)}
             </span>
           </>
         </div>
       </div>
     </form>
   );
-}
+});

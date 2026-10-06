@@ -7,20 +7,25 @@
 import { observer } from "mobx-react";
 // plane utils
 import { cn } from "@plane/utils";
+// calendar labels come through `@plane/blocks` — `apps/web` has no `@plane/calendar` dependency
+import { isWeekend } from "@plane/blocks/property-select";
 // hooks
 import { useTimeLineChartStore } from "@/hooks/use-timeline-chart";
+import { useUserProfile } from "@/hooks/store/user";
 //
 import { HEADER_HEIGHT, SIDEBAR_WIDTH } from "../../constants";
 import type { IWeekBlock } from "../../views";
 
 export const WeekChartView = observer(function WeekChartView(_props: any) {
   const { currentViewData, renderView } = useTimeLineChartStore();
+  const { data: userProfile } = useUserProfile();
+  const startOfWeek = userProfile?.start_of_the_week;
   const weekBlocks: IWeekBlock[] = renderView;
 
   return (
     <div className={`absolute top-0 left-0 flex h-max min-h-full w-max`}>
       {currentViewData &&
-        weekBlocks?.map((block, rootIndex) => (
+        weekBlocks?.map((block) => (
           <div
             key={`month-${block?.startDate.toString()}-${block?.endDate.toString()}`}
             className="relative flex flex-col outline-[0.25px] outline-subtle-1"
@@ -48,9 +53,11 @@ export const WeekChartView = observer(function WeekChartView(_props: any) {
               </div>
               {/** Days Sub title */}
               <div className="flex h-5 w-full">
-                {block?.children?.map((weekDay, index) => (
+                {/* The column's `Date` is a stable, unique identity for the day it renders — unlike
+                    the array index, which changes if the week is re-cut at a different start day. */}
+                {block?.children?.map((weekDay) => (
                   <div
-                    key={`sub-title-${rootIndex}-${index}`}
+                    key={`sub-title-${weekDay.date.getTime()}`}
                     className={cn(
                       "flex flex-shrink-0 justify-between p-1 text-center capitalize outline-[0.25px] outline-subtle-1",
                       {
@@ -73,17 +80,23 @@ export const WeekChartView = observer(function WeekChartView(_props: any) {
                 ))}
               </div>
             </div>
-            {/** Day Columns */}
+            {/**
+             * Day Columns. The weekend shading asks the shared `isWeekend` about the column's
+             * `Date` rather than comparing `dayData.shortTitle` against `"sat"`/`"sun"` — a string
+             * comparison that silently stopped shading weekends the moment the axis rendered Persian
+             * weekday names, with no error and no failing test. The weekend is the two days at the
+             * boundary of the user's week, so it moves with `startOfThe_week`.
+             */}
             <div className="flex h-full w-full flex-grow bg-surface-1">
-              {block?.children?.map((weekDay, index) => (
+              {block?.children?.map((weekDay) => (
                 <div
-                  key={`column-${rootIndex}-${index}`}
+                  key={`column-${weekDay.date.getTime()}`}
                   className={cn("h-full overflow-hidden outline-[0.25px] outline-subtle", {
                     "bg-accent-primary/20": weekDay.today,
                   })}
                   style={{ width: `${currentViewData?.data.dayWidth}px` }}
                 >
-                  {["sat", "sun"].includes(weekDay?.dayData?.shortTitle) && (
+                  {isWeekend(weekDay.date, startOfWeek) && (
                     <div className="h-full bg-surface-2 outline-[0.25px] outline-strong" />
                   )}
                 </div>

@@ -5,6 +5,7 @@
  */
 
 import { useRouter } from "next/navigation";
+import { observer } from "mobx-react";
 import { Avatar } from "@makeplane/propel/components/avatar";
 import { Logo } from "@plane/blocks/emoji-icon-picker";
 import { PagesOutline } from "@makeplane/propel/icons";
@@ -14,6 +15,7 @@ import { calculateTimeAgo, getFileURL, getPageName } from "@plane/utils";
 import { ListItem } from "@/components/core/list";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 
 type BlockProps = {
   activity: TActivityEntityData;
@@ -21,12 +23,13 @@ type BlockProps = {
   workspaceSlug: string;
 };
 
-export function RecentPage(props: BlockProps) {
+export const RecentPage = observer(function RecentPage(props: BlockProps) {
   const { activity, ref, workspaceSlug } = props;
   // router
   const router = useRouter();
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const pageDetails = activity.entity_data as TPageEntityData;
 
@@ -60,7 +63,7 @@ export function RecentPage(props: BlockProps) {
       }
       appendTitleElement={
         <div className="flex-shrink-0 text-11 font-medium text-placeholder">
-          {calculateTimeAgo(activity.visited_at)}
+          {calculateTimeAgo(activity.visited_at, calendarSystem)}
         </div>
       }
       quickActionElement={
@@ -84,4 +87,4 @@ export function RecentPage(props: BlockProps) {
       }}
     />
   );
-}
+});

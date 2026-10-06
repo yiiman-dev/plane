@@ -11,6 +11,7 @@ import { cn, renderFormattedDate } from "@plane/utils";
 //helpers
 //
 //hooks
+import { useUserProfile } from "@/hooks/store/user";
 import { useTimeLineChartStore } from "@/hooks/use-timeline-chart";
 
 type LeftResizableProps = {
@@ -27,9 +28,10 @@ export const LeftResizable = observer(function LeftResizable(props: LeftResizabl
   const [isHovering, setIsHovering] = useState(false);
 
   const { getDateFromPositionOnGantt } = useTimeLineChartStore();
+  const { calendarSystem } = useUserProfile();
 
   const date = position ? getDateFromPositionOnGantt(position.marginLeft, 0) : undefined;
-  const dateString = date ? renderFormattedDate(date) : undefined;
+  const dateString = date ? renderFormattedDate(date, undefined, calendarSystem) : undefined;
 
   const isLeftResizing = isMoving === "left" || isMoving === "move";
 

@@ -8,6 +8,7 @@ import { observer } from "mobx-react";
 // plane imports
 import type { TGroupedIssues, TIssue, TIssueMap, TPaginationData, ICalendarDate, ICalendarWeek } from "@plane/types";
 import { cn, getOrderedDays, renderFormattedPayloadDate } from "@plane/utils";
+import { isWeekend } from "@plane/blocks/property-select";
 // hooks
 import { useUserProfile } from "@/hooks/store/user";
 // types
@@ -74,10 +75,11 @@ export const CalendarWeekDays = observer(function CalendarWeekDays(props: Props)
 
   if (!week) return null;
 
+  // The two days the user's week boundary falls on, rather than a fixed Sat/Sun: an Iranian week
+  // runs Saturday→Friday, and hiding the Sat/Sun literal there would hide the wrong two days.
   const shouldShowDay = (dayDate: Date) => {
     if (showWeekends) return true;
-    const day = dayDate.getDay();
-    return !(day === 0 || day === 6);
+    return !isWeekend(dayDate, startOfWeek);
   };
 
   const sortedWeekDays = getOrderedDays(Object.values(week), (item) => item.date.getDay(), startOfWeek);

@@ -11,7 +11,9 @@ import { Select } from "@plane/blocks/select";
 import { setToast } from "@plane/blocks/toast";
 // components
 import { TimezoneSelect } from "@/components/global";
+import { CalendarSystemPreference } from "@/components/profile/calendar-system-preference";
 import { StartOfWeekPreference } from "@/components/profile/start-of-week-preference";
+import { TextDirectionPreference } from "@/components/profile/text-direction-preference";
 import { SettingsControlItem } from "@/components/settings/control-item";
 // hooks
 import { useUser, useUserProfile } from "@/hooks/store/user";
@@ -106,6 +108,18 @@ export const ProfileSettingsLanguageAndTimezonePreferencesList = observer(
               </Select.Trigger>
             </Select>
           }
+        />
+        <CalendarSystemPreference
+          option={{
+            title: t("calendar"),
+            description: t("calendar_setting"),
+          }}
+        />
+        <TextDirectionPreference
+          option={{
+            title: t("content_direction"),
+            description: t("content_direction_setting"),
+          }}
         />
         <StartOfWeekPreference
           option={{

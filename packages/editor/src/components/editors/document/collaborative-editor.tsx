@@ -25,6 +25,7 @@ function CollaborativeDocumentEditorInner(props: ICollaborativeDocumentEditorPro
   const {
     aiHandler,
     bubbleMenuEnabled = true,
+    contentDirection,
     containerClassName,
     documentLoaderClassName,
     extensions = [],
@@ -116,6 +117,7 @@ function CollaborativeDocumentEditorInner(props: ICollaborativeDocumentEditorPro
         <PageRenderer
           aiHandler={aiHandler}
           bubbleMenuEnabled={bubbleMenuEnabled}
+          contentDirection={contentDirection}
           displayConfig={displayConfig}
           documentLoaderClassName={documentLoaderClassName}
           disabledExtensions={disabledExtensions}

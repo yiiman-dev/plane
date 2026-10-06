@@ -17,7 +17,7 @@ import { cn, isCommentEmpty } from "@plane/utils";
 import { EditorMentionsRoot } from "@/components/editor/embeds/mentions";
 import { IssueCommentToolbar } from "@/components/editor/lite-text/toolbar";
 // hooks
-import { useEditorConfig, useEditorMention } from "@/hooks/editor";
+import { useContentTextDirection, useEditorConfig, useEditorMention } from "@/hooks/editor";
 import { useMember } from "@/hooks/store/use-member";
 import { useParseEditorContent } from "@/hooks/use-parse-editor-content";
 // plane web hooks
@@ -55,6 +55,10 @@ type LiteTextEditorWrapperProps = MakeOptional<
         duplicateFile: TFileHandler["duplicate"];
       }
   );
+
+function isMutableRefObject<T>(candidate: React.ForwardedRef<T>): candidate is React.MutableRefObject<T | null> {
+  return !!candidate && typeof candidate === "object" && "current" in candidate;
+}
 
 export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   props: LiteTextEditorWrapperProps,
@@ -95,6 +99,8 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   });
   // store hooks
   const { getUserDetails } = useMember();
+  // content text direction
+  const contentDirection = useContentTextDirection();
   // parse content
   const { getEditorMetaData } = useParseEditorContent({
     projectId,
@@ -111,9 +117,6 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   });
   // editor config
   const { getEditorFileHandlers } = useEditorConfig();
-  function isMutableRefObject<T>(ref: React.ForwardedRef<T>): ref is React.MutableRefObject<T | null> {
-    return !!ref && typeof ref === "object" && "current" in ref;
-  }
   // derived values
   const isEmpty = isCommentEmpty(props.initialValue);
 
@@ -135,6 +138,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
         <div className={cn(isLiteVariant && editable ? "min-w-0 flex-1" : "")}>
           <LiteTextEditorWithRef
             ref={ref}
+            contentDirection={contentDirection}
             disabledExtensions={[...liteTextEditorExtensions.disabled, ...additionalDisabledExtensions]}
             editable={editable}
             flaggedExtensions={liteTextEditorExtensions.flagged}

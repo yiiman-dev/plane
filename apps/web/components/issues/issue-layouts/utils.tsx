@@ -727,7 +727,9 @@ export function getApproximateCardHeight(displayProperties: IIssueDisplayPropert
  */
 export const getBlockViewDetails = (
   block: { start_date: string | undefined | null; target_date: string | undefined | null } | undefined | null,
-  backgroundColor: string
+  backgroundColor: string,
+  // typed off `renderFormattedDate` so this signature can never drift from the util's third param
+  calendarSystem?: Parameters<typeof renderFormattedDate>[2]
 ) => {
   const isBlockVisibleOnChart = block?.start_date || block?.target_date;
   const isBlockComplete = block?.start_date && block?.target_date;
@@ -739,14 +741,18 @@ export const getBlockViewDetails = (
 
   if (isBlockVisibleOnChart && !isBlockComplete) {
     if (block?.start_date) {
-      message = `From ${renderFormattedDate(block.start_date)}`;
+      message = `From ${renderFormattedDate(block.start_date, undefined, calendarSystem)}`;
       blockStyle.maskImage = `linear-gradient(to right, ${backgroundColor} 50%, transparent 95%)`;
     } else if (block?.target_date) {
-      message = `Till ${renderFormattedDate(block.target_date)}`;
+      message = `Till ${renderFormattedDate(block.target_date, undefined, calendarSystem)}`;
       blockStyle.maskImage = `linear-gradient(to left, ${backgroundColor} 50%, transparent 95%)`;
     }
   } else if (isBlockComplete) {
-    message = `${renderFormattedDate(block?.start_date)} to ${renderFormattedDate(block?.target_date)}`;
+    message = `${renderFormattedDate(block?.start_date, undefined, calendarSystem)} to ${renderFormattedDate(
+      block?.target_date,
+      undefined,
+      calendarSystem
+    )}`;
   }
 
   return {

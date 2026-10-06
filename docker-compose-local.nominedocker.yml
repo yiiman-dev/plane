@@ -1,0 +1,67 @@
+# Local-only override: this machine cannot pull quay.io images (401 Unauthorized),
+# so `plane-minio` is replaced with `rustfs/rustfs` (S3-compatible, same API).
+# Bucket creation is handled by the api container: `python manage.py create_bucket`.
+#
+# It also builds the API image ONCE (`plane-api-dev`) instead of four times: api,
+# worker, beat-worker and migrator share it. Building the four in parallel made the
+# heavy `apk add gcc/g++/cargo/llvm` step crawl on this network.
+#
+# Usage:
+#   docker compose -f docker-compose-local.yml -f docker-compose-local.nominedocker.yml build api
+#   docker compose -f docker-compose-local.yml -f docker-compose-local.nominedocker.yml up -d
+
+services:
+  # `live` runs on the host in local dev, so Redis needs a host port.
+  # Host 6379 is taken by lobe-redis (another project on this machine), so the
+  # published port moves to 6380. The app still reaches Redis as plane-redis:6379
+  # over the docker network; only the host-side publish moves.
+  plane-redis:
+    ports: !override
+      - "6380:6379"
+
+  # 5432 on the host is taken by db-designer-db-1. The app talks to plane-db:5432
+  # over the docker network, so only the host-side publish needs to move.
+  plane-db:
+    ports: !override
+      - "5433:5432"
+
+  plane-minio:
+    image: rustfs/rustfs:latest
+    entrypoint: >
+      /bin/sh -c "
+      mkdir -p /data/${AWS_S3_BUCKET_NAME} &&
+      rustfs /data
+      "
+    volumes:
+      - uploads:/data
+    environment:
+      RUSTFS_ACCESS_KEY: ${AWS_ACCESS_KEY_ID}
+      RUSTFS_SECRET_KEY: ${AWS_SECRET_ACCESS_KEY}
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_ADDRESS: ":9000"
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}
+
+  api:
+    platform: linux/amd64
+    image: plane-api-dev
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.dev
+      args:
+        DOCKER_BUILDKIT: 1
+
+  worker:
+    platform: linux/amd64
+    image: plane-api-dev
+    build: !reset null
+
+  beat-worker:
+    platform: linux/amd64
+    image: plane-api-dev
+    build: !reset null
+
+  migrator:
+    platform: linux/amd64
+    image: plane-api-dev
+    build: !reset null

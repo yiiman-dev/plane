@@ -4,9 +4,17 @@
  * See the LICENSE file for details.
  */
 
+import { getCalendarAdapter } from "@plane/blocks/property-select";
+import type { CalendarAdapter } from "@plane/blocks/property-select";
 import type { ChartDataType, IGanttBlock } from "@plane/types";
 import { addDaysToDate, findTotalDaysInRange, getDate } from "@plane/utils";
 import { DEFAULT_BLOCK_WIDTH } from "../constants";
+
+/**
+ * The adapter every generator below falls back to, so a caller that has not threaded the user's
+ * system through yet still renders the Gregorian labels it always has.
+ */
+export const defaultCalendarAdapter = (): CalendarAdapter => getCalendarAdapter();
 
 /**
  * Generates Date by using Day, month and Year
@@ -18,16 +26,19 @@ import { DEFAULT_BLOCK_WIDTH } from "../constants";
 export const generateDate = (day: number, month: number, year: number) => new Date(year, month, day);
 
 /**
- * Returns number of days in month
- * @param month
- * @param year
- * @returns
+ * Returns the number of days in a month of the given calendar.
+ *
+ * This used to be `new Date(year, month + 1, 0).getDate()` — a Gregorian lookup on a **0-based**
+ * month. Both halves of that are gone: the count now comes from the adapter, and `month` is the
+ * adapter's **1-based** number, matching `adapter.toParts(date).month`. For Gregorian the result is
+ * unchanged, since `new Date(y, m - 1, 1)`'s month length is what `m + 1, 0` was counting.
+ *
+ * @param adapter the user's calendar
+ * @param year    calendar year
+ * @param month   calendar month, 1-based
  */
-export const getNumberOfDaysInMonth = (month: number, year: number) => {
-  const date = new Date(year, month + 1, 0);
-
-  return date.getDate();
-};
+export const getNumberOfDaysInMonth = (adapter: CalendarAdapter, year: number, month: number): number =>
+  adapter.getMonthLength(year, month);
 
 /**
  * Returns week number from date
@@ -128,6 +139,12 @@ export const getPositionFromDate = (chartData: ChartDataType, date: string | Dat
   currDate.setHours(0, 0, 0, 0);
 
   // get number of days from chart start date to block's start date
+  //
+  // Deliberately left on Gregorian `Date`s. This is a *duration*, not a calendar label: it is the
+  // count of real days between two instants, which a Persian month does not change — Farvardin is
+  // 31 days either way. Converting it to the adapter would break it, since the adapter reports a
+  // length in calendar days and the day columns are one pixel-wide per real day. Every `days ×
+  // dayWidth` offset in the Gantt is duration arithmetic and must stay here.
   const positionDaysDifference = Math.round(findTotalDaysInRange(chartStartDate, currDate, false) ?? 0);
 
   if (!positionDaysDifference) return 0;

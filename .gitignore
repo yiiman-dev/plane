@@ -117,3 +117,15 @@ packages/i18n/src/types/keys.generated.ts
 
 # Local security notes (not for version control)
 /security/
+
+# superpowers scratch (progress ledger, review packages)
+.superpowers/
+
+# local dev stack runtime state (plane-dev.sh)
+.devstack/
+*.yml.bak
+
+# orkas conversation scratch + tool logs (working dirs inside the repo)
+.orkas-logs/
+chat-*/
+*.orig.rej

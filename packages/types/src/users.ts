@@ -22,6 +22,27 @@ export enum EStartOfTheWeek {
   SATURDAY = 6,
 }
 
+/**
+ * @description The calendar system the user sees dates in. Storage stays Gregorian
+ * regardless of this value — it only selects which calendar is rendered.
+ * @enum {string}
+ */
+export enum ECalendarSystem {
+  GREGORIAN = "gregorian",
+  PERSIAN = "persian",
+}
+
+/**
+ * @description Direction used when rendering this user's markdown / rich-text content.
+ * Applies to content only — the surrounding app chrome keeps its own direction. RTL is the
+ * default so Persian and English text sit side by side correctly.
+ * @enum {string}
+ */
+export enum ETextDirection {
+  RTL = "rtl",
+  LTR = "ltr",
+}
+
 export interface IUserLite {
   avatar_url: string;
   display_name: string;
@@ -82,6 +103,8 @@ export type TUserProfile = {
   created_at: Date | string;
   updated_at: Date | string;
   start_of_the_week: EStartOfTheWeek;
+  calendar_system: ECalendarSystem;
+  text_direction: ETextDirection;
 };
 
 export interface IInstanceAdminStatus {
@@ -187,6 +210,90 @@ export interface IUserEmailNotificationSettings {
   comment: boolean;
   mention: boolean;
   issue_completed: boolean;
+}
+
+/**
+ * @description Delivery channels handled by the backend notification providers. EMAIL is served by
+ * the dedicated email notification endpoints and therefore has no channel settings record.
+ */
+export type TNotificationChannel = "SMS" | "BALE";
+
+/**
+ * @description Field on the user payload that carries the channel specific delivery address. The
+ * backend echoes it back on every channel so the client can send it as-is in the update payload.
+ */
+export type TNotificationChannelAddressField = "mobile_number" | "bale_chat_id";
+
+export type TNotificationEvent = "property_change" | "state_change" | "comment" | "mention" | "issue_completed";
+
+export type TNotificationEventPreferences = Record<TNotificationEvent, boolean>;
+
+export interface IUserNotificationChannel {
+  channel: TNotificationChannel;
+  provider_configured: boolean;
+  is_enabled: boolean;
+  is_verified: boolean;
+  last_status: string | null;
+  last_delivered_at: string | null;
+  last_error: string;
+  address: string;
+  address_field: TNotificationChannelAddressField;
+  preferences: TNotificationEventPreferences;
+}
+
+/**
+ * @description Aggregate returned by GET/PATCH /api/users/me/notification-channels/
+ */
+export interface IUserNotificationChannels {
+  channels: IUserNotificationChannel[];
+  events: TNotificationEvent[];
+}
+
+/**
+ * @description Body of PATCH /api/users/me/notification-channels/. Exactly one of the address keys
+ * matching the channel `address_field`, or `is_enabled`, is sent at a time.
+ */
+export interface INotificationChannelUpdatePayload {
+  channel: TNotificationChannel;
+  is_enabled?: boolean;
+  mobile_number?: string;
+  bale_chat_id?: string;
+}
+
+/**
+ * @description Body of PATCH /api/users/me/notification-channel-preferences/
+ */
+export interface INotificationChannelPreferencePayload {
+  channel: TNotificationChannel;
+  event: TNotificationEvent;
+  is_enabled: boolean;
+}
+
+export interface INotificationChannelPreference {
+  channel: TNotificationChannel;
+  event: TNotificationEvent;
+  is_enabled: boolean;
+}
+
+export interface INotificationChannelPreferences {
+  preferences: INotificationChannelPreference[];
+  events: TNotificationEvent[];
+}
+
+/**
+ * @description Body of POST /api/users/me/notification-channels/test/
+ */
+export interface INotificationChannelTestPayload {
+  channel: TNotificationChannel;
+}
+
+/**
+ * @description Error envelope returned by the test endpoint with HTTP 400. The message is already
+ * user facing, so it is surfaced as-is in the toast.
+ */
+export interface INotificationChannelTestErrorResponse {
+  error?: string;
+  code?: string;
 }
 
 export type TProfileViews = "assigned" | "created" | "subscribed";

@@ -11,6 +11,8 @@ import type { TIssue } from "@plane/types";
 // helpers
 import { Row } from "@plane/blocks/layout";
 import { renderFormattedDate } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 
 type Props = {
   issue: TIssue;
@@ -18,10 +20,12 @@ type Props = {
 
 export const SpreadsheetUpdatedOnColumn = observer(function SpreadsheetUpdatedOnColumn(props: Props) {
   const { issue } = props;
+  // store hooks
+  const { data: userProfile } = useUserProfile();
 
   return (
     <Row className="flex h-11 w-full items-center border-b-[0.5px] border-subtle-1 text-11 group-[.selected-issue-row]:bg-accent-primary/5 hover:bg-layer-1 group-[.selected-issue-row]:hover:bg-accent-primary/10">
-      {renderFormattedDate(issue.updated_at)}
+      {renderFormattedDate(issue.updated_at, undefined, userProfile?.calendar_system)}
     </Row>
   );
 });

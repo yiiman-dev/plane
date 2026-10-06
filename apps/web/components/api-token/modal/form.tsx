@@ -237,6 +237,7 @@ export function CreateApiTokenForm(props: Props) {
                     disabled={neverExpires}
                     clearable
                     weekStartsOn={userProfile?.start_of_the_week}
+                    calendarSystem={userProfile?.calendar_system}
                     variant="pill-md"
                   />
                 )}
@@ -245,10 +246,10 @@ export function CreateApiTokenForm(props: Props) {
                 <span className="text-caption-sm-regular text-placeholder">
                   {expiredAt === "custom"
                     ? customDate
-                      ? `Expires ${renderFormattedDate(customDateFormatted ?? "")} at ${renderFormattedTime(customDateFormatted ?? "")}`
+                      ? `Expires ${renderFormattedDate(customDateFormatted ?? "", undefined, userProfile?.calendar_system)} at ${renderFormattedTime(customDateFormatted ?? "")}`
                       : null
                     : expiredAt
-                      ? `Expires ${renderFormattedDate(expiryDate ?? "")} at ${renderFormattedTime(expiryDate ?? "")}`
+                      ? `Expires ${renderFormattedDate(expiryDate ?? "", undefined, userProfile?.calendar_system)} at ${renderFormattedTime(expiryDate ?? "")}`
                       : null}
                 </span>
               )}

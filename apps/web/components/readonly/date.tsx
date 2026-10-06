@@ -9,6 +9,8 @@ import { observer } from "mobx-react";
 import { useTranslation } from "@plane/i18n";
 import { CalendarOutline } from "@makeplane/propel/icons";
 import { cn, renderFormattedDate, getDate } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 
 export type TReadonlyDateProps = {
   className?: string;
@@ -22,7 +24,9 @@ export const ReadonlyDate = observer(function ReadonlyDate(props: TReadonlyDateP
   const { className, hideIcon = false, value, placeholder, formatToken } = props;
 
   const { t } = useTranslation();
-  const formattedDate = value ? renderFormattedDate(getDate(value), formatToken) : null;
+  const { calendarSystem } = useUserProfile();
+  // `formatToken` occupies the second slot, so the calendar system is passed third.
+  const formattedDate = value ? renderFormattedDate(getDate(value), formatToken, calendarSystem) : null;
 
   return (
     <div className={cn("flex items-center gap-1 text-13", className)}>

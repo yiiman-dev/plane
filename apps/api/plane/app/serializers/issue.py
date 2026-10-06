@@ -47,6 +47,7 @@ from plane.utils.content_validator import (
     validate_html_content,
     validate_binary_data,
 )
+from plane.utils.issue_blocking import validate_state_transition_allowed
 
 
 class IssueFlatSerializer(BaseSerializer):
@@ -174,6 +175,10 @@ class IssueCreateSerializer(BaseSerializer):
             ).exists()
         ):
             raise serializers.ValidationError("State is not valid please pass a valid state_id")
+
+        # A blocked work item may not enter a started state until every blocker is completed
+        if attrs.get("state"):
+            validate_state_transition_allowed(self.instance, attrs["state"])
 
         # Check parent issue is from workspace as it can be cross workspace
         if (

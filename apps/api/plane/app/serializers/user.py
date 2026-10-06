@@ -32,6 +32,7 @@ class UserSerializer(BaseSerializer):
             "id",
             "username",
             "mobile_number",
+            "bale_chat_id",
             "email",
             "token",
             "created_at",

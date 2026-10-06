@@ -61,6 +61,9 @@ class InstanceEndpoint(BaseAPIView):
             SLACK_CLIENT_ID,
             UNSPLASH_ACCESS_KEY,
             LLM_API_KEY,
+            BALE_BOT_TOKEN,
+            KAVENEGAR_API_KEY,
+            KAVENEGAR_SENDER_LINE,
         ) = get_configuration_value(
             [
                 {
@@ -112,6 +115,9 @@ class InstanceEndpoint(BaseAPIView):
                     "key": "LLM_API_KEY",
                     "default": os.environ.get("LLM_API_KEY", ""),
                 },
+                {"key": "BALE_BOT_TOKEN", "default": os.environ.get("BALE_BOT_TOKEN", "")},
+                {"key": "KAVENEGAR_API_KEY", "default": os.environ.get("KAVENEGAR_API_KEY", "")},
+                {"key": "KAVENEGAR_SENDER_LINE", "default": os.environ.get("KAVENEGAR_SENDER_LINE", "")},
             ]
         )
 
@@ -143,6 +149,10 @@ class InstanceEndpoint(BaseAPIView):
 
         # is smtp configured
         data["is_smtp_configured"] = bool(EMAIL_HOST)
+
+        # notification channels
+        data["has_bale_configured"] = bool(BALE_BOT_TOKEN)
+        data["has_kavenegar_configured"] = bool(KAVENEGAR_API_KEY and KAVENEGAR_SENDER_LINE)
 
         # Base URL
         data["admin_base_url"] = settings.ADMIN_BASE_URL

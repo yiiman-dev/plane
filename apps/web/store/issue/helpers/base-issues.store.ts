@@ -29,6 +29,9 @@ import type {
 import { EIssueServiceType, EIssueLayoutTypes } from "@plane/types";
 // helpers
 import { convertToISODateString } from "@plane/utils";
+// ui + i18n helpers, usable from stores (no React hook available here)
+import { setToast } from "@plane/blocks/toast";
+import { i18nInstance } from "@plane/i18n";
 // plane web imports
 // services
 import { CycleService } from "@/services/cycle.service";
@@ -45,6 +48,36 @@ import {
   getSubGroupIssueKeyActions,
 } from "./base-issues-utils";
 import type { IBaseIssueFilterStore } from "./issue-filter-helper.store";
+
+// Mirrors ERROR_CODES["ISSUE_BLOCKED_BY_UNRESOLVED"] in the API.
+const ISSUE_BLOCKED_BY_UNRESOLVED_ERROR_CODE = 4103;
+
+interface IBlockedByStateError {
+  error_code?: number | number[];
+  blocked_by?: { name?: string }[];
+}
+
+const isBlockedByUnresolvedStateError = (error: unknown): error is IBlockedByStateError => {
+  const codes = (error as IBlockedByStateError | undefined)?.error_code;
+  const codeList = Array.isArray(codes) ? codes : [codes];
+  return codeList.some((code) => Number(code) === ISSUE_BLOCKED_BY_UNRESOLVED_ERROR_CODE);
+};
+
+// The API owns the "cannot start a blocked work item" rule, so surface its reason
+// instead of failing silently after the optimistic update rolls back.
+const notifyBlockedByUnresolved = (error: unknown) => {
+  const blockers = ((error as IBlockedByStateError | undefined)?.blocked_by ?? [])
+    .map((blocker) => blocker?.name)
+    .filter((name): name is string => Boolean(name));
+
+  setToast({
+    title: i18nInstance.t("issue.states.blocked_by.error.title"),
+    message: i18nInstance.t("issue.states.blocked_by.error.message", {
+      blockers: blockers.join(", "),
+    }),
+    type: "error",
+  });
+};
 
 export type TIssueDisplayFilterOptions = Exclude<TIssueGroupByOptions, null> | "target_date";
 
@@ -584,6 +617,7 @@ export abstract class BaseIssuesStore implements IBaseIssuesStore {
       // If errored out update store again to revert the change
       this.rootIssueStore.issues.updateIssue(issueId, issueBeforeUpdate ?? {});
       this.updateIssueList(issueBeforeUpdate, { ...issueBeforeUpdate, ...data } as TIssue);
+      if (isBlockedByUnresolvedStateError(error)) notifyBlockedByUnresolved(error);
       throw error;
     }
   }

@@ -13,6 +13,7 @@ import { useTranslation } from "@plane/i18n";
 import { calculateTimeAgoShort, getFileURL, renderFormattedDate } from "@plane/utils";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 // store
 import type { TPageInstance } from "@/store/pages/base-page";
 
@@ -26,6 +27,7 @@ export const PageNavigationPaneInfoTabActorsInfo = observer(function PageNavigat
   const { workspaceSlug } = useParams();
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const { owned_by, updated_by } = page;
   const editorInformation = updated_by ? getUserDetails(updated_by) : undefined;
@@ -64,7 +66,9 @@ export const PageNavigationPaneInfoTabActorsInfo = observer(function PageNavigat
             />
             <span>{creatorInformation?.display_name ?? t("common.deactivated_user")}</span>
           </Link>
-          <span className="flex-shrink-0 text-tertiary">{renderFormattedDate(page.created_at)}</span>
+          <span className="flex-shrink-0 text-tertiary">
+            {renderFormattedDate(page.created_at, undefined, calendarSystem)}
+          </span>
         </div>
       </div>
     </div>

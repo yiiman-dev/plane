@@ -10,9 +10,15 @@ import { observable, action, makeObservable, runInAction, computed, reaction } f
 import { computedFn } from "mobx-utils";
 import type { ICalendarPayload, ICalendarWeek } from "@plane/types";
 import { EStartOfTheWeek } from "@plane/types";
-import { generateCalendarData, getWeekNumberOfDate } from "@plane/utils";
+import { generateCalendarData, getWeekNumberOfDate, renderFormattedPayloadDate } from "@plane/utils";
 // types
 import type { IIssueRootStore } from "./root.store";
+
+/**
+ * The 4th argument of `generateCalendarData`. Named structurally rather than imported from
+ * `@plane/calendar`, which `apps/web` deliberately does not depend on.
+ */
+type CalendarSystemArg = Parameters<typeof generateCalendarData>[3];
 
 export interface ICalendarStore {
   calendarFilters: {
@@ -74,14 +80,32 @@ export class CalendarStore implements ICalendarStore {
     this.rootStore = _rootStore;
     this.initCalendar();
 
-    // Watch for changes in startOfWeek preference and regenerate calendar
+    // Watch for changes in startOfWeek preference and the user's calendar system, and regenerate
+    // the calendar. Reading both inside one data function is deliberate: MobX tracks every
+    // observable touched while the data function evaluates, so this reaction now depends on
+    // `start_of_the_week` *and* on `calendar_system` (read through the profile store's narrowed
+    // getter, which reads `data.calendar_system`). The returned array is a new reference on every
+    // evaluation, so the default identity comparer fires the effect whenever either input changes
+    // and never otherwise — the reaction only re-evaluates when a tracked observable changes.
     reaction(
-      () => this.rootStore.rootStore.user.userProfile.data?.start_of_the_week,
+      () => [this.rootStore.rootStore.user.userProfile.data?.start_of_the_week, this.calendarSystem] as const,
       () => {
-        // Regenerate calendar when startOfWeek preference changes
+        // Regenerate calendar when the startOfWeek preference or the calendar system changes
         this.regenerateCalendar();
       }
     );
+  }
+
+  /**
+   * The calendar the grid is laid out in. Narrowed by the profile store, so a malformed or
+   * pre-migration API value degrades to Gregorian instead of reaching an adapter as garbage.
+   *
+   * Only ever forwarded to `generateCalendarData`. The payload is API-facing and stays keyed
+   * Gregorian and 0-based (`y-${getFullYear()}` / `m-${getMonth()}`), which is what the lookups
+   * above read, so this value must never be used to key or locate a cell.
+   */
+  private get calendarSystem(): CalendarSystemArg {
+    return this.rootStore?.rootStore?.user?.userProfile?.calendarSystem as CalendarSystemArg;
   }
 
   get allWeeksOfActiveMonth() {
@@ -122,9 +146,10 @@ export class CalendarStore implements ICalendarStore {
     if (!this.calendarPayload) return undefined;
 
     const { activeWeekDate } = this.calendarFilters;
+    // The payload is keyed Gregorian and 0-based, so the bucket is the Gregorian month
+    // `activeWeekDate` falls in — the same bucket the store navigates by everywhere else.
     const year = activeWeekDate.getFullYear();
     const month = activeWeekDate.getMonth();
-    const dayOfMonth = activeWeekDate.getDate();
 
     // Check if calendar data exists for this year and month
     const yearData = this.calendarPayload[`y-${year}`];
@@ -133,19 +158,22 @@ export class CalendarStore implements ICalendarStore {
     const monthData = yearData[`m-${month}`];
     if (!monthData) return undefined;
 
-    // Calculate firstDayOfMonth offset (same logic as calendar generation)
-    const startOfWeek = this.rootStore?.rootStore?.user?.userProfile?.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
-    const firstDayOfMonthRaw = new Date(year, month, 1).getDay();
-    const firstDayOfMonth = (firstDayOfMonthRaw - startOfWeek + 7) % 7;
+    // Find the week by the date's own key instead of recomputing the week index from an offset.
+    // The generator pages between `adapter.getMonthStart(...)`, so in a non-Gregorian calendar its
+    // first day is not the 1st of the *Gregorian* month — duplicating that offset math here silently
+    // picked the wrong week for about half of the Persian year (Esfand 1403 at startOfWeek 0:
+    // generator 2, this 4). The weeks are the generator's own cells, so asking them which one holds
+    // the date cannot drift from the layout. At most 6x7 entries, so the scan is free at render time.
+    const dateKey = renderFormattedPayloadDate(activeWeekDate);
+    if (!dateKey) return undefined;
 
-    // Calculate which sequential week this date falls into
-    const weekIndex = Math.floor((dayOfMonth - 1 + firstDayOfMonth) / 7);
-
-    const weekKey = `w-${weekIndex}`;
-    if (!(weekKey in monthData)) {
-      return undefined;
+    for (const week of Object.values(monthData)) {
+      if (dateKey in week) return week;
     }
-    return monthData[weekKey];
+
+    // The date is outside this month's grid, which is a legitimate state (e.g. the filters are
+    // mid-navigation), so return undefined rather than throwing.
+    return undefined;
   }
 
   getStartAndEndDate = computedFn((layout: "week" | "month") => {
@@ -184,13 +212,13 @@ export class CalendarStore implements ICalendarStore {
     const startOfWeek = this.rootStore.rootStore.user.userProfile.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
 
     runInAction(() => {
-      this.calendarPayload = generateCalendarData(this.calendarPayload, nextDate, startOfWeek);
+      this.calendarPayload = generateCalendarData(this.calendarPayload, nextDate, startOfWeek, this.calendarSystem);
     });
   };
 
   initCalendar = () => {
     const startOfWeek = this.rootStore.rootStore.user.userProfile.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
-    const newCalendarPayload = generateCalendarData(null, new Date(), startOfWeek);
+    const newCalendarPayload = generateCalendarData(null, new Date(), startOfWeek, this.calendarSystem);
 
     runInAction(() => {
       this.calendarPayload = newCalendarPayload;
@@ -199,14 +227,14 @@ export class CalendarStore implements ICalendarStore {
 
   /**
    * Force complete regeneration of calendar data
-   * This should be called when startOfWeek preference changes
+   * This should be called when the startOfWeek preference or the calendar system changes
    */
   regenerateCalendar = () => {
     const startOfWeek = this.rootStore.rootStore.user.userProfile.data?.start_of_the_week ?? EStartOfTheWeek.SUNDAY;
     const { activeMonthDate } = this.calendarFilters;
 
     // Force complete regeneration by passing null to clear all cached data
-    const newCalendarPayload = generateCalendarData(null, activeMonthDate, startOfWeek);
+    const newCalendarPayload = generateCalendarData(null, activeMonthDate, startOfWeek, this.calendarSystem);
 
     runInAction(() => {
       this.calendarPayload = newCalendarPayload;

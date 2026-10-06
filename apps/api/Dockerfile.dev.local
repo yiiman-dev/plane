@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1
+# Copyright (c) 2023-present Plane Software, Inc. and contributors
+# SPDX-License-Identifier: AGPL-3.0-only
+# See the LICENSE file for details.
+#
+# LOCAL-ONLY variant of Dockerfile.dev (not tracked by upstream Plane).
+#
+# Why not the upstream image: it is python:3.12.5-alpine. Alpine is musl-based,
+# so PyPI ships no wheels for it and packages like cryptography/psycopg-c build
+# from source, which forces cargo/g++/gcc/llvm into the image. That single
+# `apk add` took 15+ minutes on this network (llvm17 at ~250KB/s).
+#
+# This variant is Debian bookworm (glibc), so most packages come from manylinux
+# wheels. `build-essential` is still required: psycopg-c 3.3.4 publishes no
+# cp312 aarch64 wheel, so pip always compiles it against libpq (hence libpq-dev).
+#
+# Fast mirrors, measured from this machine:
+#   apt: deb.debian.org ~110KB/s -> mirrors.tuna.tsinghua.edu.cn ~780KB/s
+#   pip: pypi.org ~350KB/s      -> mirrors.tuna.tsinghua.edu.cn faster
+# The pip download lives in a BuildKit cache mount, so rebuilding after an apt
+# change does not re-download ~200 wheels from scratch.
+#
+# Usage:
+#   docker compose -f docker-compose-local.yml -f docker-compose-local.nominedocker.yml build api
+#   docker compose -f docker-compose-local.yml -f docker-compose-local.nominedocker.yml up -d
+
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV INSTANCE_CHANGELOG_URL=https://sites.plane.so/pages/691ef037bcfe416a902e48cb55f59891/
+
+RUN printf 'deb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm main\ndeb https://mirrors.tuna.tsinghua.edu.cn/debian bookworm-updates main\ndeb https://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main\n' > /etc/apt/sources.list \
+    && rm -f /etc/apt/sources.list.d/debian.sources
+
+# No nodejs/npm: nothing in bin/ or the Django settings invokes node, and those
+# two packages alone pulled ~280 extra apt packages.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    libpq5 \
+    libpq-dev \
+    libxml2 \
+    libxslt1.1 \
+    libxmlsec1 \
+    libxmlsec1-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# `bin/docker-entrypoint-*.sh` calls `ip link` and `free -h` to build the machine
+# signature, and `set -e` aborts the container without them. Kept as a separate
+# layer so the expensive pip install above stays cached.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /code
+
+# Dependencies first so code edits don't invalidate the expensive pip layer.
+COPY requirements.txt ./requirements.txt
+COPY requirements ./requirements
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --cache-dir /root/.cache/pip \
+      -i https://pypi.tuna.tsinghua.edu.cn/simple \
+      -r requirements/local.txt
+
+COPY . .
+
+RUN mkdir -p /code/plane/logs \
+    && chmod -R +x /code/bin \
+    && chmod -R 777 /code
+
+EXPOSE 8000
+
+CMD ["./bin/docker-entrypoint-api-local.sh"]

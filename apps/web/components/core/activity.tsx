@@ -31,8 +31,10 @@ import { BlockedIcon, BlockerIcon } from "@plane/blocks/icons";
 import { Tooltip } from "@makeplane/propel/components/tooltip";
 import type { IIssueActivity } from "@plane/types";
 import { renderFormattedDate, generateWorkItemLink, capitalizeFirstLetter } from "@plane/utils";
+import type { CalendarSystem } from "@plane/blocks/property-select";
 // helpers
 import { useLabel } from "@/hooks/store/use-label";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // types
 
@@ -146,9 +148,16 @@ const getInboxUserActivityMessage = (activity: IIssueActivity, showIssue: boolea
   }
 };
 
+// `calendarSystem` is optional so the many `message` implementations that render no date keep their
+// existing single-argument shape; only the date-field entries consume it.
 const activityDetails: {
   [key: string]: {
-    message: (activity: IIssueActivity, showIssue: boolean, workspaceSlug: string) => React.ReactNode;
+    message: (
+      activity: IIssueActivity,
+      showIssue: boolean,
+      workspaceSlug: string,
+      calendarSystem?: CalendarSystem
+    ) => React.ReactNode;
     icon: React.ReactNode;
   };
 } = {
@@ -666,7 +675,7 @@ const activityDetails: {
     icon: <GridOutline width={12} height={12} className="text-secondary" aria-hidden="true" />,
   },
   start_date: {
-    message: (activity, showIssue) => {
+    message: (activity, showIssue, workspaceSlug, calendarSystem) => {
       if (!activity.new_value)
         return (
           <>
@@ -684,7 +693,7 @@ const activityDetails: {
           <>
             set the start date to{" "}
             <span className="font-medium whitespace-nowrap text-primary">
-              {renderFormattedDate(activity.new_value)}
+              {renderFormattedDate(activity.new_value, undefined, calendarSystem)}
             </span>
             {showIssue && (
               <>
@@ -698,7 +707,7 @@ const activityDetails: {
     icon: <CalendarOutline width={12} height={12} className="text-secondary" aria-hidden="true" />,
   },
   target_date: {
-    message: (activity, showIssue) => {
+    message: (activity, showIssue, workspaceSlug, calendarSystem) => {
       if (!activity.new_value)
         return (
           <>
@@ -716,7 +725,7 @@ const activityDetails: {
           <>
             set the due date to{" "}
             <span className="font-medium whitespace-nowrap text-primary">
-              {renderFormattedDate(activity.new_value)}
+              {renderFormattedDate(activity.new_value, undefined, calendarSystem)}
             </span>
             {showIssue && (
               <>
@@ -754,9 +763,16 @@ type ActivityMessageProps = {
   showIssue?: boolean;
 };
 
-export function ActivityMessage({ activity, showIssue = false }: ActivityMessageProps) {
+// Wrapped in `observer` because the profile store loads asynchronously: without a subscription this
+// component reads `calendarSystem` once and would keep rendering Gregorian dates if the profile
+// landed after the activity list mounted.
+export const ActivityMessage = observer(function ActivityMessage({
+  activity,
+  showIssue = false,
+}: ActivityMessageProps) {
   // router params
   const { workspaceSlug } = useParams();
+  const { calendarSystem } = useUserProfile();
   const activityField = activity.field ?? "issue";
 
   return (
@@ -764,8 +780,9 @@ export function ActivityMessage({ activity, showIssue = false }: ActivityMessage
       {activityDetails[activityField as keyof typeof activityDetails]?.message(
         activity,
         showIssue,
-        workspaceSlug ? workspaceSlug.toString() : (activity.workspace_detail?.slug ?? "")
+        workspaceSlug ? workspaceSlug.toString() : (activity.workspace_detail?.slug ?? ""),
+        calendarSystem
       )}
     </>
   );
-}
+});
