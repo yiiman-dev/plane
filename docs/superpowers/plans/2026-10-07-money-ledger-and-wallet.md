@@ -492,14 +492,25 @@ def round_to_toman(value: Decimal) -> int:
 def get_or_create_account(code: str, kind: str, title: str, workspace=None) -> LedgerAccount:
     """Fetch an account by its stable code, creating it the first time.
 
-    Creating an account is idempotent so that a caller never has to seed
-    accounts ahead of time.
+    Must revive a soft-deleted row rather than fall over on it. Every
+    model in this project inherits ``SoftDeleteModel``, so ``delete()``
+    only stamps ``deleted_at`` and the row keeps occupying its unique
+    ``code``. The default manager hides it, so a plain ``get_or_create``
+    would try to insert a duplicate and raise ``IntegrityError``.
     """
-    account, _ = LedgerAccount.objects.get_or_create(
-        code=code,
-        defaults={"kind": kind, "title": title, "workspace": workspace},
-    )
-    return account
+    account = LedgerAccount.objects.filter(code=code).first()
+    if account is not None:
+        return account
+
+    revived = LedgerAccount.all_objects.filter(code=code, deleted_at__isnull=False).first()
+    if revived is not None:
+        revived.deleted_at = None
+        revived.kind = kind
+        revived.title = title or revived.title
+        revived.save(update_fields=["deleted_at", "kind", "title", "updated_at"])
+        return revived
+
+    return LedgerAccount.objects.create(code=code, kind=kind, title=title, workspace=workspace)
 
 
 def get_or_create_wallet_accounts(workspace) -> tuple[LedgerAccount, LedgerAccount]:
@@ -561,7 +572,15 @@ def post_entry(
 
 
 def _signed_total(account: LedgerAccount, workspace=None) -> int:
-    """Debits minus credits for one account, respecting its normal side."""
+    """Debits minus credits for one account, respecting its normal side.
+
+    Two aggregates over ONE account, never one pass over a kind. A
+    single ``Case``/``When`` over ``debit_account__kind`` is
+    first-match-wins, so it silently drops the credit leg of an entry
+    whose debit side is debit-normal — an ``ASSET -> ADMIN_POOL`` posting
+    would contribute ``+amount`` and a two-credit-normal entry would
+    contribute nothing.
+    """
     entries = LedgerEntry.objects.filter(workspace=workspace) if workspace is not None else LedgerEntry.objects.all()
     debit_total = entries.filter(debit_account=account).aggregate(total=Sum("amount_toman"))["total"] or 0
     credit_total = entries.filter(credit_account=account).aggregate(total=Sum("amount_toman"))["total"] or 0
