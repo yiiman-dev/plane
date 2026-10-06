@@ -6,7 +6,9 @@
 
 # Python imports
 import json
-from typing import Any, Dict, List, Optional
+from itertools import count
+from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
 
 # Third party imports
 import pytest
@@ -20,7 +22,7 @@ from plane.billing.gateways import base as gateways_base
 from plane.billing.gateways import digipay as digipay_module
 from plane.billing.models import PaymentGateway
 from plane.billing.services.credentials import encrypt_credentials
-from plane.db.models import User
+from plane.db.models import User, Workspace
 from plane.license.models import Instance, InstanceAdmin
 
 # Test credentials only, never a real merchant account.
@@ -144,6 +146,32 @@ def instance_admin(db, instance):
     user.save()
     InstanceAdmin.objects.create(instance=instance, user=user, role=20)
     return user
+
+
+@pytest.fixture
+def make_workspace(db) -> Callable[..., Workspace]:
+    """Return a factory building workspaces with an owner.
+
+    ``Workspace.owner`` is NOT NULL with no default, so every workspace needs a
+    distinct ``User``; the email is derived from ``uuid4`` so two calls in the
+    same test can never collide on the unique email column.
+    """
+    counter = count(1)
+
+    def _make(name: str = "Workspace", slug: str | None = None) -> Workspace:
+        unique = uuid4().hex
+        owner = User.objects.create(
+            email=f"workspace-owner-{unique}@example.com",
+            first_name="Wallet",
+            last_name="Owner",
+        )
+        return Workspace.objects.create(
+            name=name,
+            slug=slug or f"workspace-{next(counter)}-{unique[:8]}",
+            owner=owner,
+        )
+
+    return _make
 
 
 @pytest.fixture
