@@ -29,9 +29,14 @@ class _FakeView:
         self.workspace_slug = slug
 
 
+class _ViewWithoutSlug:
+    """A view that forgot to set ``workspace_slug``."""
+
+
 class _FakeRequest:
-    def __init__(self, user):
+    def __init__(self, user, method="GET"):
         self.user = user
+        self.method = method
 
 
 def test_existing_workspace_admin_permission_accepts_role_15():
@@ -105,6 +110,47 @@ def test_rejects_anonymous_user(workspace_factory):
     assert _allows(workspace, _FakeRequest(AnonymousUser())) is False
 
 
-def test_rejects_missing_user(workspace_factory):
+def test_rejects_missing_user_without_querying(workspace_factory, django_assert_num_queries):
+    """A ``user`` of ``None`` must short-circuit before any DB access.
+
+    Asserting only the return value is vacuous: ``filter(member=None)``
+    on a non-nullable FK becomes ``member__isnull=True``, which matches no
+    rows, so the queryset would return ``False`` even with the guard deleted.
+    The query counter is what actually pins the guard.
+    """
     workspace = workspace_factory(name="No User Wallet")
-    assert _allows(workspace, _FakeRequest(None)) is False
+    request = _FakeRequest(None)
+
+    with django_assert_num_queries(0):
+        assert WorkspaceBillingLedgerPermission().has_permission(request, _FakeView(workspace.slug)) is False
+
+
+def test_rejects_role_5_guest(workspace_factory):
+    workspace = workspace_factory(name="Guest Wallet")
+    assert _allows(workspace, _make_member(workspace, role=5)) is False
+
+
+def test_rejects_owner_without_membership_row(workspace_factory):
+    """``Workspace.owner`` alone is not authority for the ledger.
+
+    ``workspace_factory`` builds a ``Workspace`` with ``owner=`` and no
+    ``WorkspaceMember`` row at all. The owner is denied. This is deliberate
+    and matches ``WorkspaceOwnerPermission``, which also ignores
+    ``Workspace.owner``: authority for this permission is an active role-20
+    ``WorkspaceMember`` row and nothing else.
+    """
+    workspace = workspace_factory(name="Ownerless Membership Wallet")
+    assert workspace.owner is not None
+    assert not WorkspaceMember.objects.filter(workspace=workspace).exists()
+    assert _allows(workspace, _FakeRequest(workspace.owner)) is False
+
+
+def test_rejects_view_without_workspace_slug(workspace_factory, django_assert_num_queries):
+    """A view that omits ``workspace_slug`` is denied, not a 500."""
+    workspace = workspace_factory(name="No Slug Wallet")
+    request = _make_member(workspace, role=20)
+
+    with django_assert_num_queries(0):
+        allowed = WorkspaceBillingLedgerPermission().has_permission(request, _ViewWithoutSlug())
+
+    assert allowed is False
