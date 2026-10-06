@@ -50,6 +50,24 @@ class TransactionStatus(models.TextChoices):
     REVERSED = "reversed", "Reversed"
 
 
+class LedgerAccountKind(models.TextChoices):
+    ASSET = "asset", "Asset"
+    LIABILITY = "liability", "Liability"
+    REVENUE = "revenue", "Revenue"
+    GATEWAY_SETTLEMENT = "gateway_settlement", "Gateway settlement"
+    ADMIN_POOL = "admin_pool", "Admin grant pool"
+
+
+class LedgerSource(models.TextChoices):
+    GATEWAY = "gateway", "Gateway"
+    ADMIN_GRANT = "admin_grant", "Admin grant"
+    SMS_CHARGE = "sms_charge", "SMS charge"
+    PLAN_PURCHASE = "plan_purchase", "Plan purchase"
+    UPGRADE = "upgrade", "Upgrade"
+    REFUND = "refund", "Refund"
+    RELEASE_HOLD = "release_hold", "Release hold"
+
+
 class SubscriptionStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     EXPIRED = "expired", "Expired"
@@ -439,3 +457,75 @@ class WorkspaceFeatureFlag(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.workspace_id}:{self.feature_flag_id}"
+
+
+class LedgerAccount(BaseModel):
+    """One side of every money movement. Codes are stable and referenced in code."""
+
+    code = models.CharField(max_length=255, unique=True, db_index=True)
+    kind = models.CharField(max_length=32, choices=LedgerAccountKind.choices, default=LedgerAccountKind.ASSET)
+    title = models.CharField(max_length=255, blank=True)
+    workspace = models.ForeignKey(
+        "db.Workspace", on_delete=models.CASCADE, related_name="ledger_accounts", null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ("code",)
+
+    def __str__(self) -> str:
+        return self.code
+
+    @property
+    def is_debit_normal(self) -> bool:
+        """Assets and pools grow on the debit side, everything else on the credit side."""
+        return self.kind in (LedgerAccountKind.ASSET, LedgerAccountKind.ADMIN_POOL)
+
+
+class LedgerEntry(BaseModel):
+    """One balanced movement of money. ``amount_toman`` is always positive."""
+
+    debit_account = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="debit_entries")
+    credit_account = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="credit_entries")
+    amount_toman = models.PositiveBigIntegerField()
+    source = models.CharField(max_length=32, choices=LedgerSource.choices)
+    workspace = models.ForeignKey(
+        "db.Workspace", on_delete=models.CASCADE, related_name="ledger_entries", null=True, blank=True
+    )
+    description = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        "db.User", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
+    )
+    invoice = models.ForeignKey(
+        "billing.Invoice", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
+    )
+    transaction = models.ForeignKey(
+        "billing.PaymentTransaction", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
+    )
+    idempotency_key = models.CharField(max_length=255, unique=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(debit_account=models.F("credit_account")),
+                name="ledger_entry_distinct_accounts",
+            ),
+            models.CheckConstraint(condition=models.Q(amount_toman__gt=0), name="ledger_entry_positive_amount"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source} {self.amount_toman}"
+
+
+class Wallet(BaseModel):
+    """A workspace wallet. The balance lives in LedgerEntry rows, never in a column."""
+
+    workspace = models.OneToOneField("db.Workspace", on_delete=models.CASCADE, related_name="billing_wallet")
+    # Zero means no cap. Guards against a mistyped admin grant.
+    admin_grant_cap_toman = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"wallet:{self.workspace.slug}"
