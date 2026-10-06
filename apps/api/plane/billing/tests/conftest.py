@@ -149,18 +149,25 @@ def instance_admin(db, instance):
 
 
 @pytest.fixture
-def make_workspace(db) -> Callable[..., Workspace]:
+def workspace_factory(db) -> Callable[..., Workspace]:
     """Return a factory building workspaces with an owner.
 
     ``Workspace.owner`` is NOT NULL with no default, so every workspace needs a
-    distinct ``User``; the email is derived from ``uuid4`` so two calls in the
-    same test can never collide on the unique email column.
+    distinct ``User``. Both ``User.email`` and ``User.username`` are unique and
+    neither is populated by ``save()`` or any signal, so the same ``uuid4`` hex
+    feeds both columns and two calls in the same test can never collide.
+
+    Named ``workspace_factory`` rather than ``make_workspace`` because
+    ``test_entitlements.py`` already has a module level ``make_workspace``
+    helper with a different signature (it also creates a member, plan and
+    subscription); a fixture of that name would shadow it in that file.
     """
     counter = count(1)
 
     def _make(name: str = "Workspace", slug: str | None = None) -> Workspace:
         unique = uuid4().hex
         owner = User.objects.create(
+            username=f"workspace-owner-{unique}",
             email=f"workspace-owner-{unique}@example.com",
             first_name="Wallet",
             last_name="Owner",
