@@ -405,7 +405,8 @@ def test_wallet_balance_counts_debits_minus_credits():
 
     money.post_entry(debit=default, credit=pool, amount_toman=50_000, source=LedgerSource.ADMIN_GRANT, workspace=workspace, idempotency_key="b1")
     # holding money moves it out of the spendable account
-    money.post_entry(debit=default, credit=hold, amount_toman=20_000, source=LedgerSource.REFUND, workspace=workspace, idempotency_key="b2")
+    # hold is an ASSET and grows on the debit side, so the posting is debit=hold, credit=default
+    money.post_entry(debit=hold, credit=default, amount_toman=20_000, source=LedgerSource.REFUND, workspace=workspace, idempotency_key="b2")
 
     assert money.wallet_balance(workspace) == 30_000
     # the hold is tracked separately and is not spendable
@@ -414,7 +415,8 @@ def test_wallet_balance_counts_debits_minus_credits():
 
 def test_round_to_toman_rounds_to_the_nearest_thousand():
     assert money.round_to_toman(Decimal("1234.4")) == 1000
-    assert money.round_to_toman(Decimal("1234.5")) == 2000
+    assert money.round_to_toman(Decimal("1234.5")) == 1000
+    assert money.round_to_toman(Decimal("1500")) == 2000  # the real HALF_UP tie
     assert money.round_to_toman(Decimal("999")) == 1000
 ```
 
@@ -485,8 +487,14 @@ ADMIN_GRANT_POOL = "admin_grant_pool"
 
 
 def round_to_toman(value: Decimal) -> int:
-    """Round to the nearest 1,000 Toman, halves going up."""
-    return int(Decimal(value).quantize(ROUNDING_UNIT, rounding=ROUND_HALF_UP))
+    """Round to the nearest 1,000 Toman, halves going up.
+
+    ``quantize`` takes an exponent template, so ``quantize(Decimal("1000"))``
+    rounds to the nearest INTEGER — 1000 has exponent 0. Divide, quantize to a
+    whole number, then scale back.
+    """
+    units = Decimal(value) / ROUNDING_UNIT
+    return int(units.quantize(Decimal("1"), rounding=ROUND_HALF_UP) * ROUNDING_UNIT)
 
 
 def get_or_create_account(code: str, kind: str, title: str, workspace=None) -> LedgerAccount:
@@ -519,7 +527,7 @@ def get_or_create_wallet_accounts(workspace) -> tuple[LedgerAccount, LedgerAccou
         WalletAccountCode.wallet_default(workspace.pk), LedgerAccountKind.ASSET, "موجودی قابل خرج", workspace
     )
     held = get_or_create_account(
-        WalletAccountCode.wallet_hold(workspace.pk), LedgerAccountKind.LIABILITY, "موجودی قفل‌شده", workspace
+        WalletAccountCode.wallet_hold(workspace.pk), LedgerAccountKind.ASSET, "موجودی قفل‌شده", workspace
     )
     return spendable, held
 
