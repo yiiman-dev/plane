@@ -30,7 +30,7 @@ at 0, so the error reads as "the wallet is empty" rather than as a bug.
 from typing import Optional
 
 # Django imports
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 # Module imports
 from plane.billing.models import LedgerAccount, LedgerAccountKind, LedgerEntry, LedgerSource, Wallet
@@ -68,6 +68,27 @@ GATEWAY_REVERSAL_ACCOUNT_CODE = "gateway:reversal"
 # name, which is what the statement for it should say; only its normal balance
 # side is that of the pool it draws on.
 GATEWAY_REVERSAL_ACCOUNT_KIND = LedgerAccountKind.ADMIN_POOL
+
+# A caller-supplied pk or idempotency key that turns out to name another
+# workspace's money. Plain ``WalletError``, deliberately not a subclass: it is
+# a confused-deputy refusal, not a policy decision about the caller's own
+# wallet, and an HTTP layer must not be able to treat it as one.
+WORKSPACE_MISMATCH_MESSAGE = "این تراکنش متعلق به کیف پول این فضای کاری نیست."
+
+# Which ``LedgerSource`` values a hold may be booked under. A hold is money that
+# WAS taken and cannot yet be applied, so the reasons are the payment-driven
+# ones plus the neutral ``HOLD``.
+#
+# The list is an allow-list, not a deny-list of ``ADMIN_GRANT``: an entry that
+# says "a grant was made" while actually moving money into a hold account makes
+# every later statement about grants a lie, and a deny-list only catches the
+# labels someone thought of in advance.
+HOLD_ALLOWED_SOURCES = (
+    LedgerSource.HOLD,
+    LedgerSource.GATEWAY,
+    LedgerSource.PLAN_PURCHASE,
+    LedgerSource.UPGRADE,
+)
 
 
 class WalletError(Exception):
@@ -121,6 +142,24 @@ class InvalidChargeReference(WalletError):
     message = "شناسهٔ لاگ پیامک الزامی است."
 
 
+class InvalidHoldSource(WalletError):
+    """``hold_funds`` was asked to book the movement under a non-hold source."""
+
+    message = "منبع قفل کردن وجه نامعتبر است."
+
+
+class InvalidPaymentReference(WalletError):
+    """``refund_to_spendable`` was called without a reference to the failed payment.
+
+    The docstring claims this function is only for a payment the gateway
+    explicitly rejected. A mandatory reference is what makes that claim
+    checkable: a refund nobody can point at a transaction, invoice or gateway
+    ref for is indistinguishable from an operator handing out money.
+    """
+
+    message = "ارجاع به پرداخت ناموفق الزامی است."
+
+
 def _assert_amount(amount_toman: int) -> None:
     """Reject anything that is not a positive non-bool integer.
 
@@ -154,6 +193,21 @@ def _assert_description(description: str) -> str:
     return description.strip()
 
 
+def _assert_payment_reference(reference) -> str:
+    """Refuse a refund with nothing to trace it to.
+
+    Same shape as ``_assert_log_id`` for the same reason: this function is only
+    legitimate for a payment that demonstrably failed, so a blank reference is
+    not a cosmetic omission -- it is the absence of the only evidence that
+    justifies minting the money back.
+    """
+    if reference is None or isinstance(reference, bool) or (isinstance(reference, str) and not reference.strip()):
+        raise InvalidPaymentReference()
+    if not isinstance(reference, (str, int)):
+        raise InvalidPaymentReference()
+    return str(reference).strip()
+
+
 def _lock_account(account: LedgerAccount) -> LedgerAccount:
     """Re-read an account under ``SELECT ... FOR UPDATE``.
 
@@ -166,7 +220,7 @@ def _lock_account(account: LedgerAccount) -> LedgerAccount:
 
 
 def _replay_or_none(
-    idempotency_key: Optional[str], *, debit: LedgerAccount, credit: LedgerAccount, amount_toman: int
+    idempotency_key: Optional[str], *, workspace, debit: LedgerAccount, credit: LedgerAccount, amount_toman: int
 ) -> Optional[LedgerEntry]:
     """The entry already posted under this key, or ``None``.
 
@@ -191,6 +245,17 @@ def _replay_or_none(
 
     Looked up through ``all_objects`` because a soft-deleted row still occupies
     its unique key (see ``LedgerEntry.idempotency_key``).
+
+    ``workspace`` is asserted here rather than left to each caller because the
+    lookup is by key ALONE: the legs compared below are the ones the CALLER
+    passed in, not the ones recorded on the row. For five of the six functions
+    that is self-defending, because their legs are the caller's own
+    workspace-scoped wallet accounts and a foreign entry's accounts simply fail
+    ``_assert_same_movement``. ``revoke_grant`` is the exception -- its legs
+    come from the caller-supplied ``entry``, which may belong to another
+    tenant -- so without this check a caller in workspace A who guessed
+    workspace B's grant pk and its reversal key got B's whole entry back,
+    amount, description and author included, with no workspace check ever run.
     """
     if not idempotency_key:
         return None
@@ -198,29 +263,68 @@ def _replay_or_none(
     if existing is None:
         return None
     money._assert_same_movement(existing, debit=debit, credit=credit, amount_toman=amount_toman)
+    if existing.workspace_id != workspace.pk:
+        raise WalletError(WORKSPACE_MISMATCH_MESSAGE)
     return existing
+
+
+def _assert_hold_source(source: str) -> str:
+    """Return ``source`` if a hold may be booked under it, refuse it otherwise."""
+    if source not in HOLD_ALLOWED_SOURCES:
+        raise InvalidHoldSource()
+    return source
 
 
 def _already_reversed(entry: LedgerEntry) -> bool:
     """Whether ``entry`` has a reversal posted against it.
 
-    A reversal is a ``REFUND`` entry on the same workspace with the opposite
-    legs, so the mirror is what identifies it -- not a back-reference column the
-    model does not have. Without this, an admin who revokes the same grant twice
-    under two different keys gets two reversals and the wallet is driven
-    negative by a duplicate of work that was already undone.
+    ``LedgerEntry.reversal_of`` is a real foreign key, so this is exact. The
+    earlier version inferred a reversal from mirrored legs, which is wrong the
+    moment two grants share an amount: grants are all
+    ``debit=spendable, credit=pool``, so grant B of 80 000 has byte-identical
+    legs to grant A of 80 000 on the same workspace, and after A was reversed
+    the leg mirror of A's reversal matched B as well. ``revoke_grant(B)`` then
+    raised ``GrantAlreadyReversed`` for a grant nobody had touched, with no
+    in-product way to clear it.
+
+    Queried through ``all_objects`` for the same reason as the idempotency key:
+    a soft-deleted reversal still took the money out of the wallet, so it must
+    still count as a reversal.
+
+    ``filter(reversal_of_id=...)`` rather than the ``reversals`` reverse
+    accessor: Django only exposes a reverse manager on the model's *default*
+    manager class, and ``LedgerEntry.all_objects`` is a plain
+    ``models.Manager()`` that does not carry it.
     """
-    return (
-        LedgerEntry.objects.filter(
-            workspace_id=entry.workspace_id,
-            source=LedgerSource.REFUND,
-            debit_account_id=entry.credit_account_id,
-            credit_account_id=entry.debit_account_id,
-            amount_toman=entry.amount_toman,
-        )
-        .exclude(pk=entry.pk)
-        .exists()
-    )
+    return LedgerEntry.all_objects.filter(reversal_of_id=entry.pk).exists()
+
+
+def _lock_wallet_row(workspace) -> Wallet:
+    """The workspace's ``Wallet`` row, locked, created on first use.
+
+    The lock is what makes ``admin_grant_cap_toman`` enforceable. The cap is
+    the one policy limit on how much money an operator can mint, and an
+    unsynchronised read lets two concurrent grants both observe "under the cap"
+    and jointly blow through it. Every other balance-bearing read in this module
+    takes its row lock; the cap read was the exception.
+
+    First-ever grant, where no row exists yet: there is nothing to lock, and
+    that is handled rather than skipped. The insert is wrapped in its own
+    savepoint so the ``OneToOneField`` violation raised by a concurrent
+    creator poisons only the savepoint, and the loser then falls through to
+    ``select_for_update`` on the winner's now-committed row. The ``INSERT`` in
+    the winner's transaction already holds that row exclusively for itself, so
+    the create path needs no separate lock.
+    """
+    existing = Wallet.objects.select_for_update().filter(workspace=workspace).first()
+    if existing is not None:
+        return existing
+
+    try:
+        with transaction.atomic():
+            return Wallet.objects.create(workspace=workspace)
+    except IntegrityError:
+        return Wallet.objects.select_for_update().get(workspace=workspace)
 
 
 def _pool_account() -> LedgerAccount:
@@ -253,13 +357,18 @@ def grant_from_admin(
     # Replay BEFORE the cap check: an admin who lowers the cap between two
     # identical calls must not get ``GrantTooLarge`` for a grant that already
     # posted (see ``_replay_or_none``).
-    replay = _replay_or_none(idempotency_key, debit=spendable, credit=_pool_account(), amount_toman=amount_toman)
+    replay = _replay_or_none(
+        idempotency_key, workspace=workspace, debit=spendable, credit=_pool_account(), amount_toman=amount_toman
+    )
     if replay is not None:
         return replay
 
     with transaction.atomic():
-        wallet_row, _created = Wallet.objects.get_or_create(workspace=workspace)
-        cap = wallet_row.admin_grant_cap_toman
+        # Locked, not read plainly (see ``_lock_wallet_row``): without the lock
+        # two concurrent grants each observe "under the cap" and jointly exceed
+        # it, which is the one limit standing between a mistyped amount and
+        # unlimited money an operator can mint.
+        cap = _lock_wallet_row(workspace).admin_grant_cap_toman
         if cap and amount_toman > cap:
             raise GrantTooLarge()
 
@@ -282,11 +391,13 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
     side is the original's CREDIT account and vice versa. That is what makes it
     a reversal rather than a second copy of the same movement.
 
-    ``entry`` is a caller-supplied primary key, so the row is checked on two
-    axes before anything is reversed: it must belong to ``workspace``, and it
-    must actually BE an admin grant that has not been reversed yet. Reversing an
-    arbitrary ledger row on a pk from a request body is a confused-deputy
-    surface -- handed an SMS charge it would quietly refund an SMS charge.
+    ``entry`` is the ``LedgerEntry`` instance to reverse -- the caller fetches
+    it, so an HTTP layer resolves the pk from the request body to a row before
+    calling this. The row is checked on two axes before anything is reversed:
+    it must belong to ``workspace``, and it must actually BE an admin grant
+    that has not been reversed yet. Reversing an arbitrary ledger row on a pk
+    from a request body is a confused-deputy surface -- handed an SMS charge it
+    would quietly refund an SMS charge.
     """
     _assert_amount(entry.amount_toman)
     description = _assert_description(description)
@@ -297,8 +408,17 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
     # completed reversal has already drained the wallet by construction, so an
     # affordability check ahead of this one raises ``InsufficientBalance`` for
     # work that is already done (see ``_replay_or_none``).
+    #
+    # The replay's legs are built from ``entry``, which is caller-supplied and
+    # may name another tenant's grant, so the workspace assertion lives INSIDE
+    # ``_replay_or_none``. Checking it only further down -- as this function
+    # did when the replay was hoisted -- meant a caller in workspace A who
+    # guessed workspace B's grant pk and reversal key satisfied
+    # ``_assert_same_movement`` and got B's entry back without a single
+    # workspace check running.
     replay = _replay_or_none(
         idempotency_key,
+        workspace=workspace,
         debit=entry.credit_account,
         credit=entry.debit_account,
         amount_toman=entry.amount_toman,
@@ -313,11 +433,13 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
         _assert_amount(locked.amount_toman)
 
         if locked.workspace_id != workspace.pk:
-            raise WalletError("این تراکنش متعلق به کیف پول این فضای کاری نیست.")
+            raise WalletError(WORKSPACE_MISMATCH_MESSAGE)
 
         if locked.source != LedgerSource.ADMIN_GRANT:
             raise NotAGrantEntry()
 
+        # Exact: the FK points at THIS row, so a same-amount sibling grant on
+        # the same workspace is not mistaken for a reversal of this one.
         if _already_reversed(locked):
             raise GrantAlreadyReversed()
 
@@ -331,7 +453,7 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
         if not money.wallet_balance_is_enough(workspace, locked.amount_toman):
             raise InsufficientBalance("موجودی برای ابطال کل مبلغ کافی نیست.")
 
-        return money.post_entry(
+        entry_reversal = money.post_entry(
             debit=locked.credit_account,
             credit=locked.debit_account,
             amount_toman=locked.amount_toman,
@@ -341,6 +463,21 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
             created_by=created_by,
             idempotency_key=idempotency_key,
         )
+        # Stamped after the write because ``money.post_entry`` is a pure
+        # double-entry primitive with no notion of reversal. It runs inside this
+        # same atomic block, so the entry and its back-reference commit or roll
+        # back together -- a reversal can never exist without saying which
+        # grant it undid, which is the property ``_already_reversed`` relies on.
+        entry_reversal.reversal_of_id = locked.pk
+        # ``disable_auto_set_user`` because ``BaseModel.save`` otherwise takes
+        # its crum branch on this second write and clobbers the in-memory
+        # ``created_by`` with ``None`` outside a request. ``update_fields``
+        # keeps the row's author intact; this keeps the returned object honest.
+        entry_reversal.save(
+            update_fields=["reversal_of_id", "updated_at"],
+            disable_auto_set_user=True,
+        )
+        return entry_reversal
 
 
 def charge_sms(
@@ -357,24 +494,35 @@ def charge_sms(
     Keyed on the notification log id so a retried delivery never charges
     the workspace twice for the same message.
 
-    ``log_id`` is mandatory and is written into the entry's ``description``, so
-    the notification log stays recoverable from the ledger: the idempotency key
-    embeds it, but the key is the index, not the story, and without the
-    reference there is no way to answer "which message cost this?" from the
-    ledger alone. ``created_by`` is the actor when one exists -- SMS charges are
-    usually taken outside a request (a Celery task, where crum yields ``None``),
-    so it is ``None`` far more often here than for a grant.
+    ``log_id`` is mandatory and is written into the entry's ``description``
+    UNCONDITIONALLY -- an override is appended to the canonical
+    ``"پیامک {log_id}"`` rather than replacing it. Before, a caller who
+    overrode ``description`` and ``idempotency_key`` together left no trace of
+    which notification log was charged, and the description is the only place
+    that reference exists. The key is the index, not the story.
+
+    ``created_by`` is the actor when one exists -- SMS charges are usually
+    taken outside a request (a Celery task, where crum yields ``None``), so it
+    is ``None`` far more often here than for a grant.
     """
     _assert_log_id(log_id)
     _assert_amount(amount_toman)
     key = idempotency_key or f"sms:{log_id}:charge"
 
     spendable, _held = money.get_or_create_wallet_accounts(workspace)
+    # ONE expense instance for both the replay comparison and the posting. The
+    # two used to be separate ``_sms_expense_account()`` calls, which happen to
+    # return the same row, but the replay's correctness argument then rested on
+    # an unstated identity assumption instead of on the code.
     expense = _sms_expense_account()
 
-    replay = _replay_or_none(key, debit=expense, credit=spendable, amount_toman=amount_toman)
+    replay = _replay_or_none(key, workspace=workspace, debit=expense, credit=spendable, amount_toman=amount_toman)
     if replay is not None:
         return replay
+
+    label = f"پیامک {log_id}"
+    if description and description.strip():
+        label = f"{label} — {description.strip()}"
 
     with transaction.atomic():
         locked_spendable = _lock_account(spendable)
@@ -383,28 +531,42 @@ def charge_sms(
             raise InsufficientBalance()
 
         return money.post_entry(
-            debit=_sms_expense_account(),
+            debit=expense,
             credit=locked_spendable,
             amount_toman=amount_toman,
             source=LedgerSource.SMS_CHARGE,
             workspace=workspace,
-            description=description or f"پیامک {log_id}",
+            description=label,
             created_by=created_by,
             idempotency_key=key,
         )
 
 
-def hold_funds(*, workspace, amount_toman: int, source: str, idempotency_key: str) -> LedgerEntry:
+def hold_funds(
+    *, workspace, amount_toman: int, source: str = LedgerSource.HOLD, idempotency_key: str, created_by=None
+) -> LedgerEntry:
     """Move money out of the spendable balance into the hold.
 
     Used when a payment was taken but could not be applied. The workspace
     owner cannot spend or see this money until an admin decides.
+
+    ``source`` defaults to ``LedgerSource.HOLD``, which is what a hold IS.
+    Booking one as ``REFUND`` (the old default in practice) put holds in the
+    "Refund" bucket of every statement, so the two were indistinguishable. The
+    value is validated against ``HOLD_ALLOWED_SOURCES`` so a caller cannot
+    mislabel a hold as an admin grant and make the grant statements a lie.
+
+    ``created_by`` records the operator who withheld the money -- a hold is an
+    action taken on a workspace, not a side effect of one.
     """
     _assert_amount(amount_toman)
+    _assert_hold_source(source)
 
     spendable, held = money.get_or_create_wallet_accounts(workspace)
 
-    replay = _replay_or_none(idempotency_key, debit=held, credit=spendable, amount_toman=amount_toman)
+    replay = _replay_or_none(
+        idempotency_key, workspace=workspace, debit=held, credit=spendable, amount_toman=amount_toman
+    )
     if replay is not None:
         return replay
 
@@ -419,6 +581,7 @@ def hold_funds(*, workspace, amount_toman: int, source: str, idempotency_key: st
             amount_toman=amount_toman,
             source=source,
             workspace=workspace,
+            created_by=created_by,
             idempotency_key=idempotency_key,
         )
 
@@ -429,7 +592,9 @@ def release_hold(*, workspace, amount_toman: int, idempotency_key: str, created_
 
     spendable, held = money.get_or_create_wallet_accounts(workspace)
 
-    replay = _replay_or_none(idempotency_key, debit=spendable, credit=held, amount_toman=amount_toman)
+    replay = _replay_or_none(
+        idempotency_key, workspace=workspace, debit=spendable, credit=held, amount_toman=amount_toman
+    )
     if replay is not None:
         return replay
 
@@ -458,22 +623,37 @@ def release_hold(*, workspace, amount_toman: int, idempotency_key: str, created_
 
 
 def refund_to_spendable(
-    *, workspace, amount_toman: int, reason: str, idempotency_key: str, created_by=None
+    *, workspace, amount_toman: int, reason: str, reference: str, idempotency_key: str, created_by=None
 ) -> LedgerEntry:
     """Return money directly to the spendable balance without passing through a hold.
 
     Only for a payment the gateway explicitly rejected, where we know no
     money was ever taken.
+
+    ``reference`` is MANDATORY and names the payment that failed -- a
+    ``PaymentTransaction`` id, an invoice number, or a gateway reference id.
+    The docstring above has always asserted "gateway explicitly rejected", and
+    free-text ``reason`` alone made that unenforceable: any caller could mint
+    money into a workspace by describing why. A refund nobody can trace to a
+    transaction or invoice is indistinguishable from an operator handing out
+    cash, so the reference is required and is written into the entry's
+    description next to the reason.
     """
     _assert_amount(amount_toman)
+    reference = _assert_payment_reference(reference)
 
     spendable, _held = money.get_or_create_wallet_accounts(workspace)
     reversal = money.get_or_create_account(GATEWAY_REVERSAL_ACCOUNT_CODE, GATEWAY_REVERSAL_ACCOUNT_KIND, "برگشت درگاه")
 
-    replay = _replay_or_none(idempotency_key, debit=spendable, credit=reversal, amount_toman=amount_toman)
+    replay = _replay_or_none(
+        idempotency_key, workspace=workspace, debit=spendable, credit=reversal, amount_toman=amount_toman
+    )
     if replay is not None:
         return replay
 
+    # ``post_entry`` writes a single row, so the block here is not for its own
+    # sake -- it keeps all six money functions structurally identical, so the
+    # next reader does not have to work out which ones wrap their work.
     with transaction.atomic():
         return money.post_entry(
             debit=spendable,
@@ -481,7 +661,7 @@ def refund_to_spendable(
             amount_toman=amount_toman,
             source=LedgerSource.REFUND,
             workspace=workspace,
-            description=reason,
+            description=f"{(reason or '').strip()} — {reference}".strip(" —"),
             created_by=created_by,
             idempotency_key=idempotency_key,
         )
