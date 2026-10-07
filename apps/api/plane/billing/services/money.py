@@ -184,7 +184,7 @@ def post_entry(
 
     try:
         with db_transaction.atomic():
-            return LedgerEntry.objects.create(
+            entry = LedgerEntry(
                 debit_account=debit,
                 credit_account=credit,
                 amount_toman=amount_toman,
@@ -196,6 +196,18 @@ def post_entry(
                 transaction=transaction,
                 idempotency_key=idempotency_key,
             )
+            # Saved explicitly rather than via ``objects.create()`` so that
+            # ``disable_auto_set_user`` can be passed. ``create()`` forwards its
+            # kwargs to ``__init__``, never to ``save()``, so the author set above
+            # would reach ``BaseModel.save`` with no ``created_by_id`` keyword --
+            # save() would take its crum branch and overwrite it with the current
+            # request user, which is None outside a request. The explicit author
+            # would be silently dropped.
+            entry.save(
+                force_insert=True,
+                disable_auto_set_user=created_by is not None,
+            )
+            return entry
     except IntegrityError as error:
         # Either we lost a race against a concurrent replay of the same key, or
         # the create failed for an unrelated reason (stale FK, PROTECT on a
