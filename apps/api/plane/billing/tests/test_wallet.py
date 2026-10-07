@@ -364,7 +364,7 @@ def test_hold_moves_money_out_of_reach_and_release_returns_it(workspace, admin_u
         idempotency_key="h-setup",
     )
 
-    wallet.hold_funds(workspace=workspace, amount_toman=120_000, source=LedgerSource.REFUND, idempotency_key="h-1")
+    wallet.hold_funds(workspace=workspace, amount_toman=120_000, idempotency_key="h-1")
 
     assert money.wallet_balance(workspace) == 80_000
     assert money.wallet_hold_balance(workspace) == 120_000
@@ -384,7 +384,7 @@ def test_held_money_cannot_be_charged(workspace, admin_user):
         created_by=admin_user,
         idempotency_key="hs-setup",
     )
-    wallet.hold_funds(workspace=workspace, amount_toman=150_000, source=LedgerSource.REFUND, idempotency_key="hs-1")
+    wallet.hold_funds(workspace=workspace, amount_toman=150_000, idempotency_key="hs-1")
 
     with pytest.raises(wallet.InsufficientBalance):
         wallet.charge_sms(workspace=workspace, amount_toman=100_000, log_id=321)
@@ -401,7 +401,7 @@ def test_release_hold_cannot_exceed_what_is_held(workspace, admin_user):
         created_by=admin_user,
         idempotency_key="rh-setup",
     )
-    wallet.hold_funds(workspace=workspace, amount_toman=20_000, source=LedgerSource.REFUND, idempotency_key="rh-1")
+    wallet.hold_funds(workspace=workspace, amount_toman=20_000, idempotency_key="rh-1")
 
     with pytest.raises(wallet.InsufficientBalance):
         wallet.release_hold(workspace=workspace, amount_toman=40_000, idempotency_key="rh-1-bad")
@@ -486,7 +486,11 @@ def test_refund_to_spendable_returns_money_without_a_hold(workspace_factory):
     )
 
     entry = wallet.refund_to_spendable(
-        workspace=first, amount_toman=25_000, reason="پرداخت توسط درگاه رد شد", idempotency_key="ref-1"
+        workspace=first,
+        amount_toman=25_000,
+        reason="پرداخت توسط درگاه رد شد",
+        reference="TXN-7788",
+        idempotency_key="ref-1",
     )
 
     assert entry.source == LedgerSource.REFUND
@@ -503,10 +507,18 @@ def test_refund_to_spendable_is_idempotent(workspace):
         idempotency_key="ref-setup-2",
     )
     first = wallet.refund_to_spendable(
-        workspace=workspace, amount_toman=25_000, reason="پرداخت توسط درگاه رد شد", idempotency_key="ref-2"
+        workspace=workspace,
+        amount_toman=25_000,
+        reason="پرداخت توسط درگاه رد شد",
+        reference="TXN-7789",
+        idempotency_key="ref-2",
     )
     second = wallet.refund_to_spendable(
-        workspace=workspace, amount_toman=25_000, reason="پرداخت توسط درگاه رد شد", idempotency_key="ref-2"
+        workspace=workspace,
+        amount_toman=25_000,
+        reason="پرداخت توسط درگاه رد شد",
+        reference="TXN-7789",
+        idempotency_key="ref-2",
     )
 
     assert first.pk == second.pk
@@ -723,7 +735,14 @@ def test_sms_charge_entry_records_the_log_id_and_the_author(workspace, admin_use
     assert stored.created_by_id == admin_user.pk
 
 
-def test_sms_charge_description_can_be_overridden(workspace, admin_user):
+def test_sms_charge_description_is_extended_never_replaced(workspace, admin_user):
+    """An override adds to the canonical label; it never hides the log id.
+
+    A caller overriding ``description`` AND ``idempotency_key`` used to leave the
+    entry with no trace of which notification log was charged -- the description
+    was the only place that reference existed, and the key is the index, not the
+    story.
+    """
     wallet.grant_from_admin(
         workspace=workspace,
         amount_toman=100_000,
@@ -737,9 +756,26 @@ def test_sms_charge_description_can_be_overridden(workspace, admin_user):
         amount_toman=1_200,
         log_id=987655,
         description="اعلان پایان آزمون",
+        idempotency_key="sms-override-key",
     )
 
-    assert LedgerEntry.objects.get(pk=entry.pk).description == "اعلان پایان آزمون"
+    stored = LedgerEntry.objects.get(pk=entry.pk)
+    assert "987655" in stored.description
+    assert "اعلان پایان آزمون" in stored.description
+
+
+def test_sms_charge_default_description_is_the_log_id(workspace, admin_user):
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=100_000,
+        description="شارژ برای تست توضیح پیش‌فرض",
+        created_by=admin_user,
+        idempotency_key="tr-setup-3",
+    )
+
+    entry = wallet.charge_sms(workspace=workspace, amount_toman=1_200, log_id=987656)
+
+    assert LedgerEntry.objects.get(pk=entry.pk).description == "پیامک 987656"
 
 
 @pytest.mark.parametrize("bad_log_id", [None, "", "   "])
@@ -771,12 +807,8 @@ def test_hold_funds_is_idempotent(workspace, admin_user):
         idempotency_key="hi-setup",
     )
 
-    first = wallet.hold_funds(
-        workspace=workspace, amount_toman=120_000, source=LedgerSource.REFUND, idempotency_key="hi-1"
-    )
-    second = wallet.hold_funds(
-        workspace=workspace, amount_toman=120_000, source=LedgerSource.REFUND, idempotency_key="hi-1"
-    )
+    first = wallet.hold_funds(workspace=workspace, amount_toman=120_000, idempotency_key="hi-1")
+    second = wallet.hold_funds(workspace=workspace, amount_toman=120_000, idempotency_key="hi-1")
 
     assert first.pk == second.pk
     assert money.wallet_balance(workspace) == 80_000
@@ -791,7 +823,7 @@ def test_release_hold_is_idempotent(workspace, admin_user):
         created_by=admin_user,
         idempotency_key="ri-setup",
     )
-    wallet.hold_funds(workspace=workspace, amount_toman=120_000, source=LedgerSource.REFUND, idempotency_key="ri-hold")
+    wallet.hold_funds(workspace=workspace, amount_toman=120_000, idempotency_key="ri-hold")
 
     first = wallet.release_hold(workspace=workspace, amount_toman=120_000, idempotency_key="ri-rel")
     assert money.wallet_balance(workspace) == 200_000
@@ -828,7 +860,11 @@ def test_refund_does_not_move_the_gateway_account_more_positive(workspace):
     before = money.account_balance(contra, workspace=workspace)
 
     wallet.refund_to_spendable(
-        workspace=workspace, amount_toman=25_000, reason="پرداخت توسط درگاه رد شد", idempotency_key="rf-1"
+        workspace=workspace,
+        amount_toman=25_000,
+        reason="پرداخت توسط درگاه رد شد",
+        reference="TXN-7790",
+        idempotency_key="rf-1",
     )
 
     after = money.account_balance(contra, workspace=workspace)
@@ -850,6 +886,7 @@ def test_refund_records_its_author(workspace, admin_user):
         workspace=workspace,
         amount_toman=25_000,
         reason="پرداخت توسط درگاه رد شد",
+        reference="TXN-7791",
         idempotency_key="ra-1",
         created_by=admin_user,
     )
@@ -862,10 +899,18 @@ def test_refund_records_its_author(workspace, admin_user):
 
 @pytest.mark.parametrize("length", [9, 10])
 def test_grant_description_minimum_length_boundary(workspace, admin_user, length):
-    """``MIN_GRANT_DESCRIPTION_LENGTH`` is an exact boundary, not a fuzzy rule."""
+    """``MIN_GRANT_DESCRIPTION_LENGTH`` is an exact boundary, not a fuzzy rule.
+
+    The literals 9 and 10 are pinned, NOT read off the constant. Driving the
+    expectation from ``wallet.MIN_GRANT_DESCRIPTION_LENGTH`` meant that if the
+    constant drifted down to 5, ``length=9`` would take the accept branch and
+    still pass -- the test would have followed the drift instead of catching it.
+    A separate assertion below pins the constant to the documented 10.
+    """
+    assert wallet.MIN_GRANT_DESCRIPTION_LENGTH == 10
     description = "ا" * length
 
-    if length < wallet.MIN_GRANT_DESCRIPTION_LENGTH:
+    if length < 10:
         with pytest.raises(wallet.InvalidGrantDescription):
             wallet.grant_from_admin(
                 workspace=workspace,
@@ -897,5 +942,381 @@ def test_amount_validation_rejects_a_bool(workspace, bad_amount):
 def test_amount_validation_raises_its_own_subclass_not_the_base(workspace):
     """A caller must be able to tell a malformed amount from a policy refusal."""
     with pytest.raises(wallet.InvalidAmount) as excinfo:
-        wallet.hold_funds(workspace=workspace, amount_toman="1000", source=LedgerSource.REFUND, idempotency_key="av-1")
+        wallet.hold_funds(workspace=workspace, amount_toman="1000", idempotency_key="av-1")
     assert isinstance(excinfo.value, wallet.WalletError)
+
+
+# --- C1: a reversal is identified by the FK, not by coinciding legs ------------
+
+
+def test_two_same_amount_grants_to_one_workspace_can_both_be_revoked(workspace, admin_user):
+    """The defect fix round 1 introduced.
+
+    Grants are all ``debit=spendable, credit=pool``, so two grants of the SAME
+    amount to the SAME workspace have byte-identical legs. With the reversal
+    identified by a mirrored-legs query, revoking the FIRST grant created a
+    mirror that also matched the SECOND, and the second revoke then raised
+    ``GrantAlreadyReversed`` for a grant nobody had touched -- with no
+    in-product way to clear it. Round-number grants to one workspace are an
+    ordinary case.
+
+    ``LedgerEntry.reversal_of`` makes the question exact: "does THIS row have a
+    reversal pointing at it?"
+    """
+    first = wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=80_000,
+        description="شارژ مرحلهٔ اول با همان مبلغ",
+        created_by=admin_user,
+        idempotency_key="same-1",
+    )
+    second = wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=80_000,
+        description="شارژ مرحلهٔ دوم با همان مبلغ",
+        created_by=admin_user,
+        idempotency_key="same-2",
+    )
+    assert first.debit_account_id == second.debit_account_id
+    assert first.credit_account_id == second.credit_account_id
+    assert first.amount_toman == second.amount_toman
+    assert money.wallet_balance(workspace) == 160_000
+
+    reversal_of_first = wallet.revoke_grant(
+        workspace=workspace,
+        entry=first,
+        description="ابطال مرحلهٔ اول",
+        created_by=admin_user,
+        idempotency_key="same-1-rev",
+    )
+    reversal_of_second = wallet.revoke_grant(
+        workspace=workspace,
+        entry=second,
+        description="ابطال مرحلهٔ دوم",
+        created_by=admin_user,
+        idempotency_key="same-2-rev",
+    )
+
+    # Each reversal names the grant it actually undid -- not just "the other
+    # same-amount grant on this workspace".
+    assert LedgerEntry.objects.get(pk=reversal_of_first.pk).reversal_of_id == first.pk
+    assert LedgerEntry.objects.get(pk=reversal_of_second.pk).reversal_of_id == second.pk
+    assert money.wallet_balance(workspace) == 0
+
+
+def test_revoking_the_first_of_three_same_amount_grants_still_refuses_the_second_revoke(workspace, admin_user):
+    """The FK makes the guard exact in BOTH directions.
+
+    Fixing "the second grant of the same amount is refused" by loosening the
+    check would have reintroduced "the same grant reversed twice". One reversal
+    per grant, no matter how many identical siblings exist.
+    """
+    grants = [
+        wallet.grant_from_admin(
+            workspace=workspace,
+            amount_toman=50_000,
+            description=f"شارژ نوبت {index} با همان مبلغ",
+            created_by=admin_user,
+            idempotency_key=f"triple-{index}",
+        )
+        for index in range(3)
+    ]
+
+    for index, grant in enumerate(grants):
+        wallet.revoke_grant(
+            workspace=workspace,
+            entry=grant,
+            description=f"ابطال نوبت {index}",
+            created_by=admin_user,
+            idempotency_key=f"triple-{index}-rev",
+        )
+
+    # and each is now refuseable once more, under a third key
+    for index, grant in enumerate(grants):
+        with pytest.raises(wallet.GrantAlreadyReversed):
+            wallet.revoke_grant(
+                workspace=workspace,
+                entry=grant,
+                description=f"ابطال دوبارهٔ نوبت {index}",
+                created_by=admin_user,
+                idempotency_key=f"triple-{index}-rev-again",
+            )
+
+    assert money.wallet_balance(workspace) == 0
+    assert LedgerEntry.objects.filter(reversal_of__isnull=False).count() == 3
+
+
+def test_an_unreversed_grant_has_no_reversal_pointer(workspace, admin_user):
+    grant = wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=10_000,
+        description="شارژ ساده برای تست اشاره‌گر",
+        created_by=admin_user,
+        idempotency_key="ptr-1",
+    )
+    assert LedgerEntry.objects.get(pk=grant.pk).reversal_of_id is None
+
+
+# --- C2: a replay may never cross a tenant boundary ----------------------------
+
+
+def test_replaying_another_workspaces_revoke_is_refused(workspace, workspace_factory, admin_user):
+    """The defect fix round 1 introduced.
+
+    Hoisting the replay ahead of the workspace check meant the legs compared
+    came from the CALLER-SUPPLIED ``entry``. A caller in workspace A who named
+    workspace B's grant pk and guessed B's reversal key satisfied
+    ``_assert_same_movement`` and got B's entry back -- amount, description and
+    ``created_by_id`` -- with no workspace check ever performed. That is a
+    cross-tenant read of an audit record.
+    """
+    other = workspace_factory(name="تیم قربانی")
+    theirs = wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=80_000,
+        description="شارژ فضای کاری دیگر برای تست نشت",
+        created_by=admin_user,
+        idempotency_key="leak-1",
+    )
+    their_reversal = wallet.revoke_grant(
+        workspace=other,
+        entry=theirs,
+        description="ابطال شارژ فضای کاری دیگر",
+        created_by=admin_user,
+        idempotency_key="leak-1-rev",
+    )
+    assert their_reversal.workspace_id == other.pk
+    entries_before = LedgerEntry.objects.count()
+
+    with pytest.raises(wallet.WalletError) as excinfo:
+        wallet.revoke_grant(
+            workspace=workspace,
+            entry=theirs,
+            description="تلاش برای تکرار ابطال از فضای کاری دیگر",
+            created_by=admin_user,
+            idempotency_key="leak-1-rev",
+        )
+
+    # The plain base class, NOT a policy subclass: this is a confused-deputy
+    # refusal, and an HTTP layer must not map it to "conflict/policy".
+    assert excinfo.type is wallet.WalletError
+    assert excinfo.value.message == wallet.WORKSPACE_MISMATCH_MESSAGE
+    assert LedgerEntry.objects.count() == entries_before
+    assert money.wallet_balance(other) == 0
+
+
+def test_replaying_another_workspaces_charge_key_is_refused(workspace, workspace_factory, admin_user):
+    """The other five functions are self-defending, and this pins why.
+
+    Their legs are the caller's OWN workspace-scoped wallet accounts, so a
+    foreign entry's accounts cannot satisfy ``_assert_same_movement`` -- the
+    comparison fails loudly instead of leaking. ``revoke_grant`` was the sole
+    exception, because its legs come from the caller's pk.
+    """
+    other = workspace_factory(name="تیم دیگر برای تست کلید")
+    wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=100_000,
+        description="شارژ فضای کاری دیگر",
+        created_by=admin_user,
+        idempotency_key="xw-charge-setup",
+    )
+    wallet.charge_sms(workspace=other, amount_toman=1_200, log_id=31337)
+
+    with pytest.raises(ValueError):
+        wallet.charge_sms(workspace=workspace, amount_toman=1_200, log_id=31337)
+
+
+def test_replaying_another_workspaces_hold_key_is_refused(workspace, workspace_factory, admin_user):
+    other = workspace_factory(name="تیم دیگر برای تست قفل")
+    wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=100_000,
+        description="شارژ فضای کاری دیگر",
+        created_by=admin_user,
+        idempotency_key="xw-hold-setup",
+    )
+    wallet.hold_funds(workspace=other, amount_toman=40_000, idempotency_key="xw-hold-1")
+
+    with pytest.raises(ValueError):
+        wallet.hold_funds(workspace=workspace, amount_toman=40_000, idempotency_key="xw-hold-1")
+
+
+# --- I1: the cap read is serialised like every other balance-bearing read ------
+
+
+def test_grant_cap_read_takes_the_row_lock(workspace, admin_user, mocker):
+    """The cap is the one limit on how much money an operator can mint.
+
+    It was read through a plain ``get_or_create``, unlike every other
+    balance-bearing read in the module, so two concurrent grants could both
+    observe "under the cap" and jointly exceed it. Asserted structurally -- a
+    threaded test would need a second DB connection, and what matters here is
+    that the read is routed through ``select_for_update`` at all.
+    """
+    spy = mocker.spy(Wallet.objects, "select_for_update")
+
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=10_000,
+        description="شارژ برای تست قفل سقف",
+        created_by=admin_user,
+        idempotency_key="cap-lock-1",
+    )
+
+    assert spy.call_count >= 1
+
+
+def test_first_grant_creates_the_wallet_row_and_a_later_grant_is_capped(workspace, admin_user):
+    """The create path, where there is no row to lock yet.
+
+    ``_lock_wallet_row`` inserts inside its own savepoint on the first call (a
+    concurrent creator's ``OneToOneField`` violation then poisons only the
+    savepoint, and the loser re-reads under the lock) and locks on every call
+    after. This exercises both halves in sequence.
+    """
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=10_000,
+        description="شارژ اولیه برای تست ایجاد ردیف",
+        created_by=admin_user,
+        idempotency_key="cap-create-1",
+    )
+    Wallet.objects.filter(workspace=workspace).update(admin_grant_cap_toman=15_000)
+
+    with pytest.raises(wallet.GrantTooLarge):
+        wallet.grant_from_admin(
+            workspace=workspace,
+            amount_toman=40_000,
+            description="شارژ دوم که از سقف عبور می‌کند",
+            created_by=admin_user,
+            idempotency_key="cap-create-2",
+        )
+
+    assert money.wallet_balance(workspace) == 10_000
+
+
+# --- holds are holds, and they have an author ----------------------------------
+
+
+def test_hold_funds_defaults_to_the_hold_source(workspace, admin_user):
+    """A hold booked as ``REFUND`` put holds in the "Refund" bucket of every statement."""
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=100_000,
+        description="شارژ برای تست منبع قفل",
+        created_by=admin_user,
+        idempotency_key="hs-setup",
+    )
+
+    entry = wallet.hold_funds(workspace=workspace, amount_toman=30_000, idempotency_key="hs-1")
+
+    assert entry.source == LedgerSource.HOLD
+
+
+@pytest.mark.parametrize("bad_source", [LedgerSource.ADMIN_GRANT, LedgerSource.REFUND, LedgerSource.SMS_CHARGE, "nope"])
+def test_hold_funds_refuses_a_source_that_is_not_a_hold(workspace, admin_user, bad_source):
+    """An entry labelled "a grant was made" while moving money into a hold account
+    makes every later statement about grants a lie.
+    """
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=100_000,
+        description="شارژ برای تست منبع نامعتبر قفل",
+        created_by=admin_user,
+        idempotency_key="hb-setup",
+    )
+
+    with pytest.raises(wallet.InvalidHoldSource):
+        wallet.hold_funds(workspace=workspace, amount_toman=30_000, source=bad_source, idempotency_key="hb-1")
+
+    assert money.wallet_balance(workspace) == 100_000
+    assert money.wallet_hold_balance(workspace) == 0
+
+
+def test_hold_funds_records_its_author(workspace, admin_user):
+    """A hold is an operator action on a workspace, so it has an identifiable actor."""
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=100_000,
+        description="شارژ برای تست نویسندهٔ قفل",
+        created_by=admin_user,
+        idempotency_key="ha-setup",
+    )
+
+    entry = wallet.hold_funds(workspace=workspace, amount_toman=30_000, idempotency_key="ha-1", created_by=admin_user)
+
+    assert LedgerEntry.objects.get(pk=entry.pk).created_by_id == admin_user.pk
+
+
+# --- a refund has to name the payment that failed ------------------------------
+
+
+@pytest.mark.parametrize("bad_reference", [None, "", "   "])
+def test_refund_refuses_a_missing_payment_reference(workspace, bad_reference):
+    """The docstring claims "only a payment the gateway explicitly rejected".
+
+    Free-text ``reason`` alone made that unenforceable -- any caller could mint
+    money into a workspace by describing why.
+    """
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=100_000,
+        description="شارژ برای تست ارجاع پرداخت",
+        created_by=None,
+        idempotency_key="pr-setup",
+    )
+
+    with pytest.raises(wallet.InvalidPaymentReference):
+        wallet.refund_to_spendable(
+            workspace=workspace,
+            amount_toman=25_000,
+            reason="پرداخت توسط درگاه رد شد",
+            reference=bad_reference,
+            idempotency_key="pr-1",
+        )
+
+    assert money.wallet_balance(workspace) == 100_000
+
+
+def test_refund_records_the_payment_reference_it_cites(workspace):
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=100_000,
+        description="شارژ برای تست ثبت ارجاع",
+        created_by=None,
+        idempotency_key="pr2-setup",
+    )
+
+    entry = wallet.refund_to_spendable(
+        workspace=workspace,
+        amount_toman=25_000,
+        reason="پرداخت توسط درگاه رد شد",
+        reference="A000000004231",
+        idempotency_key="pr-2",
+    )
+
+    stored = LedgerEntry.objects.get(pk=entry.pk)
+    assert "A000000004231" in stored.description
+    assert "پرداخت توسط درگاه رد شد" in stored.description
+
+
+def test_refund_accepts_a_numeric_transaction_id(workspace):
+    """A gateway reference may arrive as a number, not only as a string."""
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=100_000,
+        description="شارژ برای تست ارجاع عددی",
+        created_by=None,
+        idempotency_key="pr3-setup",
+    )
+
+    entry = wallet.refund_to_spendable(
+        workspace=workspace,
+        amount_toman=25_000,
+        reason="پرداخت توسط درگاه رد شد",
+        reference=4231,
+        idempotency_key="pr-3",
+    )
+
+    assert "4231" in LedgerEntry.objects.get(pk=entry.pk).description

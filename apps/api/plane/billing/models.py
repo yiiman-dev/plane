@@ -65,6 +65,7 @@ class LedgerSource(models.TextChoices):
     PLAN_PURCHASE = "plan_purchase", "Plan purchase"
     UPGRADE = "upgrade", "Upgrade"
     REFUND = "refund", "Refund"
+    HOLD = "hold", "Hold"
     RELEASE_HOLD = "release_hold", "Release hold"
 
 
@@ -507,6 +508,19 @@ class LedgerEntry(BaseModel):
     transaction = models.ForeignKey(
         "billing.PaymentTransaction", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
     )
+    # The entry this one reverses, if any. ``PROTECT`` because a reversal is the
+    # only record that money left the workspace: deleting the original grant
+    # must not orphan it and let the same grant be reversed a second time.
+    #
+    # This exists because a reversal cannot be identified by its legs. Two
+    # grants of the SAME amount to the SAME workspace have byte-identical legs,
+    # so "is there a mirrored entry on this workspace?" answers yes for the
+    # second grant after the FIRST one was reversed -- and ``revoke_grant``
+    # then refuses a legitimate first revocation with "already reversed".
+    # ``entry.reversals.exists()`` is exact by construction.
+    #
+    # Nullable because only reversals set it; every other entry leaves it null.
+    reversal_of = models.ForeignKey("self", on_delete=models.PROTECT, related_name="reversals", null=True, blank=True)
     # Unique across soft deleted rows too: ``delete()`` only sets ``deleted_at``,
     # so retrying an operation whose entry was deleted still raises
     # ``IntegrityError`` rather than posting the movement a second time. Retry
