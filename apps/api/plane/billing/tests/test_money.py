@@ -418,7 +418,12 @@ def test_post_entry_reraises_an_unrelated_integrity_error(monkeypatch):
     def boom(*args, **kwargs):
         raise IntegrityError("PROTECT violation on debit_account")
 
-    monkeypatch.setattr(LedgerEntry.objects, "create", boom)
+    # Patched on ``save``, not ``objects.create``: ``post_entry`` builds the row
+    # and calls ``save(force_insert=True, disable_auto_set_user=...)`` itself,
+    # because ``QuerySet.create()`` never forwards field kwargs to ``save()`` and
+    # so cannot carry an explicit author past ``BaseModel.save``'s crum branch.
+    # The assertion below is about the error handling, not the call style.
+    monkeypatch.setattr(LedgerEntry, "save", boom)
 
     with pytest.raises(IntegrityError, match="PROTECT"):
         money.post_entry(
