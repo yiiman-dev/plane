@@ -10,12 +10,16 @@ from plane.billing.models import (
     FeatureFlag,
     GatewayRoutingConfig,
     Invoice,
+    LedgerEntry,
     PaymentGateway,
     PaymentTransaction,
     Plan,
     PlanFeatureFlag,
     Subscription,
+    Wallet,
 )
+from plane.billing.services import ledger as ledger_service
+from plane.billing.services import money as money_service
 from plane.billing.services.credentials import (
     CredentialEncryptionError,
     decrypt_credentials,
@@ -331,3 +335,122 @@ class PlanFeatureFlagSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class AdminLedgerEntrySerializer(serializers.ModelSerializer):
+    """Full ledger entry for an instance administrator.
+
+    The audience is an operator who has to reconcile the books, so the actor,
+    both account legs, the invoice and transaction links and the idempotency
+    key are all present. Nothing here is redacted: that is the point of this
+    projection existing alongside ``WorkspaceLedgerEntrySerializer``.
+    """
+
+    created_by = serializers.SerializerMethodField()
+    workspace = serializers.SlugRelatedField(slug_field="slug", read_only=True)
+    source_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LedgerEntry
+        fields = [
+            "id",
+            "amount_toman",
+            "source",
+            "source_label",
+            "description",
+            "created_by",
+            "workspace",
+            "invoice",
+            "transaction",
+            "debit_account",
+            "credit_account",
+            "idempotency_key",
+            "reversal_of",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_created_by(self, obj):
+        if obj.created_by is None:
+            return None
+        return {"id": str(obj.created_by.id), "display_name": obj.created_by.display_name}
+
+    def get_source_label(self, obj):
+        return obj.get_source_display()
+
+
+class WorkspaceLedgerEntrySerializer(serializers.ModelSerializer):
+    """Ledger entry for a workspace admin.
+
+    Omits the actor, the invoice and the transaction link so that one
+    workspace cannot infer anything about another customer's billing, and
+    replaces the internal grant description with a public label.
+
+    ``source`` is dropped rather than merely relabelled: the raw
+    ``LedgerSource`` member is internal vocabulary, and a tenant facing
+    projection carrying both a code and a label trains the frontend to switch
+    on the code.
+    """
+
+    source_label = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LedgerEntry
+        fields = ["id", "amount_toman", "source_label", "description", "created_at"]
+        read_only_fields = fields
+
+    def get_source_label(self, obj):
+        return ledger_service.public_source_label(obj)
+
+    def get_description(self, obj):
+        return ledger_service.public_description(obj)
+
+
+class WalletSerializer(serializers.ModelSerializer):
+    """A workspace wallet as its owner sees it.
+
+    ``balance_toman`` and ``hold_balance_toman`` are computed by
+    ``services.money`` rather than read off the ``Wallet`` row, which is only
+    a pointer at the workspace: the balance only exists as the sum of ledger
+    entries. ``admin_grant_cap_toman`` is readable but not writable -- the cap
+    is the guard against a mistyped grant, and the view that uses this
+    projection is not the one that sets it.
+    """
+
+    balance_toman = serializers.SerializerMethodField()
+    hold_balance_toman = serializers.SerializerMethodField()
+    workspace_slug = serializers.SlugRelatedField(source="workspace", slug_field="slug", read_only=True)
+
+    class Meta:
+        model = Wallet
+        fields = ["id", "workspace_slug", "balance_toman", "hold_balance_toman", "admin_grant_cap_toman", "created_at"]
+        read_only_fields = ["id", "workspace_slug", "balance_toman", "hold_balance_toman", "created_at"]
+
+    def get_balance_toman(self, obj) -> int:
+        return money_service.wallet_balance(obj.workspace)
+
+    def get_hold_balance_toman(self, obj) -> int:
+        return money_service.wallet_hold_balance(obj.workspace)
+
+
+class WalletGrantSerializer(serializers.Serializer):
+    """Input for an instance admin crediting a workspace by hand.
+
+    Instance admin only. There is deliberately no ``workspace`` field: the
+    workspace comes from the URL the view resolved, so it cannot be pointed
+    at another tenant from the request body.
+    """
+
+    amount_toman = serializers.IntegerField(min_value=1)
+    description = serializers.CharField(min_length=10)
+
+    def validate_description(self, value: str) -> str:
+        stripped = value.strip()
+        # ``min_length`` above counts the untrimmed string, so "         x"
+        # passes it while carrying no explanation at all. Re-checked on the
+        # stripped value because this note is the only record of why an
+        # operator minted money.
+        if len(stripped) < 10:
+            raise serializers.ValidationError("توضیح اعتبار دستی باید حداقل ۱۰ کاراکتر باشد.")
+        return stripped
