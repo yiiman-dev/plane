@@ -19,6 +19,8 @@ import pytest
 
 # Module imports
 from plane.billing.api.permissions import WorkspaceBillingLedgerPermission
+from plane.billing.models import LedgerEntry, LedgerSource
+from plane.billing.services import ledger, wallet
 from plane.db.models import User, WorkspaceMember
 
 pytestmark = pytest.mark.django_db
@@ -154,3 +156,286 @@ def test_rejects_view_without_workspace_slug(workspace_factory, django_assert_nu
         allowed = WorkspaceBillingLedgerPermission().has_permission(request, _ViewWithoutSlug())
 
     assert allowed is False
+
+
+# --- Task 5: the ledger read side and its two projections ---------------
+#
+# The permission above decides WHO may ask. These tests decide WHAT comes
+# back once they have asked, which is the half a permission class cannot
+# enforce: an instance admin and a workspace admin both hold authority, and
+# they must not receive the same projection.
+
+
+@pytest.fixture
+def internal_admin():
+    """An operator who writes the entries.
+
+    Not the ``instance_admin`` fixture: that user is the *reader* under test,
+    and reusing one row for the writer would mean the actor hidden from the
+    workspace admin is the same identity the test asserts against.
+    """
+    unique = uuid4().hex
+    return User.objects.create(
+        username=f"internal-admin-{unique}",
+        email=f"internal-admin-{unique}@example.com",
+        first_name="Internal",
+        last_name="Operator",
+    )
+
+
+@pytest.fixture
+def funded_workspace(workspace_factory, internal_admin):
+    """A workspace credited once by hand, with the operator's note on it."""
+    ws = workspace_factory(name="تیم نشت", slug=f"leak-team-{uuid4().hex[:8]}")
+    wallet.grant_from_admin(
+        workspace=ws,
+        amount_toman=400_000,
+        description="اعتبار داخلی محرمانه برای شرکت نمونه",
+        created_by=internal_admin,
+        idempotency_key="leak-1",
+    )
+    return ws, internal_admin
+
+
+def test_workspace_projection_hides_the_actor_and_internal_accounts(funded_workspace):
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    ws, _operator = funded_workspace
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+    data = WorkspaceLedgerEntrySerializer(entry).data
+
+    assert "created_by" not in data
+    assert "invoice" not in data
+    assert "transaction" not in data
+    assert "debit_account" not in data
+    assert "credit_account" not in data
+    # the amount is the workspace's own business and stays visible
+    assert data["amount_toman"] == 400_000
+
+
+def test_workspace_projection_shows_no_raw_enum_value(funded_workspace):
+    """``source`` is a machine value; the workspace admin gets a label instead.
+
+    Asserted rather than assumed: the projection is the only place the raw
+    ``LedgerSource`` member could reach a tenant, and every member is checked
+    so that adding a source later fails here rather than shipping.
+    """
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+    data = WorkspaceLedgerEntrySerializer(entry).data
+
+    assert "source" not in data
+    raw_values = {value for value, _label in LedgerSource.choices}
+    assert data["source_label"] not in raw_values
+    assert data["source_label"] == ledger.PUBLIC_SOURCE_LABELS[LedgerSource.ADMIN_GRANT]
+
+
+def test_workspace_projection_does_not_repeat_the_internal_description(funded_workspace):
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    ws, _operator = funded_workspace
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+
+    data = WorkspaceLedgerEntrySerializer(entry).data
+
+    assert "محرمانه" not in data["description"]
+    assert data["description"] == ledger.PUBLIC_SOURCE_LABELS[LedgerSource.ADMIN_GRANT]
+
+
+def test_workspace_projection_keeps_the_owners_own_descriptions(funded_workspace):
+    """Only ADMIN_GRANT is redacted.
+
+    A charge description is written about the workspace's own SMS log and a
+    hold description is the answer the owner is owed, so over-redacting would
+    hide the customer's own history behind a generic label. Every non-internal
+    source keeps its description.
+    """
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    ws, _operator = funded_workspace
+    charge = wallet.charge_sms(workspace=ws, amount_toman=1_000, log_id=uuid4().hex, idempotency_key="leak-sms-1")
+
+    data = WorkspaceLedgerEntrySerializer(charge).data
+
+    assert data["description"] == charge.description
+    assert charge.description != ledger.PUBLIC_SOURCE_LABELS[LedgerSource.SMS_CHARGE]
+
+
+def test_admin_projection_keeps_the_internal_detail(funded_workspace):
+    from plane.billing.api.serializers import AdminLedgerEntrySerializer
+
+    ws, operator = funded_workspace
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+
+    data = AdminLedgerEntrySerializer(entry).data
+
+    assert "محرمانه" in data["description"]
+    assert data["created_by"]["id"] == str(operator.pk)
+    # the instance admin also gets the legs, the links and the machine key
+    assert data["debit_account"] is not None
+    assert data["credit_account"] is not None
+    assert data["idempotency_key"] == "leak-1"
+
+
+def test_workspace_entries_queryset_never_spans_workspaces(funded_workspace, workspace_factory, internal_admin):
+    ws, _operator = funded_workspace
+    other = workspace_factory(name="تیم دیگر", slug=f"other-team-{uuid4().hex[:8]}")
+    wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=999_000,
+        description="اعتبار تیم دیگر که نباید دیده شود",
+        created_by=internal_admin,
+        idempotency_key="leak-2",
+    )
+
+    codes = set(ledger.workspace_entries(ws).values_list("idempotency_key", flat=True))
+    assert codes == {"leak-1"}
+
+
+def test_ledger_module_has_no_scope_parameter():
+    """The scope must come from the queryset the caller built, never from a parameter."""
+    import inspect
+
+    signature = inspect.signature(ledger.workspace_entries)
+    assert list(signature.parameters) == ["workspace"]
+
+
+def test_all_entries_reaches_every_workspace(funded_workspace, workspace_factory, internal_admin):
+    """The instance-wide read is a separate function, not a flag on the other one."""
+    ws, _operator = funded_workspace
+    other = workspace_factory(name="تیم دیگر", slug=f"other-team-{uuid4().hex[:8]}")
+    wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=999_000,
+        description="اعتبار تیم دیگر",
+        created_by=internal_admin,
+        idempotency_key="leak-2",
+    )
+
+    codes = set(ledger.all_entries().values_list("idempotency_key", flat=True))
+    assert codes == {"leak-1", "leak-2"}
+
+
+def test_entries_are_ordered_newest_first(funded_workspace):
+    """A statement read top to bottom must run backwards in time."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    ws, operator = funded_workspace
+    second = wallet.grant_from_admin(
+        workspace=ws,
+        amount_toman=5_000,
+        description="اعتبار دوم برای تست",
+        created_by=operator,
+        idempotency_key="leak-3",
+    )
+    # ``created_at`` is auto-set on insert, so order it explicitly rather than
+    # trusting two inserts to land on distinguishable microsecond timestamps.
+    LedgerEntry.objects.filter(pk=second.pk).update(created_at=timezone.now() + timedelta(minutes=5))
+
+    entries = list(ledger.workspace_entries(ws))
+    assert [e.idempotency_key for e in entries] == ["leak-3", "leak-1"]
+
+
+def test_public_description_never_leaks_the_grant_note_for_any_internal_source(funded_workspace):
+    """The redaction is driven by the source, not by the text.
+
+    A grant note that happens to omit the word "محرمانه" is still a grant
+    note, so the assertion is on the function's contract rather than on the
+    sample string.
+    """
+    ws, operator = funded_workspace
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+
+    assert ledger.public_description(entry) == ledger.PUBLIC_SOURCE_LABELS[LedgerSource.ADMIN_GRANT]
+    assert "اعتبار داخلی" not in ledger.public_description(entry)
+
+
+def test_public_source_label_covers_every_source():
+    """A source added later must not reach a tenant as a raw enum member."""
+    missing = [value for value, _label in LedgerSource.choices if value not in ledger.PUBLIC_SOURCE_LABELS]
+    assert missing == []
+
+
+def test_workspace_entries_returns_a_queryset_a_view_can_filter(funded_workspace):
+    """The returned object must stay a queryset, not a list.
+
+    A list here would silently disable pagination in the view that consumes it.
+    """
+    from django.db.models import QuerySet
+
+    ws, _operator = funded_workspace
+    assert isinstance(ledger.workspace_entries(ws), QuerySet)
+
+
+def test_wallet_serializer_reports_the_balance(workspace_factory):
+    from plane.billing.api.serializers import WalletSerializer
+    from plane.billing.models import Wallet
+
+    ws = workspace_factory(name="Wallet Balance")
+    wallet.grant_from_admin(
+        workspace=ws,
+        amount_toman=400_000,
+        description="اعتبار برای تست موجودی",
+        created_by=None,
+        idempotency_key="leak-wallet-1",
+    )
+
+    data = WalletSerializer(Wallet.objects.get(workspace=ws)).data
+
+    assert data["balance_toman"] == 400_000
+    assert data["hold_balance_toman"] == 0
+    assert data["workspace_slug"] == ws.slug
+
+
+def test_wallet_serializer_separates_the_hold_balance(workspace_factory):
+    """Money under a hold is not spendable, and the projection says so."""
+    from plane.billing.api.serializers import WalletSerializer
+    from plane.billing.models import Wallet
+
+    ws = workspace_factory(name="Wallet Hold")
+    wallet.grant_from_admin(
+        workspace=ws,
+        amount_toman=400_000,
+        description="اعتبار برای تست قفل",
+        created_by=None,
+        idempotency_key="leak-wallet-2",
+    )
+    wallet.hold_funds(
+        workspace=ws,
+        amount_toman=120_000,
+        description="نگهداری تا تایید پرداخت",
+        idempotency_key="leak-hold-1",
+    )
+
+    data = WalletSerializer(Wallet.objects.get(workspace=ws)).data
+
+    assert data["balance_toman"] == 280_000
+    assert data["hold_balance_toman"] == 120_000
+
+
+def test_grant_serializer_refuses_a_zero_amount():
+    from plane.billing.api.serializers import WalletGrantSerializer
+
+    serializer = WalletGrantSerializer(data={"amount_toman": 0, "description": "یک توضیح کافی بلند"})
+    assert serializer.is_valid() is False
+    assert "amount_toman" in serializer.errors
+
+
+def test_grant_serializer_refuses_a_typing_of_a_description():
+    from plane.billing.api.serializers import WalletGrantSerializer
+
+    serializer = WalletGrantSerializer(data={"amount_toman": 1000, "description": "کوتاه"})
+    assert serializer.is_valid() is False
+    assert "description" in serializer.errors
+
+
+def test_grant_serializer_accepts_a_real_grant():
+    from plane.billing.api.serializers import WalletGrantSerializer
+
+    serializer = WalletGrantSerializer(data={"amount_toman": 1000, "description": "  اعتبار جبران خطای سیستم  "})
+    assert serializer.is_valid() is True, serializer.errors
+    # stripped, so the note stored on the entry has no stray whitespace
+    assert serializer.validated_data["description"] == "اعتبار جبران خطای سیستم"
