@@ -454,3 +454,27 @@ class WalletGrantSerializer(serializers.Serializer):
         if len(stripped) < 10:
             raise serializers.ValidationError("توضیح اعتبار دستی باید حداقل ۱۰ کاراکتر باشد.")
         return stripped
+
+
+class WalletRevokeSerializer(serializers.Serializer):
+    """Input for an instance admin reversing a grant.
+
+    Same shape of argument as ``WalletGrantSerializer``, with a pk instead of
+    an amount: ``entry`` names WHICH grant to undo and ``description`` says
+    why. There is no ``workspace`` field for the same reason there is none on
+    the grant -- the workspace is the one the URL resolved.
+
+    The pk is validated as a UUID here purely so a typo is a 400 rather than
+    a database error. It is deliberately NOT looked up: the view resolves it
+    scoped by the workspace, so a pk from another tenant cannot be turned
+    into a foreign ``LedgerEntry`` however well formed it is.
+    """
+
+    entry = serializers.UUIDField()
+    description = serializers.CharField(min_length=10)
+
+    def validate_description(self, value: str) -> str:
+        stripped = value.strip()
+        if len(stripped) < 10:
+            raise serializers.ValidationError("توضیح ابطال اعتبار باید حداقل ۱۰ کاراکتر باشد.")
+        return stripped

@@ -15,3 +15,11 @@ from .admin_views import (
 )
 from .callback_views import PayPingCallbackEndpoint, PaymentCallbackEndpoint, ZibalStartEndpoint
 from .user_views import PaymentOrderCreateEndpoint, PlanListEndpoint, SubscriptionListEndpoint
+from .wallet_views import (
+    AdminWorkspaceGrantView,
+    AdminWorkspaceLedgerView,
+    AdminWorkspaceRevokeView,
+    AdminWorkspaceWalletView,
+    WorkspaceLedgerView,
+    WorkspaceWalletView,
+)
