@@ -20,7 +20,7 @@ import pytest
 # Module imports
 from plane.billing.api.permissions import WorkspaceBillingLedgerPermission
 from plane.billing.models import LedgerEntry, LedgerSource
-from plane.billing.services import ledger, wallet
+from plane.billing.services import ledger, money, wallet
 from plane.db.models import User, WorkspaceMember
 
 pytestmark = pytest.mark.django_db
@@ -579,3 +579,588 @@ def test_a_tenant_filter_never_spans_workspaces(reversed_grant_workspace, worksp
     assert "other-tenant" not in {row.idempotency_key for row in rows}
     # and the other tenant can see only its own
     assert {row.idempotency_key for row in ledger.workspace_entries(other)} == {"other-tenant"}
+
+
+# --- Task 6: the HTTP layer ---------------------------------------------
+#
+# Everything above tested the policy in isolation. These tests drive it over
+# HTTP, which is where the two endpoint families could be confused with one
+# another: an instance admin and a workspace admin both hold real authority,
+# so only the URL, the permission class and the serializer projection tell
+# them apart.
+
+
+def _user(label: str) -> User:
+    """A user with both unique columns set.
+
+    ``User.email`` and ``User.username`` are both unique and neither is
+    populated by ``save()``, so a helper that omits one of them silently
+    collides on the second call.
+    """
+    unique = uuid4().hex
+    return User.objects.create(
+        username=f"{label}-{unique}",
+        email=f"{label}-{unique}@example.com",
+        first_name=label,
+        last_name="Tester",
+    )
+
+
+def _member(workspace, role, is_active=True):
+    user = _user("member")
+    WorkspaceMember.objects.create(
+        workspace=workspace,
+        member=user,
+        role=role,
+        is_active=is_active,
+    )
+    return user
+
+
+@pytest.fixture
+def funded_roles(funded_workspace):
+    """A funded workspace plus one member of each interesting role."""
+    ws, _operator = funded_workspace
+    plain = _member(ws, role=15)
+    ws_admin = _member(ws, role=20)
+    return ws, plain, ws_admin
+
+
+def test_role_15_member_is_refused_the_workspace_ledger(client, funded_roles):
+    ws, plain, _ws_admin = funded_roles
+    client.force_login(plain)
+
+    response = client.get(f"/api/billing/workspaces/{ws.slug}/billing/ledger/")
+
+    assert response.status_code == 403, response.content
+
+
+def test_role_20_admin_can_read_the_workspace_ledger(client, funded_roles):
+    ws, _plain, ws_admin = funded_roles
+    client.force_login(ws_admin)
+
+    response = client.get(f"/api/billing/workspaces/{ws.slug}/billing/ledger/")
+
+    assert response.status_code == 200, response.content
+    rows = response.json()["results"]
+    assert rows and rows[0]["amount_toman"] == 400_000
+
+
+def test_role_20_admin_can_read_the_workspace_wallet(client, funded_roles):
+    ws, _plain, ws_admin = funded_roles
+    client.force_login(ws_admin)
+
+    response = client.get(f"/api/billing/workspaces/{ws.slug}/billing/wallet/")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["balance_toman"] == 400_000
+    assert body["workspace_slug"] == ws.slug
+
+
+def test_inactive_role_20_member_is_refused(client, funded_roles):
+    ws, _plain, _ws_admin = funded_roles
+    stale = _member(ws, role=20, is_active=False)
+    client.force_login(stale)
+
+    response = client.get(f"/api/billing/workspaces/{ws.slug}/billing/ledger/")
+
+    assert response.status_code == 403, response.content
+
+
+def test_admin_of_another_workspace_is_refused_the_ledger(client, funded_roles, workspace_factory):
+    ws, _plain, _ws_admin = funded_roles
+    other = workspace_factory(name="بیگانه")
+    stranger = _member(other, role=20)
+    client.force_login(stranger)
+
+    response = client.get(f"/api/billing/workspaces/{ws.slug}/billing/ledger/")
+
+    assert response.status_code == 403, response.content
+
+
+@pytest.mark.parametrize("probe", ["scope", "workspace", "workspace_slug", "slug", "all", "instance"])
+def test_query_parameters_cannot_widen_the_workspace_ledger(
+    client, funded_roles, workspace_factory, internal_admin, probe
+):
+    """A forged scope parameter must not add a single foreign row."""
+    ws, _plain, ws_admin = funded_roles
+
+    # A second workspace with a distinctive amount, so any leak is visible.
+    other = workspace_factory(name="دیگر")
+    wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=777_000,
+        description="اعتبار تیم دیگر که نباید دیده شود",
+        created_by=internal_admin,
+        idempotency_key=f"probe-{probe}-grant",
+    )
+    client.force_login(ws_admin)
+
+    response = client.get(f"/api/billing/workspaces/{ws.slug}/billing/ledger/", {probe: "all"})
+
+    assert response.status_code == 200, response.content
+    other_ids = set(LedgerEntry.objects.filter(workspace=other).values_list("id", flat=True))
+    returned_ids = {row["id"] for row in response.json()["results"]}
+    assert returned_ids.isdisjoint(other_ids), f"{probe} leaked another workspace's row"
+    assert "777000" not in response.content.decode()
+    assert other.slug not in response.content.decode()
+
+
+def test_workspace_ledger_response_omits_internal_columns(client, funded_roles):
+    ws, _plain, ws_admin = funded_roles
+    client.force_login(ws_admin)
+
+    response = client.get(f"/api/billing/workspaces/{ws.slug}/billing/ledger/")
+
+    body = response.content.decode()
+    assert "created_by" not in body
+    assert "محرمانه" not in body
+
+
+def test_workspace_wallet_response_omits_internal_columns(client, funded_roles):
+    ws, _plain, ws_admin = funded_roles
+    client.force_login(ws_admin)
+
+    body = client.get(f"/api/billing/workspaces/{ws.slug}/billing/wallet/").content.decode()
+
+    assert "idempotency_key" not in body
+    assert "debit_account" not in body
+
+
+def test_a_slug_that_names_no_workspace_is_a_404(client, funded_roles):
+    _ws, _plain, ws_admin = funded_roles
+    client.force_login(ws_admin)
+
+    response = client.get("/api/billing/workspaces/no-such-team/billing/ledger/")
+
+    # Not a 403 and above all not a 500: the slug resolved to nothing, and the
+    # permission class denied it for the same reason. Either is honest.
+    assert response.status_code in (403, 404), response.content
+
+
+def test_an_anonymous_caller_reaches_no_endpoint(client, funded_roles):
+    ws, _plain, _ws_admin = funded_roles
+
+    for url in (
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/",
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/ledger/",
+        f"/api/billing/workspaces/{ws.slug}/billing/ledger/",
+        f"/api/billing/workspaces/{ws.slug}/billing/wallet/",
+    ):
+        response = client.get(url)
+        assert response.status_code in (401, 403), f"{url} -> {response.status_code}"
+
+
+# --- the admin family ----------------------------------------------------
+
+
+def test_workspace_admin_cannot_grant_themselves_credit(client, funded_roles):
+    ws, _plain, ws_admin = funded_roles
+    client.force_login(ws_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 5_000_000, "description": "دور زدن سیستم با دسترسی مدیر ورک‌اسپیس"},
+        content_type="application/json",
+    )
+
+    assert response.status_code in (401, 403), response.content
+    # and nothing was written
+    assert money.wallet_balance(ws) == 400_000
+
+
+def test_plain_member_cannot_read_the_admin_wallet(client, funded_roles):
+    ws, plain, _ws_admin = funded_roles
+    client.force_login(plain)
+
+    response = client.get(f"/api/billing/admin/workspaces/{ws.slug}/wallet/")
+
+    assert response.status_code in (401, 403), response.content
+
+
+def test_instance_admin_can_grant_and_the_actor_comes_from_the_session(client, funded_roles, instance_admin):
+    ws, plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {
+            "amount_toman": 250_000,
+            "description": "اعتبار هدیهٔ آزمایشی برای تیم",
+            # A forged actor. The grant's author must be the session, not this.
+            "created_by": str(plain.pk),
+            "workspace": str(ws.pk),
+        },
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="api-grant-1",
+    )
+
+    assert response.status_code == 201, response.content
+    entry = LedgerEntry.objects.get(idempotency_key="api-grant-1")
+    assert entry.created_by_id == instance_admin.pk
+    assert entry.created_by_id != plain.pk
+    assert money.wallet_balance(ws) == 650_000
+    assert entry.workspace_id == ws.pk
+
+
+def test_instance_admin_sees_the_internal_description(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+
+    response = client.get(f"/api/billing/admin/workspaces/{ws.slug}/wallet/ledger/")
+
+    assert response.status_code == 200, response.content
+    assert "محرمانه" in response.content.decode()
+
+
+def test_instance_admin_may_read_any_workspaces_wallet(client, funded_roles, workspace_factory, instance_admin):
+    _ws, _plain, _ws_admin = funded_roles
+    other = workspace_factory(name="تیم بیگانه برای ادمین")
+    client.force_login(instance_admin)
+
+    response = client.get(f"/api/billing/admin/workspaces/{other.slug}/wallet/")
+
+    assert response.status_code == 200, response.content
+    assert response.json()["balance_toman"] == 0
+
+
+def test_a_forged_workspace_in_the_body_does_not_retarget_the_grant(
+    client, funded_roles, workspace_factory, instance_admin
+):
+    """The URL names the workspace; a body naming another one is ignored.
+
+    Not merely refused -- IGNORED, and then granted to the URL's workspace.
+    A serializer that echoed the field back as an error would be one DRF
+    version away from accepting it.
+    """
+    ws, _plain, _ws_admin = funded_roles
+    other = workspace_factory(name="تیم هدف جعل")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {
+            "amount_toman": 250_000,
+            "description": "اعتبار با هدف جعلی در بدنه",
+            "workspace": str(other.pk),
+            "workspace_slug": other.slug,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.content
+    assert money.wallet_balance(ws) == 650_000
+    assert money.wallet_balance(other) == 0
+
+
+def test_instance_admin_grant_rejects_a_short_description(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 250_000, "description": "کم"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400, response.content
+    assert money.wallet_balance(ws) == 400_000
+
+
+def test_instance_admin_grant_rejects_a_zero_amount(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 0, "description": "توضیح کاملاً معتبر و بلند"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400, response.content
+
+
+def test_instance_admin_grant_over_the_cap_is_a_conflict(client, funded_roles, instance_admin):
+    from plane.billing.models import Wallet
+
+    ws, _plain, _ws_admin = funded_roles
+    Wallet.objects.filter(workspace=ws).update(admin_grant_cap_toman=100_000)
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 250_000, "description": "اعتبار بیش از سقف مجاز"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409, response.content
+    assert money.wallet_balance(ws) == 400_000
+
+
+def test_grant_for_a_slug_that_names_no_workspace_is_a_404(client, instance_admin):
+    client.force_login(instance_admin)
+
+    response = client.post(
+        "/api/billing/admin/workspaces/no-such-team/wallet/grant/",
+        {"amount_toman": 250_000, "description": "اعتبار برای اسلگ ناموجود"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 404, response.content
+
+
+def test_a_replayed_grant_is_a_200_and_posts_once(client, funded_roles, instance_admin):
+    """The idempotency key is the retry protection, so a retry must not mint twice.
+
+    The view derives the key from the header and never pre-checks for it, so
+    the second call is the SAME code path as the first. That is deliberate:
+    a view-side pre-check is a second, weaker copy of the rule the service
+    already applies, and it is the copy that drifted in an earlier task.
+    """
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+    payload = {"amount_toman": 250_000, "description": "اعتبار تکراری برای تست"}
+
+    first = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="replay-1",
+    )
+    second = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="replay-1",
+    )
+
+    assert first.status_code == 201, first.content
+    assert second.status_code == 200, second.content
+    assert second.json()["id"] == first.json()["id"]
+    assert money.wallet_balance(ws) == 650_000
+    assert LedgerEntry.objects.filter(idempotency_key="replay-1").count() == 1
+
+
+def test_the_idempotency_key_never_comes_from_the_body(client, funded_roles, instance_admin):
+    """Two calls that differ only by a body key are two grants, not one."""
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+    payload = {"amount_toman": 250_000, "description": "اعتبار با کلید در بدنه"}
+
+    first = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {**payload, "idempotency_key": "forged"},
+        content_type="application/json",
+    )
+    second = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {**payload, "idempotency_key": "forged"},
+        content_type="application/json",
+    )
+
+    assert first.status_code == 201, first.content
+    assert second.status_code == 201, second.content
+    assert LedgerEntry.objects.filter(idempotency_key="forged").count() == 0
+    assert money.wallet_balance(ws) == 900_000
+
+
+def test_reusing_a_key_for_a_different_amount_is_a_conflict(client, funded_roles, instance_admin):
+    """``money._assert_same_movement`` raising is a 409, never a 500."""
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+
+    first = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 250_000, "description": "اعتبار اول با کلید مشترک"},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="shared-key",
+    )
+    second = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 260_000, "description": "اعتبار دوم با همان کلید"},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="shared-key",
+    )
+
+    assert first.status_code == 201, first.content
+    assert second.status_code == 409, second.content
+    assert money.wallet_balance(ws) == 650_000
+
+
+def test_the_admin_ledger_is_paginated_in_the_same_envelope(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+
+    response = client.get(f"/api/billing/admin/workspaces/{ws.slug}/wallet/ledger/")
+
+    body = response.json()
+    assert body["total_results"] == 1
+    assert body["results"][0]["idempotency_key"] == "leak-1"
+    assert body["results"][0]["workspace"] == ws.slug
+
+
+# --- revoking a grant -----------------------------------------------------
+
+
+def test_instance_admin_can_revoke_a_grant(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
+        {"entry": str(entry.pk), "description": "ابطال اعتبار اشتباه توسط مدیر"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.content
+    assert money.wallet_balance(ws) == 0
+    reversal = LedgerEntry.objects.get(idempotency_key=response.json()["idempotency_key"])
+    assert reversal.reversal_of_id == entry.pk
+
+
+def test_revoke_refuses_an_entry_from_another_workspace(client, funded_roles, workspace_factory, instance_admin):
+    """The pk is resolved scoped by the workspace, so this is a 404 not a 403.
+
+    A bare ``LedgerEntry.objects.get(pk=...)`` here would hand the service a
+    foreign row; the service would then refuse it, but the refusal is a
+    confused-deputy error the HTTP layer should never have created at all.
+    """
+    ws, _plain, _ws_admin = funded_roles
+    other = workspace_factory(name="تیم بیگانه برای ابطال")
+    foreign = wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=100_000,
+        description="اعتبار تیم بیگانه که نباید دست بخورد",
+        created_by=None,
+        idempotency_key="foreign-grant",
+    )
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
+        {"entry": str(foreign.pk), "description": "دور زدن مرز بین کیف پول‌ها"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 404, response.content
+    assert money.wallet_balance(other) == 100_000
+
+
+def test_revoke_refuses_a_row_that_is_not_a_grant(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    charge = wallet.charge_sms(workspace=ws, amount_toman=1_000, log_id="revoke-me", idempotency_key="sms-for-revoke")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
+        {"entry": str(charge.pk), "description": "دور زدن با یک ردیف غیر اعتبار"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409, response.content
+
+
+def test_revoke_refuses_a_grant_that_was_already_reversed(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+    client.force_login(instance_admin)
+    wallet.revoke_grant(
+        workspace=ws,
+        entry=entry,
+        description="ابطال اول برای آماده‌سازی تست",
+        created_by=instance_admin,
+        idempotency_key="revoke-setup",
+    )
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
+        {"entry": str(entry.pk), "description": "ابطال دوم همان اعتبار"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409, response.content
+
+
+def test_workspace_admin_cannot_revoke(client, funded_roles):
+    ws, _plain, ws_admin = funded_roles
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+    client.force_login(ws_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
+        {"entry": str(entry.pk), "description": "ابطال اعتبار توسط مدیر ورک‌اسپیس"},
+        content_type="application/json",
+    )
+
+    assert response.status_code in (401, 403), response.content
+    assert money.wallet_balance(ws) == 400_000
+
+
+# --- the shape of the layer itself ----------------------------------------
+
+
+def test_no_endpoint_reads_a_workspace_from_the_query_string():
+    """The scope is the URL or nothing.
+
+    Asserted against the source rather than left to the response tests: a
+    view that grew a ``request.GET`` lookup would still pass every leak test
+    above as long as the forged value happened to name nothing.
+    """
+    import inspect
+
+    from plane.billing.api.views import wallet_views
+
+    source = inspect.getsource(wallet_views)
+    assert "request.GET" not in source
+    assert "request.query_params" not in source
+
+
+def test_every_workspace_endpoint_resolves_its_slug_from_the_url_kwargs():
+    import inspect
+
+    from plane.billing.api.views.wallet_views import (
+        AdminWorkspaceGrantView,
+        AdminWorkspaceLedgerView,
+        AdminWorkspaceWalletView,
+        WorkspaceLedgerView,
+        WorkspaceWalletView,
+    )
+
+    for view in (
+        AdminWorkspaceWalletView,
+        AdminWorkspaceLedgerView,
+        AdminWorkspaceGrantView,
+        WorkspaceLedgerView,
+        WorkspaceWalletView,
+    ):
+        assert isinstance(inspect.getattr_static(view, "workspace_slug"), property), (
+            f"{view.__name__} must expose workspace_slug for the permission class to read"
+        )
+
+
+def test_the_two_families_use_different_permissions():
+    from plane.billing.api.permissions import WorkspaceBillingLedgerPermission
+    from plane.billing.api.views.wallet_views import (
+        AdminWorkspaceGrantView,
+        AdminWorkspaceLedgerView,
+        AdminWorkspaceWalletView,
+        WorkspaceLedgerView,
+        WorkspaceWalletView,
+    )
+    from plane.license.api.permissions import InstanceAdminPermission
+
+    for view in (AdminWorkspaceWalletView, AdminWorkspaceLedgerView, AdminWorkspaceGrantView):
+        assert view.permission_classes == [InstanceAdminPermission], view.__name__
+    for view in (WorkspaceLedgerView, WorkspaceWalletView):
+        assert view.permission_classes == [WorkspaceBillingLedgerPermission], view.__name__
+
+
+def test_the_workspace_ledger_is_not_guarded_by_the_loose_admin_permission():
+    """``WorkSpaceAdminPermission`` admits role 15, so it may not appear here."""
+    from plane.app.permissions.workspace import WorkSpaceAdminPermission
+    from plane.billing.api.views.wallet_views import WorkspaceLedgerView, WorkspaceWalletView
+
+    for view in (WorkspaceLedgerView, WorkspaceWalletView):
+        assert WorkSpaceAdminPermission not in view.permission_classes, view.__name__

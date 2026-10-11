@@ -30,6 +30,14 @@ from plane.billing.api.views.user_views import (
     PlanListEndpoint,
     SubscriptionListEndpoint,
 )
+from plane.billing.api.views.wallet_views import (
+    AdminWorkspaceGrantView,
+    AdminWorkspaceLedgerView,
+    AdminWorkspaceRevokeView,
+    AdminWorkspaceWalletView,
+    WorkspaceLedgerView,
+    WorkspaceWalletView,
+)
 from plane.billing.api.views.workspace_views import (
     WorkspaceEntitlementEndpoint,
     WorkspaceFeatureFlagDisableEndpoint,
@@ -93,6 +101,40 @@ urlpatterns = [
         "workspaces/<slug:slug>/feature-flags/<str:code>/disable/",
         WorkspaceFeatureFlagDisableEndpoint.as_view(),
         name="billing-workspace-feature-flag-disable",
+    ),
+    # Instance admin wallet management. Guarded by InstanceAdminPermission and
+    # able to read any workspace's wallet and ledger.
+    path(
+        "admin/workspaces/<str:slug>/wallet/",
+        AdminWorkspaceWalletView.as_view(),
+        name="admin-workspace-wallet",
+    ),
+    path(
+        "admin/workspaces/<str:slug>/wallet/ledger/",
+        AdminWorkspaceLedgerView.as_view(),
+        name="admin-workspace-ledger",
+    ),
+    path(
+        "admin/workspaces/<str:slug>/wallet/grant/",
+        AdminWorkspaceGrantView.as_view(),
+        name="admin-workspace-wallet-grant",
+    ),
+    path(
+        "admin/workspaces/<str:slug>/wallet/revoke/",
+        AdminWorkspaceRevokeView.as_view(),
+        name="admin-workspace-wallet-revoke",
+    ),
+    # Workspace scoped money reads. Guarded by WorkspaceBillingLedgerPermission
+    # (active role 20 only) and serialised with the narrow tenant projection.
+    path(
+        "workspaces/<str:slug>/billing/ledger/",
+        WorkspaceLedgerView.as_view(),
+        name="workspace-billing-ledger",
+    ),
+    path(
+        "workspaces/<str:slug>/billing/wallet/",
+        WorkspaceWalletView.as_view(),
+        name="workspace-billing-wallet",
     ),
     # gateway callbacks, the path must match the URL registered in each panel
     path("callback/<str:gateway_code>/", PaymentCallbackEndpoint.as_view(), name="billing-callback"),
