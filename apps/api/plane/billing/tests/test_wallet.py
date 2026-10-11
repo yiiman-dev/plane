@@ -620,7 +620,11 @@ def test_revoke_replay_succeeds_once_the_wallet_is_empty(workspace, admin_user):
 
     assert second.pk == first.pk
     assert money.wallet_balance(workspace) == 0
-    assert LedgerEntry.objects.filter(source=LedgerSource.REFUND, workspace=workspace).count() == 1
+    # A grant reversal is NOT a refund: the two are different events with
+    # different audiences, and only the reversal carries an operator's
+    # internal note that the workspace must never see.
+    assert LedgerEntry.objects.filter(source=LedgerSource.GRANT_REVERSAL, workspace=workspace).count() == 1
+    assert not LedgerEntry.objects.filter(source=LedgerSource.REFUND, workspace=workspace).exists()
 
 
 def test_grant_replay_succeeds_even_after_the_cap_is_lowered(workspace, admin_user):
@@ -740,7 +744,7 @@ def test_revoke_refuses_a_grant_that_was_already_reversed(workspace, admin_user)
         )
 
     assert money.wallet_balance(workspace) == 0
-    assert LedgerEntry.objects.filter(source=LedgerSource.REFUND, workspace=workspace).count() == 1
+    assert LedgerEntry.objects.filter(source=LedgerSource.GRANT_REVERSAL, workspace=workspace).count() == 1
 
 
 # --- traceability of an SMS charge (I4, I6) ----------------------------------
