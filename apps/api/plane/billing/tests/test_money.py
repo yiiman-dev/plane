@@ -18,6 +18,7 @@ from django.utils import timezone as django_timezone
 # Module imports
 from plane.billing.models import LedgerAccount, LedgerAccountKind, LedgerEntry, LedgerSource, Wallet
 from plane.billing.services import money
+from plane.db.models import Workspace
 
 pytestmark = pytest.mark.django_db
 
@@ -591,3 +592,12 @@ def test_a_fresh_post_reports_not_replayed():
     )
 
     assert replayed is False
+
+
+def test_every_workspace_balance_is_derivable_and_non_negative():
+    """The invariant the whole design rests on: a balance is always the sum of entries."""
+    for account in LedgerAccount.objects.filter(kind=LedgerAccountKind.ASSET, workspace__isnull=False):
+        assert money.account_balance(account, workspace=account.workspace) >= 0, account.code
+
+    for workspace in Workspace.objects.filter(billing_wallet__isnull=False):
+        assert money.wallet_balance(workspace) >= 0, workspace.slug
