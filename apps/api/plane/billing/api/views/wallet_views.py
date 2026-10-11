@@ -313,7 +313,12 @@ class AdminWorkspaceGrantView(WorkspaceContextMixin, BillingAdminAPIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        idempotency_key = self.resolve_idempotency_key(request)
+        # Inside the try: an over-long header raises InvalidIdempotencyKey, which
+        # must become a 400 rather than escaping as a 500.
+        try:
+            idempotency_key = self.resolve_idempotency_key(request)
+        except wallet_service.InvalidIdempotencyKey as error:
+            return handle_wallet_error(error)
         try:
             entry, replayed = wallet_service.grant_from_admin_with_outcome(
                 workspace=workspace,
@@ -341,6 +346,11 @@ class AdminWorkspaceGrantView(WorkspaceContextMixin, BillingAdminAPIView):
             status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
         )
 
+    # idempotency_key is a CharField(max_length=255) with a UNIQUE index. An
+    # over-long header would raise DataError, not IntegrityError, and escape the
+    # exception handler as a 500 -- so it is bounded here rather than trusted.
+    MAX_IDEMPOTENCY_KEY_LENGTH = 255
+
     @staticmethod
     def resolve_idempotency_key(request, prefix: str = "api-grant") -> str:
         """The client's retry key if it sent one, otherwise one minted here.
@@ -363,7 +373,10 @@ class AdminWorkspaceGrantView(WorkspaceContextMixin, BillingAdminAPIView):
         """
         supplied = request.headers.get("Idempotency-Key")
         if supplied and supplied.strip():
-            return supplied.strip()
+            key = supplied.strip()
+            if len(key) > AdminWorkspaceGrantView.MAX_IDEMPOTENCY_KEY_LENGTH:
+                raise wallet_service.InvalidIdempotencyKey("کلید تکرارپذیری بیش از حد طولانی است.")
+            return key
         return f"{prefix}:{uuid.uuid4()}"
 
 

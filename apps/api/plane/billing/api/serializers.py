@@ -434,6 +434,12 @@ class WalletSerializer(serializers.ModelSerializer):
         return money_service.wallet_hold_balance(obj.workspace)
 
 
+# The biggest amount a bigint column can hold. Any larger would raise a
+# DataError at the database, which the project's exception handler does not
+# treat as a client error, so the bound is applied in the serializer.
+MAX_MONEY_TOMAN = 2**63 - 1
+
+
 class WalletGrantSerializer(serializers.Serializer):
     """Input for an instance admin crediting a workspace by hand.
 
@@ -442,7 +448,11 @@ class WalletGrantSerializer(serializers.Serializer):
     at another tenant from the request body.
     """
 
-    amount_toman = serializers.IntegerField(min_value=1)
+    # The upper bound matters: amount_toman is a bigint column, and an amount
+    # past 2**63-1 raises DataError rather than IntegrityError, which the
+    # project's exception handler does not catch. Without this a client could
+    # trigger a 500 with a number instead of getting a 400.
+    amount_toman = serializers.IntegerField(min_value=1, max_value=MAX_MONEY_TOMAN)
     description = serializers.CharField(min_length=10)
 
     def validate_description(self, value: str) -> str:

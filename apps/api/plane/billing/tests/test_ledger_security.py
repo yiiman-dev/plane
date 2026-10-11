@@ -1428,3 +1428,50 @@ def test_the_supplied_idempotency_key_is_still_honoured(client, funded_roles, in
 
     assert response.status_code == 201, response.content
     assert response.json()["idempotency_key"] == "honoured-key", "the header value is stripped, not refuted"
+
+
+# --- a client cannot turn either money endpoint into a 500 ----------------
+# DataError is a sibling of IntegrityError, not a subclass, and the project's
+# handler only catches the latter, so an unbounded integer or an over-long
+# idempotency key reached the database as an unhandled server error.
+
+
+def test_an_out_of_range_amount_is_a_400_not_a_500(client, funded_workspace, instance_admin):
+    ws, _operator = funded_workspace
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 2**63, "description": "مبلغی بیش از محدودهٔ ستون پایگاه داده"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400, response.content
+
+
+def test_the_biggest_storable_amount_is_still_accepted(client, funded_workspace, instance_admin):
+    ws, _operator = funded_workspace
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 2**63 - 1, "description": "بیشترین مبلغی که ستون ذخیره می‌کند"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.content
+
+
+def test_an_over_long_idempotency_key_is_a_400_not_a_500(client, funded_workspace, instance_admin):
+    ws, _operator = funded_workspace
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 5_000, "description": "کلید تکرارپذیری بیش از حد طولانی"},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="x" * 300,
+    )
+
+    assert response.status_code == 400, response.content
+    assert not LedgerEntry.objects.filter(description="کلید تکرارپذیری بیش از حد طولانی").exists()
