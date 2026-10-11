@@ -144,6 +144,91 @@ def _assert_same_movement(existing: LedgerEntry, *, debit, credit, amount_toman:
         )
 
 
+def post_entry_with_outcome(
+    *,
+    debit: LedgerAccount,
+    credit: LedgerAccount,
+    amount_toman: int,
+    source: str,
+    workspace=None,
+    description: str = "",
+    created_by=None,
+    invoice=None,
+    transaction=None,
+    idempotency_key: str,
+) -> tuple[LedgerEntry, bool]:
+    """Write one balanced movement of money and say whether it was a replay.
+
+    Returns ``(entry, was_replayed)``. ``was_replayed`` is ``True`` when the
+    row returned already existed -- either the fast path found it, or this
+    call lost the race and the ``IntegrityError`` handler re-looked it up.
+    Both are replays; neither posted anything new.
+
+    The flag exists because the entry alone cannot tell the two apart, and
+    every attempt to infer it afterwards is a wall-clock comparison against
+    ``created_at``, which is wrong in both directions: a clock that steps
+    backwards between the two reads reports a fresh post as a replay, and
+    an app host whose clock runs ahead of the database host reports a replay
+    as fresh. Both produce the correct ledger and the wrong answer, and
+    neither reproduces reliably in CI. The fact is known here and only here,
+    so it is stated here.
+
+    :func:`post_entry` is this function with the flag dropped; it keeps its
+    original signature and return type for the callers that do not care.
+
+    The ``transaction`` argument names the ``PaymentTransaction`` this entry
+    settles, which shadows ``django.db.transaction`` inside this scope; the
+    module imports the database one as ``db_transaction`` for that reason.
+    """
+    if debit.pk == credit.pk:
+        raise ValueError("debit and credit accounts must differ")
+    if amount_toman <= 0:
+        raise ValueError("amount_toman must be positive")
+
+    existing = _find_entry_any_state(idempotency_key)
+    if existing is not None:
+        _assert_same_movement(existing, debit=debit, credit=credit, amount_toman=amount_toman)
+        return _revive_entry(existing), True
+
+    try:
+        with db_transaction.atomic():
+            entry = LedgerEntry(
+                debit_account=debit,
+                credit_account=credit,
+                amount_toman=amount_toman,
+                source=source,
+                workspace=workspace,
+                description=description,
+                created_by=created_by,
+                invoice=invoice,
+                transaction=transaction,
+                idempotency_key=idempotency_key,
+            )
+            # Saved explicitly rather than via ``objects.create()`` so that
+            # ``disable_auto_set_user`` can be passed. ``create()`` forwards its
+            # kwargs to ``__init__``, never to ``save()``, so the author set above
+            # would reach ``BaseModel.save`` with no ``created_by_id`` keyword --
+            # save() would take its crum branch and overwrite it with the current
+            # request user, which is None outside a request. The explicit author
+            # would be silently dropped.
+            entry.save(
+                force_insert=True,
+                disable_auto_set_user=created_by is not None,
+            )
+            return entry, False
+    except IntegrityError as error:
+        # Either we lost a race against a concurrent replay of the same key, or
+        # the create failed for an unrelated reason (stale FK, PROTECT on a
+        # deleted account, a bad ``source``). Only the first is recoverable, so
+        # re-look the key up and, if there is no such row, re-raise the original
+        # error rather than reporting a missing entry and losing the diagnostic.
+        winner = _find_entry_any_state(idempotency_key)
+        if winner is None:
+            raise error
+        _assert_same_movement(winner, debit=debit, credit=credit, amount_toman=amount_toman)
+        return _revive_entry(winner), True
+
+
 def post_entry(
     *,
     debit: LedgerAccount,
@@ -171,54 +256,27 @@ def post_entry(
     The ``transaction`` argument names the ``PaymentTransaction`` this entry
     settles, which shadows ``django.db.transaction`` inside this scope; the
     module imports the database one as ``db_transaction`` for that reason.
+
+    Deliberately blind to whether it replayed. A caller that must report
+    that to a client -- an HTTP layer answering 200 or 201 -- uses
+    :func:`post_entry_with_outcome`, which is this function with the fact
+    attached. Two spellings rather than an extra return value because every
+    other caller wants only the entry, and changing their return type would
+    make them unpack a tuple they would immediately drop.
     """
-    if debit.pk == credit.pk:
-        raise ValueError("debit and credit accounts must differ")
-    if amount_toman <= 0:
-        raise ValueError("amount_toman must be positive")
-
-    existing = _find_entry_any_state(idempotency_key)
-    if existing is not None:
-        _assert_same_movement(existing, debit=debit, credit=credit, amount_toman=amount_toman)
-        return _revive_entry(existing)
-
-    try:
-        with db_transaction.atomic():
-            entry = LedgerEntry(
-                debit_account=debit,
-                credit_account=credit,
-                amount_toman=amount_toman,
-                source=source,
-                workspace=workspace,
-                description=description,
-                created_by=created_by,
-                invoice=invoice,
-                transaction=transaction,
-                idempotency_key=idempotency_key,
-            )
-            # Saved explicitly rather than via ``objects.create()`` so that
-            # ``disable_auto_set_user`` can be passed. ``create()`` forwards its
-            # kwargs to ``__init__``, never to ``save()``, so the author set above
-            # would reach ``BaseModel.save`` with no ``created_by_id`` keyword --
-            # save() would take its crum branch and overwrite it with the current
-            # request user, which is None outside a request. The explicit author
-            # would be silently dropped.
-            entry.save(
-                force_insert=True,
-                disable_auto_set_user=created_by is not None,
-            )
-            return entry
-    except IntegrityError as error:
-        # Either we lost a race against a concurrent replay of the same key, or
-        # the create failed for an unrelated reason (stale FK, PROTECT on a
-        # deleted account, a bad ``source``). Only the first is recoverable, so
-        # re-look the key up and, if there is no such row, re-raise the original
-        # error rather than reporting a missing entry and losing the diagnostic.
-        winner = _find_entry_any_state(idempotency_key)
-        if winner is None:
-            raise error
-        _assert_same_movement(winner, debit=debit, credit=credit, amount_toman=amount_toman)
-        return _revive_entry(winner)
+    entry, _was_replayed = post_entry_with_outcome(
+        debit=debit,
+        credit=credit,
+        amount_toman=amount_toman,
+        source=source,
+        workspace=workspace,
+        description=description,
+        created_by=created_by,
+        invoice=invoice,
+        transaction=transaction,
+        idempotency_key=idempotency_key,
+    )
+    return entry
 
 
 def _revive_entry(entry: LedgerEntry) -> LedgerEntry:

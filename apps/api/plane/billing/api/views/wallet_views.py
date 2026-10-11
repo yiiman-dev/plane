@@ -23,13 +23,32 @@ override ``permission_classes``. That inheritance is deliberate rather than
 lazy -- it is what makes ``test_the_two_families_use_different_permissions``
 a meaningful assertion, because the two families would otherwise differ in
 authentication, pagination and error handling as well as in authority.
+
+Scope note -- the revoke endpoint is here ON PURPOSE
+----------------------------------------------------
+This module ships SIX endpoints: four reads/writes the task brief named, plus
+``POST /api/billing/admin/workspaces/<slug>/wallet/revoke/`` (the counterpart
+to grant) and the admin ledger read. The revoke endpoint was added by a
+deliberate scope decision in fix round 1, not by reading an interfaces note
+as a request:
+
+* it is guarded by ``InstanceAdminPermission``, like every other admin route;
+* it workspace-scopes the pk lookup, so a pk from another tenant does not
+  resolve and the service is never handed a foreign row;
+* its errors go through ``handle_wallet_error``, so it reports the same
+  statuses as grant: 400 on a bad body, 404 on a pk that is not this
+  workspace's or not live, 409 on not-a-grant / already-reversed / not enough
+  money / key reused for another movement, 403 on the cross-tenant refusal.
+
+The argument for keeping it: a ledger with a grant surface and no reversal
+surface is not complete, and an operator who cannot reverse a mistaken grant
+through the API will work around it out of band. The argument against is only
+that it was not asked for. Everything it needs is already shipped and pinned
+by tests, so the cost of keeping it is one route and one serializer.
 """
 
 # Python imports
 import uuid
-
-# Django imports
-from django.utils import timezone
 
 # Third party imports
 from rest_framework import status
@@ -82,20 +101,75 @@ WALLET_ERROR_CONFLICT = (
     wallet_service.GrantAlreadyReversed,
 )
 
+# THE mapping, as a registry rather than a pair of tuples and an ``elif``
+# ladder, because a taxonomy assembled out of ``isinstance`` checks has no way
+# to notice a new member. ``HOLD_ALLOWED_SOURCES`` in ``wallet.py`` drifted
+# exactly this way: the allow-list missed a source, the ledger accepted it, and
+# nothing failed.
+#
+# So the registry is a plain dict keyed on the exception CLASS (exact type, not
+# a subclass test) and ``handle_wallet_error`` looks the type up in it. A
+# ``WalletError`` subclass that is not a key raises ``UnmappedWalletError``
+# here, which becomes a 500 -- loud, and in a test run an immediate failure --
+# instead of silently reporting a permission problem forever.
+WALLET_ERROR_STATUS = {
+    wallet_service.InvalidGrantDescription: status.HTTP_400_BAD_REQUEST,
+    wallet_service.InvalidAmount: status.HTTP_400_BAD_REQUEST,
+    wallet_service.InvalidChargeReference: status.HTTP_400_BAD_REQUEST,
+    wallet_service.InvalidHoldSource: status.HTTP_400_BAD_REQUEST,
+    wallet_service.InvalidHoldDescription: status.HTTP_400_BAD_REQUEST,
+    wallet_service.InvalidPaymentReference: status.HTTP_400_BAD_REQUEST,
+    wallet_service.InvalidIdempotencyKey: status.HTTP_400_BAD_REQUEST,
+    wallet_service.GrantTooLarge: status.HTTP_409_CONFLICT,
+    wallet_service.InsufficientBalance: status.HTTP_409_CONFLICT,
+    wallet_service.NotAGrantEntry: status.HTTP_409_CONFLICT,
+    wallet_service.GrantAlreadyReversed: status.HTTP_409_CONFLICT,
+    # The bare class IS the cross-tenant refusal, and it must stay 403/404
+    # rather than becoming a 500: reporting "that is not yours" as a server
+    # fault would both be wrong and tell an attacker they had found something.
+    wallet_service.WalletError: status.HTTP_403_FORBIDDEN,
+}
+
+# The two tuples above are what the registry is built from, kept as the single
+# source of truth so the grouping stays readable; ``test_every_wallet_error_
+# subclass_is_in_the_status_registry`` fails if the two ever disagree with each
+# other or with ``wallet.py``.
+
+
+class UnmappedWalletError(Exception):
+    """A ``WalletError`` subclass this layer has no HTTP status for.
+
+    Raised rather than defaulted to 403 so that adding a policy error to
+    ``wallet.py`` without deciding what a client should be told is a visible
+    break, not a silent one.
+    """
+
+
+def _assert_registry_matches_the_groupings() -> None:
+    """Every class in the two groupings is a key, and every key is in one."""
+    grouped = set(WALLET_ERROR_BAD_REQUEST) | set(WALLET_ERROR_CONFLICT) | {wallet_service.WalletError}
+    if grouped != set(WALLET_ERROR_STATUS):
+        missing = sorted(cls.__name__ for cls in grouped - set(WALLET_ERROR_STATUS))
+        extra = sorted(cls.__name__ for cls in set(WALLET_ERROR_STATUS) - grouped)
+        raise AssertionError(f"WALLET_ERROR_STATUS out of step with its groupings; unmapped={missing} unknown={extra}")
+
+
+_assert_registry_matches_the_groupings()
+
 
 def handle_wallet_error(error: Exception) -> Response:
     """Map one wallet policy failure onto its HTTP status.
 
-    Deliberately mapped, not collapsed onto the base class. ``WalletError``
-    itself is the cross-tenant refusal (a bare raise with no subclass), and
-    reporting that as a 400 would tell the caller to fix its input when the
-    real answer is "that is not yours". 403 says exactly that without
-    confirming whether the foreign row exists.
+    The lookup is on the exact type, so an unmapped subclass cannot inherit
+    some other error's status by subclassing it, and cannot silently inherit
+    the base class's 403 either -- it raises, which is the point.
+
+    The bare ``WalletError`` is mapped, not collapsed onto 403 by accident. It
+    is the cross-tenant refusal (a bare raise with no subclass), and reporting
+    that as a 400 would tell the caller to fix its input when the real answer
+    is "that is not yours". 403 says exactly that without confirming whether
+    the foreign row exists.
     """
-    if isinstance(error, WALLET_ERROR_BAD_REQUEST):
-        return Response({"error": error.message}, status=status.HTTP_400_BAD_REQUEST)
-    if isinstance(error, WALLET_ERROR_CONFLICT):
-        return Response({"error": error.message}, status=status.HTTP_409_CONFLICT)
     # ``ValueError`` here is only ever ``money._assert_same_movement``: the
     # idempotency key was reused for a different movement. That is a conflict
     # with existing state, not a server fault, and letting it reach DRF's
@@ -105,9 +179,17 @@ def handle_wallet_error(error: Exception) -> Response:
             {"error": "کلید یکتایی تراکنش قبلاً برای تراکنش دیگری استفاده شده است."},
             status=status.HTTP_409_CONFLICT,
         )
-    # Anything left is a bare ``WalletError`` or a subclass added later.
-    # Unknown policy errors are treated as the refusal they most likely are.
-    return Response({"error": str(error)}, status=status.HTTP_403_FORBIDDEN)
+    if isinstance(error, wallet_service.WalletError):
+        try:
+            mapped = WALLET_ERROR_STATUS[type(error)]
+        except KeyError:
+            raise UnmappedWalletError(
+                f"{type(error).__name__} has no HTTP status; add it to WALLET_ERROR_STATUS"
+            ) from error
+        return Response({"error": error.message}, status=mapped)
+    # Not a wallet policy failure at all -- a programming error here should be a
+    # 500 rather than dressed up as a client mistake.
+    raise error
 
 
 class WorkspaceContextMixin:
@@ -232,13 +314,8 @@ class AdminWorkspaceGrantView(WorkspaceContextMixin, BillingAdminAPIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         idempotency_key = self.resolve_idempotency_key(request)
-        # Taken BEFORE the call, not queried after: the service returns the
-        # entry either way, and whether it is the row this request created is
-        # answered by comparing timestamps. A lookup here would be a second
-        # opinion on the same question.
-        started_at = timezone.now()
         try:
-            entry = wallet_service.grant_from_admin(
+            entry, replayed = wallet_service.grant_from_admin_with_outcome(
                 workspace=workspace,
                 amount_toman=serializer.validated_data["amount_toman"],
                 description=serializer.validated_data["description"],
@@ -253,29 +330,41 @@ class AdminWorkspaceGrantView(WorkspaceContextMixin, BillingAdminAPIView):
             # handler and be reported as a 500.
             return handle_wallet_error(error)
 
-        # A replay returned the entry that was already on file, so 200. The
-        # test is on ``created_at`` rather than on a flag, because that is
-        # the only difference between the two outcomes the service leaves
-        # behind.
-        replayed = entry.created_at is not None and entry.created_at < started_at
+        # The SERVICE says whether it replayed, rather than the view guessing
+        # from ``created_at``. A wall-clock comparison is wrong in both
+        # directions -- a clock stepping backwards between the two reads makes
+        # a fresh post look like a replay, and an app host ahead of the
+        # database host makes a replay look fresh -- and neither is
+        # reproducible in CI, so neither would have been caught by a test.
         return Response(
             AdminLedgerEntrySerializer(entry).data,
             status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
         )
 
     @staticmethod
-    def resolve_idempotency_key(request) -> str:
+    def resolve_idempotency_key(request, prefix: str = "api-grant") -> str:
         """The client's retry key if it sent one, otherwise one minted here.
 
         The header is the only place a client may influence this. A body
         field named ``idempotency_key`` is not read: naming the key is naming
         a row in a globally unique column, and a client that could choose it
         could probe for another workspace's movements.
+
+        THE FALLBACK IS A FRESH ``uuid4`` ON EVERY REQUEST, never a
+        deterministic function of the caller, the body or the clock. A
+        derived fallback would be a correctness bug, not just a weak
+        uniqueness argument: the column is globally unique, so two unrelated
+        requests that landed on the same derived value would make the second
+        one look like a replay of the first, and the second would silently
+        post nothing while answering 201. The cost of the mint is that a
+        headerless client gets no retry protection -- which is the honest
+        answer, since it never supplied a key to protect itself with, and
+        telling it otherwise would be a promise the ledger cannot keep.
         """
         supplied = request.headers.get("Idempotency-Key")
         if supplied and supplied.strip():
             return supplied.strip()
-        return f"api-grant:{uuid.uuid4()}"
+        return f"{prefix}:{uuid.uuid4()}"
 
 
 class AdminWorkspaceRevokeView(WorkspaceContextMixin, BillingAdminAPIView):
@@ -307,21 +396,20 @@ class AdminWorkspaceRevokeView(WorkspaceContextMixin, BillingAdminAPIView):
         if entry is None:
             return Response({"error": "تراکنش یافت نشد."}, status=status.HTTP_404_NOT_FOUND)
 
-        started_at = timezone.now()
         try:
-            reversal = wallet_service.revoke_grant(
+            reversal, replayed = wallet_service.revoke_grant_with_outcome(
                 workspace=workspace,
                 entry=entry,
                 description=serializer.validated_data["description"],
                 created_by=request.user,
-                idempotency_key=AdminWorkspaceGrantView.resolve_idempotency_key(request),
+                idempotency_key=AdminWorkspaceGrantView.resolve_idempotency_key(request, prefix="api-revoke"),
             )
         except LedgerEntry.DoesNotExist:
             return Response({"error": "تراکنش یافت نشد."}, status=status.HTTP_404_NOT_FOUND)
         except (wallet_service.WalletError, ValueError) as error:
             return handle_wallet_error(error)
 
-        replayed = reversal.created_at is not None and reversal.created_at < started_at
+        # Told, not inferred -- see ``AdminWorkspaceGrantView.post``.
         return Response(
             AdminLedgerEntrySerializer(reversal).data,
             status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
