@@ -645,9 +645,22 @@ class BillingAccessLog(BaseModel):
     exist: every read leaves a row naming who looked, at which workspace and
     when.
 
+    ``viewer`` is ``SET_NULL``, so deleting an admin leaves their rows in place
+    but un-attributed: the trail records that *someone* read the money and when,
+    and cannot name the person. Nullability is deliberate -- a background job
+    can produce a read -- but a reader must not assume the row always names a
+    human.
+
     Only instance admins read this table. ``WorkspaceBillingLedgerPermission``
     must never be given access: "who looked at me" has no meaning to a
     workspace admin and only widens the surface.
+
+    Note for later tasks: this model inherits ``SoftDeleteModel``, so
+    ``objects`` hides soft-deleted rows and code must pick ``objects`` vs
+    ``all_objects`` deliberately. More importantly, ``SoftDeleteModel.delete()``
+    enqueues a Celery task, so calling ``.delete()`` on an audit row in a
+    broker-less environment raises ``kombu.OperationalError``. Nothing on the
+    audit path should call ``.delete()``.
     """
 
     VIEW_WALLET = "wallet"
@@ -667,10 +680,17 @@ class BillingAccessLog(BaseModel):
         blank=True,
         verbose_name="Viewer",
     )
+    # ``db_index=False`` on purpose: ``Meta.indexes`` already declares
+    # ``(workspace, -created_at)`` and serves the same lookups from its leading
+    # column. Django would otherwise add a second index on ``workspace_id``
+    # alone, which on this append-only table -- one row per admin read -- is pure
+    # write amplification. ``viewer`` keeps its FK index; it answers a different
+    # question ("who looked at this workspace").
     workspace = models.ForeignKey(
         "db.Workspace",
         on_delete=models.CASCADE,
         related_name="billing_access_logs",
+        db_index=False,
         verbose_name="Workspace",
     )
     view = models.CharField(max_length=16, choices=VIEW_CHOICES, verbose_name="View")

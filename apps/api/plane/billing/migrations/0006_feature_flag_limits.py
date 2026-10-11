@@ -58,7 +58,7 @@ class Migration(migrations.Migration):
                 ('created_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='%(class)s_created_by', to=settings.AUTH_USER_MODEL, verbose_name='Created By')),
                 ('updated_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='%(class)s_updated_by', to=settings.AUTH_USER_MODEL, verbose_name='Last Modified By')),
                 ('viewer', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='billing_access_logs', to=settings.AUTH_USER_MODEL, verbose_name='Viewer')),
-                ('workspace', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='billing_access_logs', to='db.workspace', verbose_name='Workspace')),
+                ('workspace', models.ForeignKey(db_index=False, on_delete=django.db.models.deletion.CASCADE, related_name='billing_access_logs', to='db.workspace', verbose_name='Workspace')),
             ],
             options={
                 'verbose_name': 'Billing Access Log',

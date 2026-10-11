@@ -29,8 +29,12 @@ def test_every_limit_type_is_accepted(db, limit_type):
     assert flag.limit_type == limit_type
 
 
-def test_an_unknown_limit_type_is_refused_by_the_database(db):
-    """choices is enforced by Django's validator, not by the column type."""
+def test_an_unknown_limit_type_is_refused_by_the_model_validator(db):
+    """choices is enforced by Django's validator, not by the column type.
+
+    The database would happily store "infinite" in a varchar(16); it is
+    ``full_clean()`` that runs the ``choices`` check.
+    """
     from django.core.exceptions import ValidationError
 
     flag = FeatureFlag(code="bad", name="بد", limit_type="infinite")
@@ -66,8 +70,13 @@ def test_a_limit_is_optional(db):
     assert grant.limit_value is None
 
 
-def test_config_survives_the_migration_untouched(db):
-    """The decision: config stays a free JSONField. Retiring it is a later migration."""
+def test_config_remains_a_free_json_field(db):
+    """The decision: config stays a free JSONField. Retiring it is a later migration.
+
+    No migration is exercised here -- ``pytest.ini`` sets ``--nomigrations``, so
+    the schema is built from the models. This guards the modelling decision, not
+    the migration.
+    """
     plan = Plan.objects.create(code="p5", name="پلن")
     flag = FeatureFlag.objects.create(code="legacy", name="قدیمی")
     grant = PlanFeatureFlag.objects.create(plan=plan, feature_flag=flag, config={"anything": [1, 2]})
