@@ -1339,23 +1339,13 @@ Expected: 404s — none of the three routes exist.
 Add to `apps/api/plane/billing/api/serializers.py`:
 
 ```python
-class AdminWorkspaceSummarySerializer(serializers.Serializer):
-    """One row of the admin workspace list: enough to spot a problem, nothing more.
-
-    Read-only by construction -- a ``Serializer`` with no writable field rejects
-    a POST body -- because this projection is a listing, not a write surface.
-    """
-
-    id = serializers.UUIDField()
-    name = serializers.CharField()
-    slug = serializers.SlugField()
-    plan_code = serializers.CharField(allow_null=True)
-    seats = serializers.IntegerField()
-    balance_toman = serializers.IntegerField()
-
-
 class AdminWorkspaceBillingSerializer(serializers.Serializer):
     """The whole billing picture of one workspace for the admin detail page.
+
+    A hand-written ``Serializer`` rather than a ``ModelSerializer`` because no
+    single model holds these fields: the plan, the subscription, the workspace
+    and the derived balances are four sources. It declares no writable field,
+    so a POST body against the detail route is rejected rather than ignored.
 
     This projection carries the balance, so the view that serves it must write
     an access-log row: returning money to an operator is a money read whatever
@@ -1378,11 +1368,11 @@ class AdminWorkspaceBillingSerializer(serializers.Serializer):
     active_members = serializers.IntegerField()
 ```
 
-`id`, `name` and `slug` are `SerializerMethodField`-free so the view builds the dict and passes it through; construct the payload with plain keys.
+The list endpoint needs no serializer: `AdminWorkspaceListEndpoint` builds plain dicts inside `on_results`, because the paginator serialises rows with `on_results`'s return value rather than passing models to a serializer. Declaring a `ModelSerializer` for it and never using it would be dead code.
 
 - [ ] **Step 4: Add the views**
 
-Add to `apps/api/plane/billing/api/views/admin_views.py`. Imports to add: `BillingAccessLog`, `Subscription`, `SubscriptionStatus`, `WalletMember`-free seat counting via `WorkspaceMember`, `AdminWorkspaceBillingSerializer`, `AdminWorkspaceSummarySerializer`, `ledger as ledger_service`, `money as money_service`, `entitlements`, and `WorkspaceContextMixin` from `plane.billing.api.views.wallet_views`.
+Add to `apps/api/plane/billing/api/views/admin_views.py`. Imports to add: `BillingAccessLog`, `Subscription` and `SubscriptionStatus` from `plane.billing.models`; `Workspace` and `WorkspaceMember` from `plane.db.models`; `AdminWorkspaceBillingSerializer` from `plane.billing.api.serializers`; `ledger as ledger_service` and `money as money_service`; and `WorkspaceContextMixin` from `plane.billing.api.views.wallet_views`. Confirm each real import path before writing them rather than assuming.
 
 ```python
 class AdminWorkspaceListEndpoint(BillingAdminAPIView):
@@ -1741,18 +1731,12 @@ export type TAdminWorkspaceBilling = {
   subscription_status: string | null;
 };
 
-/** The paginated envelope the admin list endpoints return. */
-export type TAdminWorkspaceListResponse = {
-  group_by?: string;
-  next_page_results: string | null;
-  prev_page_results: string | null;
-  total_pages: number;
-  total_records: number;
-  results: TAdminWorkspaceSummary[];
-};
+/** The admin list endpoints return the same envelope as every other list. */
+export type TAdminWorkspaceListResponse = TPaginatedResponse<TAdminWorkspaceSummary[]>;
+export type TFeatureFlagListResponse = TPaginatedResponse<TFeatureFlag[]>;
 ```
 
-Check the existing paginated response shape (e.g. `TBillingPlanListResponse`) and match its real field names rather than the ones guessed above.
+Use the existing `TPaginatedResponse<T>` wrapper — `packages/types/src/billing/index.ts:358` already declares `TBillingPlanListResponse` and `TInvoiceListResponse` that way, and the backend envelope is fixed by `apps/api/plane/utils/paginator.py:728-740` (`grouped_by`, `sub_grouped_by`, `total_count`, `next_cursor`, `prev_cursor`, `next_page_results`, `prev_page_results`, `count`, `total_pages`, `total_results`, `extra_stats`, `results`). Do not hand-roll a second envelope shape.
 
 - [ ] **Step 2: Add the service methods**
 
