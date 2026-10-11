@@ -84,6 +84,25 @@ class SubscriptionStatus(models.TextChoices):
     CANCELLED = "cancelled", "Cancelled"
 
 
+# How an upgrade in the middle of a paid cycle treats the unused remainder.
+PRORATION_CREDIT_REMAINING = "credit_remaining"
+PRORATION_NO_EXTENSION = "no_extension"
+PRORATION_MODE_CHOICES = (
+    (PRORATION_CREDIT_REMAINING, "اعتبار باقیمانده"),
+    (PRORATION_NO_EXTENSION, "بدون تمدید دوره"),
+)
+
+# A flag is either a switch, a number with a unit, or explicitly unlimited.
+LIMIT_TYPE_BOOLEAN = "boolean"
+LIMIT_TYPE_NUMBER = "number"
+LIMIT_TYPE_UNLIMITED = "unlimited"
+LIMIT_TYPE_CHOICES = (
+    (LIMIT_TYPE_BOOLEAN, "روشن یا خاموش"),
+    (LIMIT_TYPE_NUMBER, "محدودیت عددی"),
+    (LIMIT_TYPE_UNLIMITED, "نامحدود"),
+)
+
+
 class PaymentGateway(BaseModel):
     """A payment gateway configuration row. Credentials are stored encrypted."""
 
@@ -173,6 +192,12 @@ class GatewayRoutingConfig(BaseModel):
 class Plan(BaseModel):
     """A subscription plan."""
 
+    # See FeatureFlag below: same module-level constants, also readable off the
+    # model (``Plan.PRORATION_CREDIT_REMAINING``) by the upgrade and renewal code.
+    PRORATION_CREDIT_REMAINING = PRORATION_CREDIT_REMAINING
+    PRORATION_NO_EXTENSION = PRORATION_NO_EXTENSION
+    PRORATION_MODE_CHOICES = PRORATION_MODE_CHOICES
+
     code = models.CharField(max_length=50, unique=True, db_index=True, verbose_name="Plan Code")
     name = models.CharField(max_length=255, verbose_name="Name")
     description = models.TextField(blank=True, default="", verbose_name="Description")
@@ -187,6 +212,23 @@ class Plan(BaseModel):
     is_active = models.BooleanField(default=True, verbose_name="Active")
     sort_order = models.IntegerField(default=0, verbose_name="Sort Order")
     currency = models.CharField(max_length=8, default="IRT", verbose_name="Currency")
+
+    # Phase 2: policy fields the Phase 3 and Phase 4 code reads. They land together
+    # so neither of those phases needs a migration of its own.
+    renew_lock_days = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Renew Lock Days",
+        help_text="Days before expiry that a renewal of the same plan is refused.",
+    )
+    proration_mode = models.CharField(
+        max_length=32,
+        default=PRORATION_CREDIT_REMAINING,
+        choices=PRORATION_MODE_CHOICES,
+        verbose_name="Proration Mode",
+    )
+    sms_prices = models.JSONField(
+        default=dict, blank=True, verbose_name="SMS Prices", help_text="Event code to price in Toman."
+    )
 
     class Meta:
         verbose_name = "Plan"
@@ -388,6 +430,27 @@ class FeatureFlag(BaseModel):
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="Active")
     is_public = models.BooleanField(default=True, verbose_name="Public")
 
+    # Re-exported on the class as well as at module level: the catalogue rows are
+    # read as ``FeatureFlag.LIMIT_TYPE_BOOLEAN`` by the admin API and the
+    # serializers, while the choices tuples must exist before the class body runs.
+    LIMIT_TYPE_BOOLEAN = LIMIT_TYPE_BOOLEAN
+    LIMIT_TYPE_NUMBER = LIMIT_TYPE_NUMBER
+    LIMIT_TYPE_UNLIMITED = LIMIT_TYPE_UNLIMITED
+    LIMIT_TYPE_CHOICES = LIMIT_TYPE_CHOICES
+
+    # A flag either switches on or carries a countable limit. One global number
+    # across all flags does not work: "5 charts" and "10 projects" are not the
+    # same constraint, so each flag declares its own shape.
+    limit_type = models.CharField(
+        max_length=16,
+        default=LIMIT_TYPE_BOOLEAN,
+        choices=LIMIT_TYPE_CHOICES,
+        verbose_name="Limit Type",
+    )
+    unit_label = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="Unit Label", help_text="Persian noun for a numeric limit."
+    )
+
     class Meta:
         verbose_name = "Feature Flag"
         verbose_name_plural = "Feature Flags"
@@ -411,6 +474,12 @@ class PlanFeatureFlag(BaseModel):
     )
     is_enabled = models.BooleanField(default=True, verbose_name="Enabled")
     config = models.JSONField(default=dict, blank=True, verbose_name="Config")
+    # The typed limit, kept beside the free-form ``config`` rather than inside it.
+    # ``config`` is writable today through the admin plan-flag endpoint and accepts
+    # arbitrary JSON, so restructuring it would turn valid writes into 400s. Only
+    # meaningful when the flag's limit_type is "number"; the serializer rejects it
+    # otherwise rather than storing a value nothing reads.
+    limit_value = models.PositiveIntegerField(null=True, blank=True, verbose_name="Limit Value")
 
     class Meta:
         verbose_name = "Plan Feature Flag"
@@ -564,3 +633,58 @@ class Wallet(BaseModel):
 
     def __str__(self) -> str:
         return f"wallet:{self.workspace.slug}"
+
+
+class BillingAccessLog(BaseModel):
+    """Every time an instance administrator reads a tenant's money.
+
+    An instance admin can see any workspace's wallet and ledger, and hiding that
+    would leave them unable to answer a customer's billing question. The risk
+    that creates -- a customer's financial data ending up in the wrong hands --
+    is managed by traceability rather than by pretending the operator does not
+    exist: every read leaves a row naming who looked, at which workspace and
+    when.
+
+    Only instance admins read this table. ``WorkspaceBillingLedgerPermission``
+    must never be given access: "who looked at me" has no meaning to a
+    workspace admin and only widens the surface.
+    """
+
+    VIEW_WALLET = "wallet"
+    VIEW_LEDGER = "ledger"
+    VIEW_CHOICES = (
+        (VIEW_WALLET, "کیف پول"),
+        (VIEW_LEDGER, "دفتر کل"),
+    )
+
+    # Nullable: a background job or a since-deleted admin can still produce a
+    # read, and dropping the row would erase the evidence it exists to keep.
+    viewer = models.ForeignKey(
+        "db.User",
+        on_delete=models.SET_NULL,
+        related_name="billing_access_logs",
+        null=True,
+        blank=True,
+        verbose_name="Viewer",
+    )
+    workspace = models.ForeignKey(
+        "db.Workspace",
+        on_delete=models.CASCADE,
+        related_name="billing_access_logs",
+        verbose_name="Workspace",
+    )
+    view = models.CharField(max_length=16, choices=VIEW_CHOICES, verbose_name="View")
+    ip_address = models.CharField(max_length=45, blank=True, default="", verbose_name="IP Address")
+    user_agent = models.CharField(max_length=512, blank=True, default="", verbose_name="User Agent")
+    # ``created_at`` comes from ``BaseModel`` -> ``AuditModel`` -> ``TimeAuditModel``
+    # as ``auto_now_add``. Declaring it again here would shadow the inherited
+    # field, so it is deliberately not repeated.
+
+    class Meta:
+        verbose_name = "Billing Access Log"
+        verbose_name_plural = "Billing Access Logs"
+        ordering = ("-created_at",)
+        indexes = [models.Index(fields=["workspace", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.view}:{self.workspace_id}"
