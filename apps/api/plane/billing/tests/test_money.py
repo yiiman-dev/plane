@@ -546,3 +546,48 @@ def test_wallet_balance_is_enough_on_a_healthy_wallet(workspace_factory):
     )
     assert money.wallet_balance_is_enough(workspace, 50_000) is True
     assert money.wallet_balance_is_enough(workspace, 50_001) is False
+
+
+# --- the IntegrityError race path reports a replay -------------------------
+# The three paths out of post_entry_with_outcome are: fresh post (False),
+# sequential replay on the fast path (True), and this one. This branch was
+# unpinned -- mutating its flag to False left the whole suite green.
+
+
+def test_the_race_path_reports_a_replay(monkeypatch):
+    debit = money.get_or_create_account("race-debit", LedgerAccountKind.ASSET, "بدهکار")
+    credit = money.get_or_create_account("race-credit", LedgerAccountKind.ADMIN_POOL, "بستانه")
+
+    # A winner row exists, but the fast-path lookup is made to miss it, so the
+    # INSERT really does violate the unique index and the handler runs.
+    money.post_entry(
+        debit=debit, credit=credit, amount_toman=4_000, source=LedgerSource.ADMIN_GRANT, idempotency_key="race-key"
+    )
+    original_find = money._find_entry_any_state
+    calls = {"n": 0}
+
+    def blind_first_call(key):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else original_find(key)
+
+    monkeypatch.setattr(money, "_find_entry_any_state", blind_first_call)
+
+    entry, replayed = money.post_entry_with_outcome(
+        debit=debit, credit=credit, amount_toman=4_000, source=LedgerSource.ADMIN_GRANT, idempotency_key="race-key"
+    )
+
+    assert replayed is True, "the loser of a race is semantically a replay and must say so"
+    assert entry.idempotency_key == "race-key"
+    assert LedgerEntry.objects.filter(idempotency_key="race-key").count() == 1
+    assert money.account_balance(debit) == 4_000
+
+
+def test_a_fresh_post_reports_not_replayed():
+    debit = money.get_or_create_account("fresh-debit", LedgerAccountKind.ASSET, "بدهکار")
+    credit = money.get_or_create_account("fresh-credit", LedgerAccountKind.ADMIN_POOL, "بستانه")
+
+    _entry, replayed = money.post_entry_with_outcome(
+        debit=debit, credit=credit, amount_toman=9_000, source=LedgerSource.ADMIN_GRANT, idempotency_key="fresh-key"
+    )
+
+    assert replayed is False
