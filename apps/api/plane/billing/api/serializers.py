@@ -119,6 +119,9 @@ class PlanSerializer(serializers.ModelSerializer):
             "is_active",
             "sort_order",
             "currency",
+            "renew_lock_days",
+            "proration_mode",
+            "sms_prices",
             "created_at",
             "updated_at",
         ]
@@ -305,6 +308,8 @@ class FeatureFlagSerializer(serializers.ModelSerializer):
             "category",
             "is_active",
             "is_public",
+            "limit_type",
+            "unit_label",
             "created_at",
             "updated_at",
         ]
@@ -319,8 +324,20 @@ class FeatureFlagSerializer(serializers.ModelSerializer):
 
 
 class PlanFeatureFlagSerializer(serializers.ModelSerializer):
+    """A plan's grant of one feature flag, with the typed limit when there is one.
+
+    The validation here is the whole reason ``limit_value`` is a column and not
+    a key inside ``config``: the flag's own ``limit_type`` decides whether a
+    limit means anything, and the serializer is the only place that knows both
+    sides. A limit on a boolean flag is refused rather than dropped, because a
+    silently dropped value shows the administrator a form that saved and does
+    nothing.
+    """
+
     feature_flag_code = serializers.CharField(source="feature_flag.code", read_only=True)
     feature_flag_name = serializers.CharField(source="feature_flag.name", read_only=True)
+    limit_type = serializers.CharField(source="feature_flag.limit_type", read_only=True)
+    unit_label = serializers.CharField(source="feature_flag.unit_label", read_only=True)
 
     class Meta:
         model = PlanFeatureFlag
@@ -329,12 +346,40 @@ class PlanFeatureFlagSerializer(serializers.ModelSerializer):
             "feature_flag",
             "feature_flag_code",
             "feature_flag_name",
+            "limit_type",
+            "unit_label",
             "is_enabled",
+            "limit_value",
             "config",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "limit_type", "unit_label", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        """Check the limit against the flag's declared shape.
+
+        ``feature_flag`` may be a pk on create and absent on a partial update,
+        in which case the instance's own flag is the one that decides.
+        """
+        flag = attrs.get("feature_flag") or getattr(self.instance, "feature_flag", None)
+        supplied = "limit_value" in attrs
+        limit_value = attrs.get("limit_value")
+
+        if flag is None:
+            return attrs
+
+        if flag.limit_type == FeatureFlag.LIMIT_TYPE_NUMBER:
+            # A countable bound with no bound stored is a lie, so a full write
+            # without one is refused. A partial update that simply omits the
+            # field is not: the stored value still stands.
+            if limit_value is None and (supplied or not self.partial):
+                raise serializers.ValidationError({"limit_value": "برای پرچم عددی، مقدار محدودیت الزامی است."})
+            return attrs
+
+        if limit_value is not None:
+            raise serializers.ValidationError({"limit_value": "این پرچم محدودیت عددی ندارد."})
+        return attrs
 
 
 class AdminLedgerEntrySerializer(serializers.ModelSerializer):

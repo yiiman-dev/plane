@@ -304,19 +304,31 @@ class PlanFeatureFlagEndpoint(BillingAdminAPIView):
         plan = self.get_plan(pk)
         if plan is None:
             return Response({"error": "پلن یافت نشد."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = PlanFeatureFlagSerializer(data=request.data)
+        # This endpoint is an upsert, so an existing grant is validated as a
+        # partial update: the admin flipping ``is_enabled`` back on must not have
+        # to resend the limit. On a genuinely new grant the write is full, and a
+        # ``number`` flag then has to arrive with its bound.
+        feature_flag_id = request.data.get("feature_flag")
+        existing = PlanFeatureFlag.objects.filter(plan=plan, feature_flag_id=feature_flag_id).exists()
+        serializer = PlanFeatureFlagSerializer(data=request.data, partial=existing)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         feature_flag = serializer.validated_data["feature_flag"]
+        defaults = {
+            "is_enabled": serializer.validated_data.get("is_enabled", True),
+            "config": serializer.validated_data.get("config", {}),
+        }
+        # Only when a limit was actually supplied. ``update_or_create`` ignores
+        # keys absent from ``defaults``, so omitting the field means "leave the
+        # stored limit alone"; a bare ``get`` here would clear it instead.
+        if "limit_value" in serializer.validated_data:
+            defaults["limit_value"] = serializer.validated_data["limit_value"]
         # the pair is unique, so re-adding an existing grant flips it back on
         # instead of failing on a duplicate key
         grant, _ = PlanFeatureFlag.objects.update_or_create(
             plan=plan,
             feature_flag=feature_flag,
-            defaults={
-                "is_enabled": serializer.validated_data.get("is_enabled", True),
-                "config": serializer.validated_data.get("config", {}),
-            },
+            defaults=defaults,
         )
         return Response(PlanFeatureFlagSerializer(grant).data, status=status.HTTP_201_CREATED)
 
