@@ -20,6 +20,16 @@ from plane.billing.tests.conftest import CREDENTIALS, make_gateway
 pytestmark = pytest.mark.django_db
 
 
+# Every instance-admin route in this app, one entry per (method, url). The two
+# canaries below walk this list, so a route added to ``urls.py`` and forgotten
+# here is the one route nothing guards. When a new admin route is added, add it
+# here in the same commit -- that is the whole point of the list.
+#
+# The wallet routes name a workspace by slug, so they are written against a
+# slug that may not exist. That is deliberate: the permission check runs before
+# any lookup, so a request with a bogus slug still proves the PERMISSION denied
+# it, which is the property this list is about. Using a real workspace here
+# would make the list depend on a fixture and buy nothing.
 ADMIN_URLS = [
     ("get", "/api/billing/admin/gateways/"),
     ("post", "/api/billing/admin/gateways/"),
@@ -29,6 +39,19 @@ ADMIN_URLS = [
     ("post", "/api/billing/admin/plans/"),
     ("get", "/api/billing/admin/invoices/"),
     ("get", "/api/billing/admin/transactions/"),
+    ("get", "/api/billing/admin/workspaces/canary-team/wallet/"),
+    ("get", "/api/billing/admin/workspaces/canary-team/wallet/ledger/"),
+    ("post", "/api/billing/admin/workspaces/canary-team/wallet/grant/"),
+    ("post", "/api/billing/admin/workspaces/canary-team/wallet/revoke/"),
+]
+
+# Every wallet route that resolves a workspace from the URL and is guarded by
+# ``WorkspaceBillingLedgerPermission``. Kept next to ``ADMIN_URLS`` so the two
+# families are walked by the same style of canary rather than one being a list
+# and the other a pile of individual tests.
+WORKSPACE_WALLET_URLS = [
+    ("get", "/api/billing/workspaces/{slug}/billing/wallet/"),
+    ("get", "/api/billing/workspaces/{slug}/billing/ledger/"),
 ]
 
 
@@ -51,6 +74,43 @@ def test_admin_endpoints_reject_a_plain_user(client, django_user_model):
 
     for method, url in ADMIN_URLS:
         response = getattr(client, method)(url, format="json")
+        assert response.status_code in (401, 403), f"{method} {url} -> {response.status_code}"
+
+
+def test_every_workspace_wallet_route_rejects_a_role_15_member(client, django_user_model, workspace_factory):
+    """The workspace family must refuse role 15 on EVERY route, not one.
+
+    ``WorkSpaceAdminPermission`` accepts role 15 (``role__in=[Admin, Member]``),
+    which is the whole reason ``WorkspaceBillingLedgerPermission`` exists. A
+    single hand-written test per endpoint can only prove the endpoints someone
+    remembered; this walks the list, so a route added without a permission
+    class fails here.
+    """
+    from uuid import uuid4
+
+    from plane.db.models import WorkspaceMember
+
+    workspace = workspace_factory()
+    unique = uuid4().hex
+    user = django_user_model.objects.create(
+        username=f"member-{unique}",
+        email=f"member-{unique}@example.com",
+        first_name="Role",
+        last_name="Fifteen",
+    )
+    WorkspaceMember.objects.create(workspace=workspace, member=user, role=15)
+    client.force_login(user)
+
+    for method, url in WORKSPACE_WALLET_URLS:
+        response = getattr(client, method)(url.format(slug=workspace.slug), format="json")
+        assert response.status_code == 403, f"{method} {url} -> {response.status_code} {response.content}"
+
+
+def test_every_workspace_wallet_route_rejects_an_anonymous_caller(anonymous_client, workspace_factory):
+    workspace = workspace_factory()
+
+    for method, url in WORKSPACE_WALLET_URLS:
+        response = getattr(anonymous_client, method)(url.format(slug=workspace.slug), format="json")
         assert response.status_code in (401, 403), f"{method} {url} -> {response.status_code}"
 
 

@@ -416,6 +416,36 @@ def grant_from_admin(
     accounts, so a posting against the pool without it is invisible to
     ``account_balance(pool, workspace=ws)`` and per-workspace pool accounting
     under-counts.
+
+    Returns the entry alone; :func:`grant_from_admin_with_outcome` is this
+    function plus the replay fact, for callers that have to tell a client
+    whether its key had been used before.
+    """
+    entry, _replayed = grant_from_admin_with_outcome(
+        workspace=workspace,
+        amount_toman=amount_toman,
+        description=description,
+        created_by=created_by,
+        idempotency_key=idempotency_key,
+    )
+    return entry
+
+
+def grant_from_admin_with_outcome(
+    *, workspace, amount_toman: int, description: str, created_by, idempotency_key: str
+) -> tuple[LedgerEntry, bool]:
+    """Credit a workspace wallet and say whether this call posted it.
+
+    ``(entry, was_replayed)``. ``True`` means the row was already on file --
+    found by the ``_replay_or_none`` fast path or won by a concurrent caller
+    inside ``post_entry`` -- and nothing was minted.
+
+    The flag is passed all the way up from ``money.post_entry_with_outcome``
+    rather than reconstructed from ``created_at``. An HTTP layer has to
+    answer 200 for a replay and 201 for a fresh post, and the only way to get
+    that right from the outside is to be told; comparing timestamps is a
+    wall-clock guess that fails in both directions under clock skew and
+    reproduces in CI only by accident.
     """
     _assert_amount(amount_toman)
     description = _assert_description(description)
@@ -435,7 +465,7 @@ def grant_from_admin(
         idempotency_key, workspace=workspace, debit=spendable, credit=pool, amount_toman=amount_toman
     )
     if replay is not None:
-        return replay
+        return replay, True
 
     with transaction.atomic():
         # Locked, not read plainly (see ``_lock_wallet_row``): without the lock
@@ -446,7 +476,7 @@ def grant_from_admin(
         if cap and amount_toman > cap:
             raise GrantTooLarge()
 
-        return money.post_entry(
+        return money.post_entry_with_outcome(
             debit=spendable,
             credit=pool,
             amount_toman=amount_toman,
@@ -460,6 +490,28 @@ def grant_from_admin(
 
 def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by, idempotency_key: str) -> LedgerEntry:
     """Reverse a grant with a new entry. The original row is never edited or deleted.
+
+    Returns the reversal alone; :func:`revoke_grant_with_outcome` is this
+    function plus the replay fact.
+    """
+    reversal, _replayed = revoke_grant_with_outcome(
+        workspace=workspace,
+        entry=entry,
+        description=description,
+        created_by=created_by,
+        idempotency_key=idempotency_key,
+    )
+    return reversal
+
+
+def revoke_grant_with_outcome(
+    *, workspace, entry: LedgerEntry, description: str, created_by, idempotency_key: str
+) -> tuple[LedgerEntry, bool]:
+    """Reverse a grant and say whether this call posted the reversal.
+
+    ``(reversal, was_replayed)``. Same contract and same reasoning as
+    :func:`grant_from_admin_with_outcome`: the fact is stated by the layer
+    that knows it, not reconstructed from a timestamp by the caller.
 
     The reversal is the strict mirror of the entry being reversed: its debit
     side is the original's CREDIT account and vice versa. That is what makes it
@@ -510,7 +562,7 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
         amount_toman=entry.amount_toman,
     )
     if replay is not None:
-        return replay
+        return replay, True
 
     with transaction.atomic():
         # Re-read under the lock so the amount and legs come from committed
@@ -539,7 +591,7 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
         if not money.wallet_balance_is_enough(workspace, locked.amount_toman):
             raise InsufficientBalance("موجودی برای ابطال کل مبلغ کافی نیست.")
 
-        entry_reversal = money.post_entry(
+        entry_reversal, replayed = money.post_entry_with_outcome(
             debit=locked.credit_account,
             credit=locked.debit_account,
             amount_toman=locked.amount_toman,
@@ -563,7 +615,7 @@ def revoke_grant(*, workspace, entry: LedgerEntry, description: str, created_by,
             update_fields=["reversal_of_id", "updated_at"],
             disable_auto_set_user=True,
         )
-        return entry_reversal
+        return entry_reversal, replayed
 
 
 def charge_sms(

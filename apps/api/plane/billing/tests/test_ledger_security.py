@@ -1164,3 +1164,267 @@ def test_the_workspace_ledger_is_not_guarded_by_the_loose_admin_permission():
 
     for view in (WorkspaceLedgerView, WorkspaceWalletView):
         assert WorkSpaceAdminPermission not in view.permission_classes, view.__name__
+
+
+# --- fix round 1: the replay signal, and the exception taxonomy -----------
+
+
+def test_the_view_never_compares_timestamps_to_detect_a_replay():
+    """The 200/201 decision may not be a wall-clock comparison.
+
+    The earlier version read ``entry.created_at < started_at``, which is wrong
+    in both directions: a clock stepping backwards between the two reads makes
+    a genuinely new entry look like a replay (200 for a 201), and an app host
+    running ahead of the database host makes a replay look fresh (201 for a
+    200). Neither is reproducible in CI, so neither would ever have been
+    caught by a response test -- which is the reason the view source is
+    asserted here instead.
+
+    The service must state the fact, so the flag is checked on the way up too:
+    ``grant_from_admin`` and ``revoke_grant`` keep their plain signatures for
+    the other four callers, and the ``_with_outcome`` spellings are what the
+    views read.
+    """
+    import inspect
+
+    from plane.billing.api.views import wallet_views
+
+    source = inspect.getsource(wallet_views)
+    assert "started_at" not in source, "the view must not timestamp-compare; the service tells it the outcome"
+    assert "timezone.now" not in source
+    assert ".created_at <" not in source
+
+    # and the signal really does exist at the service boundary
+    assert hasattr(wallet_service := wallet_views.wallet_service, "grant_from_admin_with_outcome")
+    assert hasattr(wallet_service, "revoke_grant_with_outcome")
+    assert hasattr(money, "post_entry_with_outcome")
+
+
+def test_the_service_states_the_replay_fact_not_a_timestamp(client, funded_roles, instance_admin):
+    """200 on a replay, 201 on a fresh post -- from the service's own word."""
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+    payload = {"amount_toman": 250_000, "description": "اعتبار برای آزمون سیگنال بازپخش"}
+
+    first = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="signal-1",
+    )
+    second = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="signal-1",
+    )
+    third = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="signal-2",
+    )
+
+    assert first.status_code == 201, first.content
+    assert second.status_code == 200, second.content
+    assert third.status_code == 201, third.content
+    assert second.json()["id"] == first.json()["id"]
+    assert third.json()["id"] != first.json()["id"]
+
+
+def test_the_replay_flag_is_true_on_the_second_call_and_false_on_the_first(funded_workspace):
+    """The signal is asserted at the service, not only through the status code."""
+    ws, _operator = funded_workspace
+
+    first_entry, first_replayed = wallet.grant_from_admin_with_outcome(
+        workspace=ws,
+        amount_toman=10_000,
+        description="اعتبار اول برای بررسی پرچم بازپخش",
+        created_by=None,
+        idempotency_key="outcome-1",
+    )
+    second_entry, second_replayed = wallet.grant_from_admin_with_outcome(
+        workspace=ws,
+        amount_toman=10_000,
+        description="اعتبار اول برای بررسی پرچم بازپخش",
+        created_by=None,
+        idempotency_key="outcome-1",
+    )
+
+    assert (first_replayed, second_replayed) == (False, True)
+    assert first_entry.pk == second_entry.pk
+
+
+def test_revoke_states_the_replay_fact_too(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    entry = LedgerEntry.objects.get(idempotency_key="leak-1")
+    client.force_login(instance_admin)
+    payload = {"entry": str(entry.pk), "description": "ابطال برای بررسی پرچم بازپخش"}
+
+    first = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="revoke-signal-1",
+    )
+    second = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="revoke-signal-1",
+    )
+
+    assert first.status_code == 201, first.content
+    assert second.status_code == 200, second.content
+    assert second.json()["id"] == first.json()["id"]
+
+
+def test_every_wallet_error_subclass_is_in_the_status_registry():
+    """The taxonomy is closed, by introspection rather than by memory.
+
+    ``HOLD_ALLOWED_SOURCES`` drifted because an allow-list nobody re-read
+    silently accepted a source it was meant to refuse. A ``WalletError``
+    subclass added to ``wallet.py`` without a status here would drift the same
+    way, so the check is mechanical: walk every subclass, transitively, and
+    require it in the registry.
+
+    Transitive because the direct-children check would pass while a
+    second-generation subclass escaped it -- and a subclass is exactly the
+    thing ``handle_wallet_error`` refuses to resolve, since it looks up the
+    exact type.
+    """
+    from plane.billing.api.views import wallet_views
+    from plane.billing.services import wallet as wallet_module
+    from plane.billing.services.wallet import WalletError
+
+    registry = wallet_views.WALLET_ERROR_STATUS
+    assert WalletError in registry, "the bare cross-tenant refusal must stay mapped, never become a 500"
+
+    # Scoped to the module the policy errors live in, not just to the direct
+    # children: transitive, because ``handle_wallet_error`` looks up the EXACT
+    # type, and a second-generation subclass is exactly what it refuses to
+    # resolve. The module filter is what lets a test define a throwaway
+    # subclass (see below) without making this assertion meaningless.
+    found, frontier = set(), [WalletError]
+    while frontier:
+        for child in frontier.pop().__subclasses__():
+            if child.__module__ != wallet_module.__name__:
+                continue
+            if child not in found:
+                found.add(child)
+                frontier.append(child)
+
+    assert found, "introspection found no subclasses at all; this test is not doing its job"
+    unmapped = sorted(cls.__name__ for cls in found if cls not in registry)
+    assert not unmapped, f"WalletError subclasses with no HTTP status: {unmapped}"
+
+
+def test_an_unmapped_wallet_error_subclass_raises_rather_than_returning_403():
+    """A new policy error must be loud, not silently a permission failure.
+
+    This is the drift the registry exists to stop: before it, an unmapped
+    subclass fell through to a bare ``WalletError`` branch and answered 403
+    forever, with no test failing.
+    """
+    import pytest
+
+    from plane.billing.api.views import wallet_views
+    from plane.billing.services.wallet import WalletError
+
+    class SomePolicyErrorAddedLater(WalletError):
+        message = "خطای سیاستی که هنوز نگاشت نشده است."
+
+    with pytest.raises(wallet_views.UnmappedWalletError):
+        wallet_views.handle_wallet_error(SomePolicyErrorAddedLater())
+
+    # The subclass is permanently in ``WalletError.__subclasses__`` -- there is
+    # no way to unregister one -- so the introspection test above filters on
+    # ``__module__`` rather than pretending it can be removed.
+
+
+def test_the_registry_and_its_grouping_tuples_agree():
+    from plane.billing.api.views import wallet_views
+
+    wallet_views._assert_registry_matches_the_groupings()
+
+
+def test_the_bare_cross_tenant_wallet_error_is_still_a_403():
+    from plane.billing.api.views.wallet_views import handle_wallet_error
+    from plane.billing.services.wallet import WORKSPACE_MISMATCH_MESSAGE, WalletError
+
+    response = handle_wallet_error(WalletError(WORKSPACE_MISMATCH_MESSAGE))
+
+    assert response.status_code == 403
+    assert "not a server fault" not in response.data["error"]
+
+
+def test_the_generated_idempotency_key_is_unique_per_request(client, funded_roles, instance_admin):
+    """Two headerless requests must never collide, or the second looks like a replay.
+
+    A fallback derived from anything stable (the user, the body, the minute)
+    would be a correctness bug, not a weak uniqueness argument: the column is
+    globally unique, so the colliding second request would find the first
+    one's row, answer 200, and silently post nothing while the operator was
+    told nothing happened.
+    """
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+    payload = {"amount_toman": 250_000, "description": "دو درخواست بدون هدر کلید یکتا"}
+
+    first = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+    )
+    second = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+    )
+
+    assert first.status_code == 201, first.content
+    assert second.status_code == 201, second.content
+    assert first.json()["id"] != second.json()["id"]
+    assert first.json()["idempotency_key"] != second.json()["idempotency_key"]
+    # both grants really posted: no collision meant no silent no-op.
+    # The fixture starts at 400_000, so 400_000 + 2 x 250_000.
+    assert money.wallet_balance(ws) == 900_000
+
+
+def test_a_blank_idempotency_header_falls_back_to_a_fresh_key(client, funded_roles, instance_admin):
+    """Whitespace is not a key; it must not be stored as one."""
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+    payload = {"amount_toman": 250_000, "description": "هدر کلید یکتا با فاصله"}
+
+    first = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="   ",
+    )
+    second = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="   ",
+    )
+
+    assert first.status_code == 201, first.content
+    assert second.status_code == 201, second.content
+    assert first.json()["idempotency_key"] != second.json()["idempotency_key"]
+
+
+def test_the_supplied_idempotency_key_is_still_honoured(client, funded_roles, instance_admin):
+    ws, _plain, _ws_admin = funded_roles
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
+        {"amount_toman": 250_000, "description": "کلید یکتای ارسالی از هدر"},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="  honoured-key  ",
+    )
+
+    assert response.status_code == 201, response.content
+    assert response.json()["idempotency_key"] == "honoured-key", "the header value is stripped, not refuted"
