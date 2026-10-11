@@ -45,6 +45,7 @@ PUBLIC_SOURCE_LABELS = {
     LedgerSource.REFUND: "بازگشت وجه",
     LedgerSource.RELEASE_HOLD: "آزادسازی وجه",
     LedgerSource.HOLD: "وجه قفل‌شده",
+    LedgerSource.GRANT_REVERSAL: "ابطال اعتبار توسط مدیریت سامانه",
 }
 
 # Sources whose ``description`` is written by an operator for another operator.
@@ -53,30 +54,66 @@ PUBLIC_SOURCE_LABELS = {
 # another customer's situation, an internal margin discussion, or the fact that
 # a grant was compensation for a failure nobody outside should hear about.
 #
+# ``GRANT_REVERSAL`` is here for the same reason and it is the reason this is a
+# separate ``LedgerSource`` at all rather than a redaction rule on ``REFUND``.
+# ``revoke_grant`` also takes operator free text ("why are you taking this
+# back?"), and while it was booked under ``REFUND`` that note went straight to
+# the workspace admin's statement -- the leak this whole module exists to
+# prevent. Adding ``REFUND`` here instead would have fixed it by breaking
+# ``refund_to_spendable``, whose description carries the payment reference the
+# PAYER is entitled to. Two sources, two audiences.
+#
 # Deliberately a list, and deliberately short. Every OTHER source describes a
 # movement the workspace itself caused or is owed an answer about: an SMS
 # charge names its own notification log, and a hold description is the
 # explanation the owner is entitled to. Redacting those as well would trade a
 # real disclosure problem for a real transparency one.
-INTERNAL_SOURCES = frozenset({LedgerSource.ADMIN_GRANT})
+INTERNAL_SOURCES = frozenset({LedgerSource.ADMIN_GRANT, LedgerSource.GRANT_REVERSAL})
 
 
-def workspace_entries(workspace) -> QuerySet[LedgerEntry]:
-    """Every entry belonging to one workspace. The only filter is the workspace itself.
+def workspace_entries(workspace, *, source: str | None = None) -> QuerySet[LedgerEntry]:
+    """Every entry belonging to one workspace. The only tenant filter is the workspace itself.
 
     ``workspace`` is a resolved model instance, not a slug or a pk from a
     request body, so a caller cannot point this at a tenant it was not
     authorised for -- by the time it is called the question has already been
     answered by the permission class.
 
+    ``source`` narrows to one kind of movement for the tenant's own
+    statement. It takes a raw ``LedgerSource`` member because the tenant
+    projection deliberately does not expose the member itself (see
+    ``WorkspaceLedgerEntrySerializer``); a tenant that wants to filter by
+    "پیامک" sends the label it was shown, which
+    ``resolve_public_source`` maps back. It can never widen the result set,
+    only narrow it, because the workspace filter is applied regardless.
+
     ``select_related`` on both legs because every projection of an entry
     reads them; without it a statement of N entries costs 3N queries.
     """
-    return (
-        LedgerEntry.objects.filter(workspace=workspace)
-        .select_related("debit_account", "credit_account")
-        .order_by("-created_at", "-id")
-    )
+    queryset = LedgerEntry.objects.filter(workspace=workspace)
+    resolved = resolve_public_source(source)
+    if resolved is not None:
+        queryset = queryset.filter(source=resolved)
+    return queryset.select_related("debit_account", "credit_account").order_by("-created_at", "-id")
+
+
+def resolve_public_source(label_or_member: str | None) -> str | None:
+    """Map a Persian label a tenant was shown back to its LedgerSource member.
+
+    Returns ``None`` for an unrecognised value rather than guessing: the
+    caller treats that as "no filter", which shows more of the tenant's own
+    statement rather than someone else's.
+    """
+    if not label_or_member:
+        return None
+    if label_or_member in PUBLIC_SOURCE_LABELS:
+        return label_or_member
+    for member, label in PUBLIC_SOURCE_LABELS.items():
+        if label == label_or_member:
+            return member
+    if label_or_member in dict(LedgerSource.choices):
+        return label_or_member
+    return None
 
 
 def all_entries() -> QuerySet[LedgerEntry]:

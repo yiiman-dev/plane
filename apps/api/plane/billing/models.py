@@ -67,6 +67,15 @@ class LedgerSource(models.TextChoices):
     REFUND = "refund", "Refund"
     HOLD = "hold", "Hold"
     RELEASE_HOLD = "release_hold", "Release hold"
+    # The reversal of an ADMIN_GRANT, booked by ``revoke_grant``. It used to be
+    # booked as REFUND, which was wrong twice over: it filed an operator's
+    # internal cancellation note into the "payer's money came back" bucket that
+    # ``refund_to_spendable`` owns (so the ledger redaction that protects grant
+    # notes, keyed on the source, did not apply to this one), and any statement
+    # filtered on REFUND silently lost grant reversals. It is a separate source
+    # so its description can be redacted WITHOUT also redacting the payment
+    # reference a payer is entitled to.
+    GRANT_REVERSAL = "grant_reversal", "Grant reversal"
 
 
 class SubscriptionStatus(models.TextChoices):

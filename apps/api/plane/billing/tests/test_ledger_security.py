@@ -294,11 +294,22 @@ def test_workspace_entries_queryset_never_spans_workspaces(funded_workspace, wor
 
 
 def test_ledger_module_has_no_scope_parameter():
-    """The scope must come from the queryset the caller built, never from a parameter."""
+    """Scope comes from the queryset the caller built, never from a parameter.
+
+    ``source`` is allowed and is keyword-only: it can only narrow the one
+    workspace already pinned by the positional argument, never widen it.
+    Anything that could WIDEN the result set is the defect this guards.
+    """
     import inspect
 
     signature = inspect.signature(ledger.workspace_entries)
-    assert list(signature.parameters) == ["workspace"]
+    assert list(signature.parameters) == ["workspace", "source"]
+    # source is keyword-only, so no positional call can smuggle one in
+    assert signature.parameters["source"].kind is inspect.Parameter.KEYWORD_ONLY
+
+    # A widening parameter would have to be one that selects tenants.
+    for name, parameter in signature.parameters.items():
+        assert "workspace" not in name or name == "workspace", f"{name} could widen the scope"
 
 
 def test_all_entries_reaches_every_workspace(funded_workspace, workspace_factory, internal_admin):
@@ -439,3 +450,132 @@ def test_grant_serializer_accepts_a_real_grant():
     assert serializer.is_valid() is True, serializer.errors
     # stripped, so the note stored on the entry has no stray whitespace
     assert serializer.validated_data["description"] == "اعتبار جبران خطای سیستم"
+
+
+# --- a grant reversal's operator note must not reach the tenant -------------
+# ``revoke_grant`` books under LedgerSource.GRANT_REVERSAL, not REFUND,
+# precisely so the redaction in ledger.public_description can catch it.
+
+
+@pytest.fixture
+def reversed_grant_workspace(workspace_factory):
+    from plane.db.models import User
+
+    workspace = workspace_factory(name="تیم ابطال")
+    admin = User.objects.create(email="revoker@example.com", username="revoker", first_name="Revoke", last_name="Admin")
+    original = wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=300_000,
+        description="اعتبار اولیه با یادداشت کاملاً داخلی",
+        created_by=admin,
+        idempotency_key="rev-setup",
+    )
+    wallet.revoke_grant(
+        workspace=workspace,
+        entry=original,
+        description="ابطال اشتباه ادمین، این یادداشت داخلی است",
+        created_by=admin,
+        idempotency_key="rev-reversal",
+    )
+    return workspace
+
+
+def test_a_grant_reversals_operator_note_never_reaches_the_tenant(reversed_grant_workspace):
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    entry = LedgerEntry.objects.get(idempotency_key="rev-reversal")
+    body = WorkspaceLedgerEntrySerializer(entry).data
+
+    assert entry.source == "grant_reversal"
+    assert "محرمانه" not in body["description"]
+    assert "داخلی" not in body["description"]
+
+
+def test_a_grant_reversal_shows_the_tenant_a_public_label(reversed_grant_workspace):
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    entry = LedgerEntry.objects.get(idempotency_key="rev-reversal")
+    body = WorkspaceLedgerEntrySerializer(entry).data
+
+    assert body["description"] == "ابطال اعتبار توسط مدیریت سامانه"
+
+
+def test_a_payment_refund_reference_does_reach_the_tenant(reversed_grant_workspace):
+    """The payer owns this reference. Only admin-written notes are internal."""
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    wallet.refund_to_spendable(
+        workspace=reversed_grant_workspace,
+        amount_toman=50_000,
+        reason="بازگشت وجه به دلیل انصراف از خرید",
+        reference="payping-ref-7788",
+        idempotency_key="ref-visible",
+    )
+    entry = LedgerEntry.objects.get(idempotency_key="ref-visible")
+    body = WorkspaceLedgerEntrySerializer(entry).data
+
+    assert "payping-ref-7788" in body["description"]
+
+
+def test_the_admin_projection_still_shows_the_internal_note(reversed_grant_workspace):
+    from plane.billing.api.serializers import AdminLedgerEntrySerializer
+
+    entry = LedgerEntry.objects.get(idempotency_key="rev-reversal")
+    body = AdminLedgerEntrySerializer(entry).data
+
+    assert "داخلی" in body["description"]
+
+
+# --- D1: the tenant projection's field list is a deliberate contract --------
+
+
+def test_the_workspace_projection_field_list_is_pinned():
+    from plane.billing.api.serializers import WorkspaceLedgerEntrySerializer
+
+    assert WorkspaceLedgerEntrySerializer.Meta.fields == [
+        "id",
+        "amount_toman",
+        "source_label",
+        "description",
+        "created_at",
+    ]
+
+
+def test_the_admin_projection_field_list_is_pinned():
+    from plane.billing.api.serializers import AdminLedgerEntrySerializer, WorkspaceLedgerEntrySerializer
+
+    for leaked in ("created_by", "invoice", "transaction", "debit_account", "credit_account"):
+        assert leaked in AdminLedgerEntrySerializer.Meta.fields
+    assert "created_by" not in WorkspaceLedgerEntrySerializer.Meta.fields
+
+
+# --- tenant filtering works without exposing the machine member -------------
+
+
+def test_a_tenant_can_filter_by_the_persian_label_it_was_shown(reversed_grant_workspace):
+    """The tenant was shown a Persian label, so that is what it filters by."""
+    shown = ledger.public_source_label(LedgerEntry.objects.get(idempotency_key="rev-reversal"))
+    assert shown == "ابطال اعتبار توسط مدیریت سامانه"
+
+    rows = ledger.workspace_entries(reversed_grant_workspace, source=shown)
+
+    assert {row.idempotency_key for row in rows} == {"rev-reversal"}
+
+
+def test_a_tenant_filter_never_spans_workspaces(reversed_grant_workspace, workspace_factory):
+    other = workspace_factory(name="تیم بیگانه")
+    # Give the other tenant entries of its own, so a leak has somewhere to go.
+    wallet.grant_from_admin(
+        workspace=other,
+        amount_toman=777_000,
+        description="اعتبار تیم بیگانه که نباید دیده شود",
+        created_by=None,
+        idempotency_key="other-tenant",
+    )
+
+    rows = list(ledger.workspace_entries(reversed_grant_workspace))
+    assert rows, "the fixture workspace must actually have entries for this to test anything"
+    assert all(row.workspace_id == reversed_grant_workspace.pk for row in rows)
+    assert "other-tenant" not in {row.idempotency_key for row in rows}
+    # and the other tenant can see only its own
+    assert {row.idempotency_key for row in ledger.workspace_entries(other)} == {"other-tenant"}
