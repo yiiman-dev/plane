@@ -25,6 +25,10 @@ from django.db.models import QuerySet
 # Module imports
 from plane.billing.models import BillingAccessLog, LedgerEntry, LedgerSource
 
+import logging
+
+logger = logging.getLogger("plane.billing")
+
 # Admin grants are written for internal eyes. Workspace owners see that
 # credit happened, not who authorised it or why.
 #
@@ -166,10 +170,17 @@ def record_admin_read(*, workspace, view: str, request) -> BillingAccessLog | No
     an anonymous request, which the permission has already refused, must not
     leave a row attributing a read to nobody.
 
-    Never raises on the audit path itself. A failure to record an audit must not
-    deny the operator a read they are authorised for; the alternative is that a
-    broken log becomes a way to make billing disappear, which is a worse failure
-    than a missing row.
+    Never raises. A failure to record an audit must not deny the operator a
+    read they are authorised for; the alternative is that a broken log becomes a
+    way to make billing disappear, which is a worse failure than a missing row.
+
+    That guarantee is real rather than aspirational: a bare
+    ``BillingAccessLog.objects.create`` would let a database error escape as a
+    500 on a read the operator is entitled to, and worse, a failure would look
+    identical to a successful read from the operator's side. The failure is
+    logged so a broken audit trail is visible rather than silent -- an audit
+    that stops recording and nobody notices is the failure mode this table
+    exists to prevent.
     """
     user = getattr(request, "user", None)
     if user is None or not getattr(user, "is_authenticated", False):
@@ -177,12 +188,26 @@ def record_admin_read(*, workspace, view: str, request) -> BillingAccessLog | No
 
     # META is absent on a hand-built request object, so it is read defensively.
     meta = getattr(request, "META", None) or {}
-    return BillingAccessLog.objects.create(
-        viewer=user,
-        workspace=workspace,
-        view=view,
-        ip_address=(meta.get("REMOTE_ADDR") or "")[:45],
-        # Truncated because the column is 512 and an over-long agent would raise
-        # DataError, a 500, in the middle of an otherwise successful read.
-        user_agent=(meta.get("HTTP_USER_AGENT") or "")[:512],
-    )
+    try:
+        return BillingAccessLog.objects.create(
+            viewer=user,
+            workspace=workspace,
+            view=view,
+            # REMOTE_ADDR, not X-Forwarded-For: the header is client-controlled,
+            # so reading it would let a caller forge its own address in the
+            # trail. Behind a proxy this records the proxy's address, which is
+            # the honest value -- trusting the forwarded header would make the
+            # trail forgeable, which is worse than imprecise.
+            ip_address=(meta.get("REMOTE_ADDR") or "")[:45],
+            # Truncated because the column is 512 and an over-long agent would
+            # raise DataError, a 500, mid-read.
+            user_agent=(meta.get("HTTP_USER_AGENT") or "")[:512],
+        )
+    except Exception:
+        logger.exception(
+            "billing access audit failed to record; workspace=%s view=%s viewer=%s",
+            getattr(workspace, "pk", None),
+            view,
+            getattr(user, "pk", None),
+        )
+        return None
