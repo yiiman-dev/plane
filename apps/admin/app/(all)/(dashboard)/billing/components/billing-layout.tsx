@@ -14,6 +14,8 @@ const BILLING_TABS: { href: string; label: string }[] = [
   { href: "/billing/gateways/", label: "درگاه‌های پرداخت" },
   { href: "/billing/routing/", label: "انتخاب درگاه" },
   { href: "/billing/plans/", label: "پلن‌های مالی" },
+  { href: "/billing/workspaces/", label: "ورک‌اسپیس‌ها" },
+  { href: "/billing/feature-flags/", label: "پرچم‌های قابلیت" },
   { href: "/billing/transactions/", label: "تراکنش‌ها و فاکتورها" },
 ];
 
@@ -31,7 +33,9 @@ export function BillingNav() {
   return (
     <nav aria-label="ناوبری درگاه پرداخت" className="flex flex-wrap items-center gap-1 border-b border-subtle pb-3">
       {BILLING_TABS.map((tab) => {
-        const isActive = currentPath === normalizePath(tab.href);
+        const isActive =
+          currentPath === normalizePath(tab.href) ||
+          (tab.href === "/billing/workspaces/" && currentPath.startsWith("/billing/workspaces/"));
 
         return (
           <Link
