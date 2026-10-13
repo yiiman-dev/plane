@@ -27,7 +27,14 @@ export const BILLING_PLANS = "billing-plans";
  * key stable across renders.
  */
 export const buildBillingListKey = (
-  resource: "billing-invoices" | "billing-transactions",
+  resource:
+    | "billing-admin-workspaces"
+    | "billing-feature-flags"
+    | "billing-invoices"
+    | "billing-plan-quote"
+    | "billing-transactions"
+    | "billing-workspace-entitlement"
+    | "billing-workspace-feature-flags",
   params: Record<string, string | number | undefined> = {}
 ): string => {
   const query = Object.entries(params)
@@ -72,3 +79,27 @@ export const BILLING_WORKSPACE_ENTITLEMENT = (workspaceSlug: string) =>
 
 export const BILLING_WORKSPACE_FEATURE_FLAGS = (workspaceSlug: string) =>
   buildBillingListKey("billing-workspace-feature-flags", { workspaceSlug });
+
+/* admin workspace billing */
+
+/**
+ * One key per workspace, because two tenants must never share a cache entry
+ * for their money. The slug is the whole key: a detail page is read for one
+ * workspace at a time.
+ */
+export const BILLING_ADMIN_WORKSPACE_BILLING = (workspaceSlug: string) =>
+  `billing-admin-workspace-billing-${workspaceSlug}`;
+
+/* instance wide reads */
+
+/**
+ * The workspace list and the flag catalogue are server filtered and paginated, so
+ * their key carries the whole query the same way the invoice and transaction keys
+ * do. Task 7 passes the list params through these functions rather than using a
+ * bare string, otherwise paging and searching would read from one shared entry.
+ */
+export const BILLING_ADMIN_WORKSPACES = (params: Record<string, string | number | undefined> = {}) =>
+  buildBillingListKey("billing-admin-workspaces", params);
+
+export const BILLING_FEATURE_FLAGS = (params: Record<string, string | number | undefined> = {}) =>
+  buildBillingListKey("billing-feature-flags", params);

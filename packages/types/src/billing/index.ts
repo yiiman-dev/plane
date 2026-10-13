@@ -101,6 +101,9 @@ export type TPaymentGatewayRoutingConfigPayload = {
 
 /* plans */
 
+/** How an upgrade in the middle of a paid cycle treats the unused remainder. */
+export type TBillingProrationMode = "credit_remaining" | "no_extension";
+
 export type TBillingPlan = {
   access_level: string;
   code: string;
@@ -116,6 +119,10 @@ export type TBillingPlan = {
   monthly_price_toman: number;
   name: string;
   per_seat_price_toman: number;
+  proration_mode: TBillingProrationMode;
+  renew_lock_days: number;
+  /** Event code to price in Toman, kept opaque here. The backend stores it as a JSON blob. */
+  sms_prices: Record<string, number>;
   sort_order: number;
   updated_at: string;
   yearly_price_toman: number;
@@ -358,3 +365,88 @@ export type TPaymentGatewayListResponse = TPaginatedResponse<TPaymentGateway[]>;
 export type TBillingPlanListResponse = TPaginatedResponse<TBillingPlan[]>;
 export type TInvoiceListResponse = TPaginatedResponse<TInvoice[]>;
 export type TPaymentTransactionListResponse = TPaginatedResponse<TPaymentTransaction[]>;
+
+/* feature flag catalogue */
+
+/**
+ * A flag's shape decides what the plan form renders for it: a switch, a number
+ * with a unit, or "unlimited" with no control at all. One global limit number
+ * across all flags does not work, because "5 charts" and "10 projects" are not
+ * the same constraint.
+ */
+export type TBillingLimitType = "boolean" | "number" | "unlimited";
+
+/** One row of the instance wide capability catalogue. */
+export type TFeatureFlag = {
+  category: string;
+  code: string;
+  created_at: string;
+  description: string;
+  id: string;
+  is_active: boolean;
+  is_public: boolean;
+  limit_type: TBillingLimitType;
+  name: string;
+  unit_label: string;
+  updated_at: string;
+};
+
+/**
+ * A plan's grant of one capability. `limit_type` and `unit_label` are read only
+ * projections of the flag's own fields, denormalised onto the grant so the plan
+ * form can render every row without a second lookup.
+ */
+export type TPlanFeatureFlag = {
+  config: Record<string, unknown>;
+  created_at: string;
+  feature_flag: string;
+  feature_flag_code: string;
+  feature_flag_name: string;
+  id: string;
+  is_enabled: boolean;
+  /** Present only for a flag whose limit_type is "number". */
+  limit_value: number | null;
+  limit_type: TBillingLimitType;
+  unit_label: string;
+  updated_at: string;
+};
+
+/* admin workspace billing */
+
+/**
+ * One row of the admin workspace list. Read-only: the list is a triage view,
+ * not a write surface.
+ */
+export type TAdminWorkspaceSummary = {
+  balance_toman: number;
+  id: string;
+  name: string;
+  plan_code: string | null;
+  seats: number;
+  slug: string;
+};
+
+/**
+ * The admin detail page. Carries the wallet balance, so the backend writes an
+ * access-log row for every read of this payload.
+ */
+export type TAdminWorkspaceBilling = {
+  active_members: number;
+  balance_toman: number;
+  ends_at: string | null;
+  hold_balance_toman: number;
+  id: string;
+  name: string;
+  plan_code: string | null;
+  plan_name: string | null;
+  proration_mode: TBillingProrationMode | null;
+  renew_lock_days: number | null;
+  seats: number;
+  slug: string;
+  starts_at: string | null;
+  subscription_status: string | null;
+};
+
+/** The admin list endpoints return the same envelope as every other list. */
+export type TAdminWorkspaceListResponse = TPaginatedResponse<TAdminWorkspaceSummary[]>;
+export type TFeatureFlagListResponse = TPaginatedResponse<TFeatureFlag[]>;
