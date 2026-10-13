@@ -176,3 +176,32 @@ def test_the_service_survives_a_request_object_with_no_meta(db, workspace_factor
     row = BillingAccessLog.objects.get()
     assert row.viewer_id == instance_admin.pk
     assert row.user_agent == ""
+
+
+def test_a_broken_audit_does_not_break_the_read(db, workspace_factory, instance_admin, monkeypatch):
+    """The docstring promises the audit never raises. This is what proves it.
+
+    Without the try/except a database error here escapes as a 500 on a read the
+    operator is entitled to, and the operator cannot tell a failed audit from a
+    successful read -- which is the exact failure the audit table exists to
+    prevent.
+    """
+    from plane.billing.services import ledger as ledger_service
+
+    workspace = workspace_factory(name="تیم لاگ خراب")
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("audit table unavailable")
+
+    monkeypatch.setattr(ledger_service.BillingAccessLog.objects, "create", explode)
+
+    class AuthenticatedRequest:
+        user = instance_admin
+        META: dict = {}
+
+    # Must not raise.
+    result = ledger_service.record_admin_read(
+        workspace=workspace, view=BillingAccessLog.VIEW_WALLET, request=AuthenticatedRequest()
+    )
+
+    assert result is None
