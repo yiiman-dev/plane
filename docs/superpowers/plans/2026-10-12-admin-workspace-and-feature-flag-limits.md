@@ -603,7 +603,18 @@ Confirm `FeatureFlag` is imported in `serializers.py`. If not, add it to the exi
             defaults["limit_value"] = serializer.validated_data["limit_value"]
 ```
 
-The `if` is required rather than a bare `defaults["limit_value"] = serializer.validated_data.get("limit_value")`: `update_or_create` with a missing key must not clear a stored limit. Omitting the field means "leave it alone"; only an explicit value changes it. Since a `number` flag always sends a value, the "clear a number flag's limit" case is unreachable by validation.
+The `if` is required rather than a bare `defaults["limit_value"] = serializer.validated_data.get("limit_value")`: `update_or_create` with a missing key must not clear a stored limit. Omitting the field means "leave it alone"; only an explicit value changes it.
+
+**The endpoint is an upsert, so `partial` must follow the database, not the payload.** `post` runs `update_or_create` on the unique `(plan, feature_flag)` pair and its own comment states that re-adding a grant flips it back on. Under an always-full validation, an admin switching an existing `number` grant off with `{"feature_flag": pk, "is_enabled": false}` would get a 400 demanding the limit again — a regression in existing behaviour. Derive it:
+
+```python
+        existing = PlanFeatureFlag.objects.filter(plan=plan, feature_flag_id=feature_flag_id).exists()
+        serializer = PlanFeatureFlagSerializer(data=request.data, partial=existing)
+```
+
+Full write on first add (a `number` flag must arrive with its bound); incremental on re-add (an omitted field leaves the stored value alone). Add the endpoint-level test that pins this — without it, changing the line to `partial=True` leaves the suite green while an unbounded `number` grant becomes creatable.
+
+No malformed-pk guard is needed for `feature_flag_id`: `BaseAPIView.handle_exception` (`apps/api/plane/license/api/views/base.py:73`) catches Django's `ValidationError` and returns 400, so a garbage pk pushed into the UUID filter becomes a 400 rather than a 500.
 
 - [ ] **Step 5: Run the tests**
 

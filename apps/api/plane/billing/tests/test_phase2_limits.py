@@ -341,3 +341,101 @@ def test_the_endpoint_refuses_a_limit_on_a_boolean_flag(client, instance_admin):
     assert response.status_code == 400, response.content
     assert "limit_value" in response.json()
     assert PlanFeatureFlag.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_the_endpoint_refuses_a_new_number_grant_without_a_bound(client, instance_admin):
+    """The guard that makes a number flag's bound mandatory lives in the VIEW.
+
+    Changing ``partial=existing`` to ``partial=True`` would let an unbounded
+    number grant through, and this is the test that stops it.
+    """
+    plan = Plan.objects.create(code="boundless", name="پلن")
+    flag = FeatureFlag.objects.create(code="boundless-flag", name="پروژه", limit_type="number", unit_label="پروژه")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
+        {"feature_flag": str(flag.pk), "is_enabled": True},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.content
+    assert "limit_value" in response.json()
+    assert PlanFeatureFlag.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_a_malformed_feature_flag_pk_is_a_400_not_a_500(client, instance_admin):
+    """The ``existing`` lookup runs before the serializer can validate anything.
+
+    A garbage pk pushed straight into a UUID filter raises Django's
+    ``ValidationError``, which DRF's exception_handler does not catch — so the
+    guard is what turns a 500 back into the serializer's 400.
+    """
+    plan = Plan.objects.create(code="badpk", name="پلن")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
+        {"feature_flag": "not-a-uuid", "is_enabled": True},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.content
+
+
+@pytest.mark.django_db
+def test_a_json_list_as_the_feature_flag_pk_is_a_400_not_a_500(client, instance_admin):
+    """``str()`` of a list is not a UUID either, and must take the same path."""
+    plan = Plan.objects.create(code="listpk", name="پلن")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
+        {"feature_flag": ["a", "b"], "is_enabled": True},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.content
+
+
+@pytest.mark.django_db
+def test_a_zero_limit_on_a_number_flag_is_accepted_and_stored(client, instance_admin):
+    """0 is a bound, not "unset": the column is ``null=True`` for unset.
+
+    Phase 3's ``usage > limit`` comparison depends on that reading, so it is
+    pinned here rather than left to the reader of ``is None`` in ``validate()``.
+    """
+    plan = Plan.objects.create(code="zero", name="پلن")
+    flag = FeatureFlag.objects.create(code="zero-flag", name="صفر", limit_type="number", unit_label="پروژه")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
+        {"feature_flag": str(flag.pk), "is_enabled": True, "limit_value": 0},
+        format="json",
+    )
+
+    assert response.status_code == 201, response.content
+    assert response.json()["limit_value"] == 0
+    grant = PlanFeatureFlag.objects.get(plan=plan, feature_flag=flag)
+    assert grant.limit_value == 0
+
+
+@pytest.mark.django_db
+def test_a_zero_limit_on_a_boolean_flag_is_refused(client, instance_admin):
+    """The other half of the same rule: any non-None limit on a non-number flag goes."""
+    plan = Plan.objects.create(code="zero-bool", name="پلن")
+    flag = FeatureFlag.objects.create(code="zero-bool-flag", name="تاریک", limit_type="boolean")
+    client.force_login(instance_admin)
+
+    response = client.post(
+        f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
+        {"feature_flag": str(flag.pk), "is_enabled": True, "limit_value": 0},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.content
+    assert "limit_value" in response.json()
+    assert PlanFeatureFlag.objects.count() == 0
