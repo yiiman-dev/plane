@@ -128,7 +128,20 @@ export type TBillingPlan = {
   yearly_price_toman: number;
 };
 
-export type TBillingPlanPayload = Omit<TBillingPlan, "created_at" | "id" | "updated_at">;
+/**
+ * A create/update payload for a plan.
+ *
+ * The three policy fields are optional because the backend supplies defaults for
+ * them (``credit_remaining``, ``0`` and ``{}``). Deriving this as a bare
+ * ``Omit`` of ``TBillingPlan`` would make every existing caller -- including the
+ * plan form, which does not yet send them -- fail to compile for fields it has
+ * no reason to send.
+ */
+export type TBillingPlanPayload = Omit<
+  TBillingPlan,
+  "created_at" | "id" | "updated_at" | "proration_mode" | "renew_lock_days" | "sms_prices"
+> &
+  Partial<Pick<TBillingPlan, "proration_mode" | "renew_lock_days" | "sms_prices">>;
 
 /* public checkout (web app) */
 
