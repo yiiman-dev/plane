@@ -13,9 +13,13 @@ import pytest
 # Module imports
 from plane.billing.models import (
     BillingAccessLog,
+    BillingCycle,
     FeatureFlag,
     Plan,
     PlanFeatureFlag,
+    Subscription,
+    SubscriptionStatus,
+    WorkspaceFeatureFlag,
 )
 
 _flag_counter = count(1)
@@ -398,6 +402,164 @@ def test_a_json_list_as_the_feature_flag_pk_is_a_400_not_a_500(client, instance_
     )
 
     assert response.status_code == 400, response.content
+
+
+# --- feature_limit: the reader that makes limit_value reachable --------------
+
+
+@pytest.fixture
+def limited_workspace(workspace_factory):
+    """A workspace on a plan that grants a number flag with a limit of 7."""
+    workspace = workspace_factory(name="تیم محدود")
+    plan = Plan.objects.create(code="limited", name="پلن محدود")
+    flag = FeatureFlag.objects.create(code="projects", name="پروژه", limit_type="number", unit_label="پروژه")
+    grant = PlanFeatureFlag.objects.create(plan=plan, feature_flag=flag, is_enabled=True, limit_value=7)
+    Subscription.objects.create(
+        user=workspace.owner,
+        workspace=workspace,
+        plan=plan,
+        status=SubscriptionStatus.ACTIVE,
+        seats=1,
+        cycle=BillingCycle.MONTHLY,
+    )
+    WorkspaceFeatureFlag.objects.create(workspace=workspace, feature_flag=flag, is_enabled=True)
+    return workspace, flag, grant
+
+
+def test_the_effective_limit_is_returned(limited_workspace):
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace, _flag, _grant = limited_workspace
+    assert feature_limit(workspace, "projects") == 7
+
+
+def test_a_boolean_flag_has_no_numeric_limit(workspace_factory):
+    from plane.billing.services.entitlements import feature_limit
+
+    other = workspace_factory(name="تیم دیگر")
+    bool_flag = FeatureFlag.objects.create(code="charts", name="نمودار", limit_type="boolean")
+    plan = Plan.objects.create(code="boolplan", name="پلن")
+    PlanFeatureFlag.objects.create(plan=plan, feature_flag=bool_flag, is_enabled=True)
+    Subscription.objects.create(
+        user=other.owner,
+        workspace=other,
+        plan=plan,
+        status=SubscriptionStatus.ACTIVE,
+        seats=1,
+        cycle=BillingCycle.MONTHLY,
+    )
+    WorkspaceFeatureFlag.objects.create(workspace=other, feature_flag=bool_flag, is_enabled=True)
+
+    assert feature_limit(other, "charts") is None
+
+
+def test_a_flag_the_workspace_has_not_switched_on_has_no_limit(limited_workspace):
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace, flag, _grant = limited_workspace
+    WorkspaceFeatureFlag.objects.filter(workspace=workspace, feature_flag=flag).update(is_enabled=False)
+
+    assert feature_limit(workspace, "projects") is None
+
+
+def test_a_flag_the_plan_does_not_grant_has_no_limit(limited_workspace):
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace, flag, _grant = limited_workspace
+    grant = PlanFeatureFlag.objects.get(feature_flag=flag)
+    grant.is_enabled = False
+    grant.save()
+
+    assert feature_limit(workspace, "projects") is None
+
+
+def test_an_unknown_code_has_no_limit(limited_workspace):
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace, _flag, _grant = limited_workspace
+    assert feature_limit(workspace, "no-such-flag") is None
+
+
+def test_a_missing_workspace_has_no_limit():
+    from plane.billing.services.entitlements import feature_limit
+
+    assert feature_limit(None, "projects") is None
+
+
+def test_a_granted_number_flag_with_no_stored_limit_reports_none(limited_workspace):
+    """A row like this predates the serializer, and must not crash or over-grant.
+
+    ``None`` means "no countable bound here", which grants nothing. Returning the
+    stored ``None`` verbatim is the same answer, and it is the safe one: the
+    opposite reading -- "no stored bound means unbounded" -- would hand an
+    unlimited amount to every workspace on such a plan.
+    """
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace, flag, _grant = limited_workspace
+    PlanFeatureFlag.objects.filter(feature_flag=flag).update(limit_value=None)
+
+    assert feature_limit(workspace, "projects") is None
+
+
+def test_a_zero_limit_is_returned_as_zero_not_as_none(limited_workspace):
+    """``0`` is a bound -- "none allowed" -- and must survive the read.
+
+    A reader that confuses ``0`` with ``None`` turns "this plan allows no
+    projects" into "this plan allows any number of projects", which is the exact
+    inversion Phase 3's ``usage > limit`` comparison would then rely on.
+    """
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace, flag, _grant = limited_workspace
+    PlanFeatureFlag.objects.filter(feature_flag=flag).update(limit_value=0)
+
+    limit = feature_limit(workspace, "projects")
+
+    assert limit is not None
+    assert limit == 0
+
+
+def test_an_inactive_flag_has_no_limit(limited_workspace):
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace, flag, _grant = limited_workspace
+    FeatureFlag.objects.filter(code=flag.code).update(is_active=False)
+
+    assert feature_limit(workspace, "projects") is None
+
+
+def test_a_workspace_with_no_plan_has_no_limit(workspace_factory):
+    """The plan layer: no subscription and no free plan row means nothing is granted."""
+    from plane.billing.services.entitlements import feature_limit
+
+    workspace = workspace_factory(name="تیم بی‌پلن")
+    plan = Plan.objects.create(code="orphanplan", name="پلن")
+    flag = FeatureFlag.objects.create(code="orphan", name="پرچم", limit_type="number", unit_label="پروژه")
+    PlanFeatureFlag.objects.create(plan=plan, feature_flag=flag, is_enabled=True, limit_value=5)
+    WorkspaceFeatureFlag.objects.create(workspace=workspace, feature_flag=flag, is_enabled=True)
+
+    assert feature_limit(workspace, "orphan") is None
+
+
+def test_feature_limit_agrees_with_has_feature(limited_workspace):
+    """Two answers to two questions about the same switch. If they disagree, one is a lie.
+
+    The second half is the one that earns this test: drop the
+    ``WorkspaceFeatureFlag`` check from ``feature_limit`` and ``has_feature``
+    goes False while ``feature_limit`` still returns 7, so the failure lands
+    here rather than in some future consumer's incident.
+    """
+    from plane.billing.services.entitlements import feature_limit, has_feature
+
+    workspace, flag, _grant = limited_workspace
+    assert has_feature(workspace, flag.code) is True
+    assert feature_limit(workspace, flag.code) == 7
+
+    WorkspaceFeatureFlag.objects.filter(workspace=workspace, feature_flag=flag).update(is_enabled=False)
+
+    assert has_feature(workspace, flag.code) is False
+    assert feature_limit(workspace, flag.code) is None
 
 
 @pytest.mark.django_db
