@@ -6,8 +6,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
-import { BillingService, BILLING_PLANS } from "@plane/services";
-import type { TBillingPlan, TBillingPlanPayload } from "@plane/types";
+import { BillingService, BILLING_PLANS, BILLING_FEATURE_FLAGS } from "@plane/services";
+import type { TBillingPlan, TBillingPlanPayload, TFeatureFlag, TPlanFeatureFlag } from "@plane/types";
 import {
   AlertDialog,
   AlertDialogActions,
@@ -41,7 +41,7 @@ import { TextArea, TextAreaGroup } from "@makeplane/propel/components/text-area"
 import { AddOutline } from "@makeplane/propel/icons";
 import { setToast } from "@plane/blocks/toast";
 
-import { BillingNav, BillingRTLFrame } from "../components/billing-layout";
+import { BillingNav, BillingRTLFrame, BillingSection } from "../components/billing-layout";
 import { formatNumber, formatToman, getErrorMessage, toSafeNumber } from "../utils";
 
 type TPlanForm = {
@@ -58,6 +58,12 @@ type TPlanForm = {
   per_seat_price_toman: string;
   sort_order: string;
   yearly_price_toman: string;
+};
+
+type TFeatureFlagGrant = {
+  feature_flag_code: string;
+  is_enabled: boolean;
+  limit_value?: number | null;
 };
 
 const emptyForm = (): TPlanForm => ({
@@ -220,6 +226,117 @@ function PlanFormFields({
   );
 }
 
+function FeatureFlagsSection({
+  flags,
+  grants,
+  onUpdateGrant,
+  isPending,
+}: {
+  flags: TFeatureFlag[];
+  grants: TFeatureFlagGrant[];
+  onUpdateGrant: (flag: TFeatureFlag, grant: Partial<TFeatureFlagGrant>) => void;
+  isPending: boolean;
+}) {
+  // Group by category preserving backend order
+  const categories = useMemo(() => {
+    const map = new Map<string, TFeatureFlag[]>();
+    for (const flag of flags) {
+      if (!map.has(flag.category)) {
+        map.set(flag.category, []);
+      }
+      map.get(flag.category)!.push(flag);
+    }
+    return map;
+  }, [flags]);
+
+  const grantMap = useMemo(() => new Map(grants.map((g) => [g.feature_flag_code, g])), [grants]);
+
+  return (
+    <BillingSection title="پرچم‌های قابلیت">
+      <div className="rounded-custom mb-4 border border-warning-subtle bg-warning-subtle px-4 py-3 text-13 text-warning-primary">
+        تغییر پرچم‌ها روی اشتراک‌های فعال بلافاصله اعمال می‌شود.
+      </div>
+      {Array.from(categories.entries()).map(([category, categoryFlags]) => (
+        <div key={category} className="mb-4">
+          <h3 className="mb-2 text-12 text-tertiary">{category}</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {categoryFlags.map((flag) => {
+              const grant = grantMap.get(flag.code);
+              const isDisabled = !flag.is_active;
+
+              return (
+                <div
+                  key={flag.id}
+                  className={`rounded-custom flex flex-col gap-1.5 border border-subtle p-3 ${isDisabled ? "opacity-50" : ""}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate text-13 text-primary">{flag.name}</span>
+                      <span className="font-mono text-11 text-tertiary">{flag.code}</span>
+                    </div>
+                    <Badge
+                      size="xs"
+                      variant="info"
+                      label={
+                        flag.limit_type === "boolean" ? "روشن/خاموش" : flag.limit_type === "number" ? "عددی" : "نامحدود"
+                      }
+                    />
+                  </div>
+
+                  {isDisabled ? (
+                    <span className="text-12 text-tertiary">این پرچم غیرفعال است و قابل تغییر نیست.</span>
+                  ) : flag.limit_type === "boolean" ? (
+                    <Switch
+                      size="sm"
+                      checked={grant?.is_enabled ?? false}
+                      onCheckedChange={(checked) => onUpdateGrant(flag, { is_enabled: checked })}
+                      disabled={isPending}
+                      aria-label={flag.name}
+                    />
+                  ) : flag.limit_type === "number" ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        size="lg"
+                        value={
+                          grant?.limit_value !== null && grant?.limit_value !== undefined
+                            ? grant.limit_value.toString()
+                            : ""
+                        }
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (value === "") {
+                            onUpdateGrant(flag, { limit_value: null });
+                          } else {
+                            const num = Number(value);
+                            if (!Number.isNaN(num)) {
+                              onUpdateGrant(flag, { limit_value: num });
+                            }
+                          }
+                        }}
+                        disabled={isPending}
+                        placeholder="مقدار محدودیت"
+                        aria-label={`${flag.name} - مقدار محدودیت`}
+                      />
+                      {flag.unit_label && <span className="text-13 text-tertiary">{flag.unit_label}</span>}
+                      {(grant?.limit_value === null || grant?.limit_value === undefined) && (
+                        <span className="text-12 text-danger-primary">برای پرچم عددی، مقدار محدودیت الزامی است.</span>
+                      )}
+                    </div>
+                  ) : flag.limit_type === "unlimited" ? (
+                    <span className="text-13 text-tertiary">نامحدود</span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </BillingSection>
+  );
+}
+
 function PlanStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
@@ -348,12 +465,63 @@ export default function BillingPlansPage() {
   const [createForm, setCreateForm] = useState<TPlanForm>(emptyForm);
   const [editPlan, setEditPlan] = useState<TBillingPlan | null>(null);
   const [editForm, setEditForm] = useState<TPlanForm>(emptyForm);
+  const [_editGrants, setEditGrants] = useState<TFeatureFlagGrant[]>([]);
   const [deletePlan, setDeletePlan] = useState<TBillingPlan | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Fetch feature flags catalogue
+  const { data: flagsData } = useSWR(BILLING_FEATURE_FLAGS({}), () => BillingService.featureFlags({}));
+  const allFlags = useMemo<TFeatureFlag[]>(() => flagsData?.results ?? [], [flagsData]);
+
+  // Fetch grants for the plan being edited
+  const grantsKey = editPlan ? `billing-plan-grants-${editPlan.id}` : null;
+  const { data: grantsData } = useSWR(grantsKey, () =>
+    BillingService.get(`/api/billing/admin/plans/${editPlan!.id}/feature-flags/`).then((r) => r.data)
+  );
+
   const plans = useMemo<TBillingPlan[]>(() => data?.results ?? [], [data]);
   const activeCount = useMemo(() => plans.filter((plan) => plan.is_active).length, [plans]);
+
+  const grants = useMemo<TFeatureFlagGrant[]>(() => {
+    if (!grantsData) return [];
+    return (
+      grantsData.results?.map((g: TPlanFeatureFlag) => ({
+        feature_flag_code: g.feature_flag_code,
+        is_enabled: g.is_enabled,
+        limit_value: g.limit_value,
+      })) ?? []
+    );
+  }, [grantsData]);
+
+  // Sync editGrants with grants from server when they load
+  useMemo(() => {
+    if (grants.length > 0) {
+      setEditGrants(grants);
+    } else if (!editPlan) {
+      setEditGrants([]);
+    }
+  }, [grants, editPlan]);
+
+  const updateGrant = useCallback((flag: TFeatureFlag, patch: Partial<TFeatureFlagGrant>) => {
+    setEditGrants((prev) => {
+      const existingIndex = prev.findIndex((g) => g.feature_flag_code === flag.code);
+      const merged = { ...prev[existingIndex], ...patch, feature_flag_code: flag.code };
+      // Never send limit_value for boolean or unlimited
+      if (flag.limit_type === "boolean" || flag.limit_type === "unlimited") {
+        const { limit_value, ...rest } = merged;
+        return existingIndex >= 0
+          ? [...prev.slice(0, existingIndex), rest, ...prev.slice(existingIndex + 1)]
+          : [...prev, rest];
+      }
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = merged;
+        return next;
+      }
+      return [...prev, merged];
+    });
+  }, []);
 
   const createValid = useMemo(
     () => createForm.name.trim().length > 0 && createForm.code.trim().length > 0 && createForm.is_active !== null,
@@ -386,6 +554,16 @@ export default function BillingPlansPage() {
     // The code is immutable after creation, so it is always taken from the stored plan.
     try {
       await BillingService.updatePlan(editPlan.id, { ...toPayload(editForm), code: editPlan.code });
+      // Also update feature flag grants
+      if (grants.length > 0) {
+        await BillingService.patch(`/api/billing/admin/plans/${editPlan.id}/feature-flags/`, {
+          grants: grants.map((g) => ({
+            feature_flag_code: g.feature_flag_code,
+            is_enabled: g.is_enabled,
+            limit_value: g.limit_value,
+          })),
+        });
+      }
       setToast({ type: "success", title: "ذخیره شد", message: `پلن ${editPlan.name} ذخیره شد.` });
       setEditPlan(null);
       mutate();
@@ -398,7 +576,7 @@ export default function BillingPlansPage() {
     } finally {
       setIsPending(false);
     }
-  }, [editForm, editPlan, mutate]);
+  }, [editForm, editPlan, grants, mutate]);
 
   const handleDelete = useCallback(async () => {
     if (!deletePlan) return;
@@ -579,6 +757,14 @@ export default function BillingPlansPage() {
                   <span className="text-12 text-tertiary">کد پلن پس از ایجاد قابل تغییر نیست.</span>
                 </div>
                 <PlanFormFields form={editForm} idPrefix="edit" onChange={setEditForm} />
+                {editPlan && (
+                  <FeatureFlagsSection
+                    flags={allFlags}
+                    grants={grants}
+                    onUpdateGrant={updateGrant}
+                    isPending={isPending}
+                  />
+                )}
               </div>
             </DialogBody>
           </DialogMain>
