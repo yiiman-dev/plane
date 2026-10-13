@@ -13,7 +13,9 @@ from rest_framework import status
 from rest_framework.response import Response
 
 # Module imports
+from plane.billing.api.views.base import WORKSPACE_NOT_FOUND, WorkspaceContextMixin
 from plane.billing.api.serializers import (
+    AdminWorkspaceBillingSerializer,
     FeatureFlagSerializer,
     GatewayRoutingConfigSerializer,
     InvoiceSerializer,
@@ -24,6 +26,7 @@ from plane.billing.api.serializers import (
 )
 from plane.billing.gateways.registry import supported_codes
 from plane.billing.models import (
+    BillingAccessLog,
     FeatureFlag,
     GatewayRoutingConfig,
     Invoice,
@@ -31,7 +34,12 @@ from plane.billing.models import (
     PaymentTransaction,
     Plan,
     PlanFeatureFlag,
+    Subscription,
+    SubscriptionStatus,
 )
+from plane.billing.services import ledger as ledger_service
+from plane.billing.services import money as money_service
+from plane.db.models import Workspace, WorkspaceMember
 from plane.license.api.permissions import InstanceAdminPermission
 from plane.license.api.views.base import BaseAPIView
 
@@ -349,3 +357,114 @@ class PlanFeatureFlagEndpoint(BillingAdminAPIView):
         if not deleted:
             return Response({"error": "این پرچم به پلن متصل نیست."}, status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminWorkspaceListEndpoint(BillingAdminAPIView):
+    """Every workspace with the three numbers an operator triages by.
+
+    Reads the plan, the seat count and the wallet balance of every tenant. This
+    page is deliberately NOT audited row by row: it exists to decide which
+    workspace to open, and one log row per tenant per page view would bury the
+    deliberate money reads of the detail page in noise. The detail page is where
+    money is actually inspected.
+
+    ``on_results`` receives only the page's rows (``paginator.py:714``), so the
+    two lookups below cost one query each for the whole page rather than one per
+    row.
+
+    The rows are plain dicts rather than a serializer's output because
+    ``paginate`` hands the page to ``on_results`` and serialises whatever comes
+    back; a ``ModelSerializer`` for a shape no model has would be dead code.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+
+    def get(self, request):
+        # ``id`` breaks the tie so the ordering is total: the paginator pages by
+        # a cursor, and two workspaces sharing a name would otherwise have no
+        # stable order between them.
+        queryset = Workspace.objects.order_by("name", "id")
+
+        def build(page):
+            workspaces = list(page)
+            ids = [workspace.pk for workspace in workspaces]
+            if not ids:
+                return []
+
+            plan_by_workspace = {
+                row["workspace_id"]: row
+                for row in Subscription.objects.filter(workspace_id__in=ids, status=SubscriptionStatus.ACTIVE).values(
+                    "workspace_id", "plan__code", "seats"
+                )
+            }
+            # Read-only by construction: ``wallet_balances`` never creates the
+            # ledger account, so paging this list leaves no rows behind it.
+            balances = money_service.wallet_balances(ids)
+
+            return [
+                {
+                    "id": str(workspace.pk),
+                    "name": workspace.name,
+                    "slug": workspace.slug,
+                    "plan_code": (plan_by_workspace.get(workspace.pk) or {}).get("plan__code"),
+                    "seats": (plan_by_workspace.get(workspace.pk) or {}).get("seats", 0),
+                    # An absent account, not a stored zero balance: the account
+                    # simply does not exist yet for this workspace.
+                    "balance_toman": balances.get(workspace.pk, 0),
+                }
+                for workspace in workspaces
+            ]
+
+        return self.paginate(request, queryset=queryset, on_results=build, default_per_page=50)
+
+
+class AdminWorkspaceBillingEndpoint(WorkspaceContextMixin, BillingAdminAPIView):
+    """The billing picture of one workspace: plan, subscription, seats and money.
+
+    Returns the wallet balance, so it writes an access-log row exactly as the
+    wallet endpoint does. The audit trail has to follow the money, not a
+    particular URL.
+
+    The workspace is the one the URL resolved. Nothing in this module reads a
+    workspace, a slug or a scope out of the query string, so a forged
+    ``?slug=other`` has nowhere to land.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+
+    def get(self, request, slug):
+        workspace = self.workspace
+        if workspace is None:
+            # Before the audit row, never after: a row must name a read that
+            # actually happened.
+            return Response(WORKSPACE_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+
+        ledger_service.record_admin_read(workspace=workspace, view=BillingAccessLog.VIEW_WALLET, request=request)
+
+        subscription = (
+            Subscription.objects.filter(workspace=workspace, status=SubscriptionStatus.ACTIVE)
+            .select_related("plan")
+            .first()
+        )
+        plan = subscription.plan if subscription else None
+
+        return Response(
+            AdminWorkspaceBillingSerializer(
+                {
+                    "id": workspace.pk,
+                    "name": workspace.name,
+                    "slug": workspace.slug,
+                    "plan_code": plan.code if plan else None,
+                    "plan_name": plan.name if plan else None,
+                    "seats": subscription.seats if subscription else 0,
+                    "balance_toman": money_service.wallet_balance(workspace),
+                    "hold_balance_toman": money_service.wallet_hold_balance(workspace),
+                    "subscription_status": subscription.status if subscription else None,
+                    "starts_at": subscription.starts_at if subscription else None,
+                    "ends_at": subscription.ends_at if subscription else None,
+                    "renew_lock_days": plan.renew_lock_days if plan else None,
+                    "proration_mode": plan.proration_mode if plan else None,
+                    "active_members": WorkspaceMember.objects.filter(workspace=workspace, is_active=True).count(),
+                }
+            ).data
+        )

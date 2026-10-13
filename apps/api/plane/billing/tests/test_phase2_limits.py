@@ -6,6 +6,7 @@
 
 # Python imports
 from itertools import count
+from uuid import uuid4
 
 # Third party imports
 import pytest
@@ -601,3 +602,447 @@ def test_a_zero_limit_on_a_boolean_flag_is_refused(client, instance_admin):
     assert response.status_code == 400, response.content
     assert "limit_value" in response.json()
     assert PlanFeatureFlag.objects.count() == 0
+
+
+# --- wallet_balances: the batch reader behind the list page -----------------
+# The dangerous failure is reporting HELD money as spendable, so the held
+# account is pinned separately from the spendable one.
+
+
+@pytest.fixture
+def funded_workspace(workspace_factory):
+    """A workspace credited once by hand.
+
+    Local rather than imported: ``test_access_log.py`` owns a fixture of this
+    name, and a fixture cannot be imported across test modules without
+    dragging that module's dependencies along.
+    """
+    from plane.billing.services import wallet
+
+    ws = workspace_factory(name="تیم بررسی", slug=f"limits-team-{uuid4().hex[:8]}")
+    wallet.grant_from_admin(
+        workspace=ws,
+        amount_toman=400_000,
+        description="اعتبار برای بررسی",
+        created_by=None,
+        idempotency_key=f"limits-{uuid4().hex}",
+    )
+    return ws, None
+
+
+def test_the_batch_balance_matches_the_single_read(workspace_factory):
+    from plane.billing.services import money, wallet
+
+    first = workspace_factory(name="تیم یک")
+    second = workspace_factory(name="تیم دو")
+    wallet.grant_from_admin(
+        workspace=first, amount_toman=400_000, description="اعتبار اول", created_by=None, idempotency_key="wb-1"
+    )
+    wallet.grant_from_admin(
+        workspace=second, amount_toman=900_000, description="اعتبار دوم", created_by=None, idempotency_key="wb-2"
+    )
+
+    totals = money.wallet_balances([first.pk, second.pk])
+
+    assert totals[first.pk] == money.wallet_balance(first) == 400_000
+    assert totals[second.pk] == money.wallet_balance(second) == 900_000
+
+
+def test_held_money_is_not_reported_as_spendable(workspace_factory):
+    """A hold moves money to the held account. If both accounts are summed the
+    balance looks untouched and every grant appears to have been ignored."""
+    from plane.billing.services import money, wallet
+
+    workspace = workspace_factory(name="تیم نگه‌داری")
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=500_000,
+        description="اعتبار اولیه",
+        created_by=None,
+        idempotency_key="wb-hold-grant",
+    )
+    wallet.hold_funds(
+        workspace=workspace,
+        amount_toman=300_000,
+        description="نگه‌داری بابت فاکتور",
+        idempotency_key="wb-hold-1",
+    )
+
+    totals = money.wallet_balances([workspace.pk])
+
+    assert totals[workspace.pk] == 200_000
+    assert money.wallet_hold_balance(workspace) == 300_000
+    # The single read must agree, or the two APIs disagree about the same wallet.
+    assert totals[workspace.pk] == money.wallet_balance(workspace)
+
+
+def test_a_workspace_with_no_wallet_is_absent_rather_than_zero(workspace_factory):
+    """The list page reads a missing account as zero. The helper must not CREATE
+    a wallet row on a read-only page."""
+    from plane.billing.models import LedgerAccount, Wallet
+    from plane.billing.services import money
+
+    workspace = workspace_factory(name="تیم خالی")
+
+    totals = money.wallet_balances([workspace.pk])
+
+    assert workspace.pk not in totals
+    assert Wallet.objects.filter(workspace=workspace).count() == 0
+    # The Wallet row is not the one that matters: it is the ledger ACCOUNT that
+    # ``wallet_balance`` creates, through ``get_or_create_wallet_accounts``. If
+    # the batch reader called that, a read-only list page would leave a row per
+    # workspace behind it. Pinned by code, not by kind, because both legs share
+    # the ``wallet:default:`` prefix.
+    assert not LedgerAccount.objects.filter(code=money.WalletAccountCode.wallet_default(workspace.pk)).exists()
+
+
+def test_the_batch_reader_agrees_with_the_single_read_after_a_refund(workspace_factory):
+    from plane.billing.services import money, wallet
+
+    workspace = workspace_factory(name="تیم بازپرداخت")
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=1_000_000,
+        description="اعتبار اولیه",
+        created_by=None,
+        idempotency_key="wb-r-grant",
+    )
+    wallet.refund_to_spendable(
+        workspace=workspace,
+        amount_toman=400_000,
+        reason="انصراف از خرید",
+        reference="pay-7788",
+        idempotency_key="wb-r-1",
+    )
+
+    # 1_400_000, not 1_000_000: a grant DEBITS the wallet (it draws on the
+    # admin grant pool) and ``refund_to_spendable`` debits it again, so both
+    # movements land on the same side and the sum is 1_000_000 + 400_000. The
+    # point of the test is the agreement, and it is checked against the single
+    # read as well so a future change to either direction breaks it here.
+    assert money.wallet_balances([workspace.pk])[workspace.pk] == money.wallet_balance(workspace) == 1_400_000
+
+
+def test_the_batch_reader_returns_nothing_for_an_empty_workspace_list():
+    from plane.billing.services import money
+
+    assert money.wallet_balances([]) == {}
+
+
+@pytest.mark.django_db
+def test_the_batch_reader_sees_an_entry_posted_without_a_workspace(workspace_factory):
+    """``post_entry`` accepts ``workspace=None``, so a workspace-owned account
+    owns entries that name no workspace. Scoping the entries by workspace as
+    well would hide them and under-count the balance -- which is exactly what
+    ``money._signed_total``'s docstring says, so it is pinned here rather than
+    trusted."""
+    from plane.billing.models import LedgerAccount
+    from plane.billing.services import money
+
+    workspace = workspace_factory(name="تیم بی‌فضای کاری")
+    wallet_service = pytest.importorskip("plane.billing.services.wallet")
+    wallet_service.grant_from_admin(
+        workspace=workspace,
+        amount_toman=300_000,
+        description="اعتبار اولیه",
+        created_by=None,
+        idempotency_key="ws-less-1",
+    )
+    spendable = LedgerAccount.objects.get(code=money.WalletAccountCode.wallet_default(workspace.pk))
+    pool = LedgerAccount.objects.get(code=money.ADMIN_GRANT_POOL)
+    money.post_entry(
+        debit=pool,
+        credit=spendable,
+        amount_toman=120_000,
+        source="admin_grant",
+        workspace=None,  # the whole point of the test
+        description="اعتبار بدون فضای کاری",
+        created_by=None,
+        idempotency_key="ws-less-2",
+    )
+
+    # 180_000, not 420_000: a grant DEBITS the spendable account, so the
+    # hand-posted 120_000 CREDIT is what comes off the top.
+    assert money.wallet_balances([workspace.pk])[workspace.pk] == money.wallet_balance(workspace) == 180_000
+
+
+# --- the admin workspace endpoints -----------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_workspace_list_needs_an_instance_admin(client, funded_workspace):
+    from plane.db.models import User
+
+    plain = User.objects.create(username="lister", email="lister@example.com")
+    client.force_login(plain)
+
+    response = client.get("/api/billing/admin/workspaces/")
+
+    assert response.status_code in (401, 403)
+
+
+@pytest.mark.django_db
+def test_the_workspace_list_returns_each_workspace_with_its_plan_and_balance(client, workspace_factory, instance_admin):
+    client.force_login(instance_admin)
+    first = workspace_factory(name="تیم الف")
+    second = workspace_factory(name="تیم ب")
+
+    response = client.get("/api/billing/admin/workspaces/")
+
+    assert response.status_code == 200, response.content
+    slugs = {row["slug"] for row in response.json()["results"]}
+    assert {first.slug, second.slug} <= slugs
+
+
+@pytest.mark.django_db
+def test_the_workspace_list_reports_the_plan_code(client, workspace_factory, instance_admin):
+    workspace = workspace_factory(name="تیم پلن")
+    plan = Plan.objects.create(code="listed", name="پلن فهرست")
+    # ``user`` is NOT NULL on Subscription: the plan is bought by somebody, and
+    # the workspace's owner stands in for them here.
+    Subscription.objects.create(
+        workspace=workspace,
+        user=workspace.owner,
+        plan=plan,
+        status=SubscriptionStatus.ACTIVE,
+        seats=3,
+        cycle=BillingCycle.MONTHLY,
+    )
+    client.force_login(instance_admin)
+
+    rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
+
+    assert rows[workspace.slug]["plan_code"] == "listed"
+    assert rows[workspace.slug]["seats"] == 3
+
+
+@pytest.mark.django_db
+def test_the_workspace_list_reports_the_wallet_balance(client, workspace_factory, instance_admin):
+    from plane.billing.services import wallet
+
+    workspace = workspace_factory(name="تیم موجودی")
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=250_000,
+        description="اعتبار اولیه برای فهرست",
+        created_by=None,
+        idempotency_key="list-1",
+    )
+    client.force_login(instance_admin)
+
+    rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
+
+    assert rows[workspace.slug]["balance_toman"] == 250_000
+
+
+@pytest.mark.django_db
+def test_the_workspace_list_reports_a_held_wallet_as_its_spendable_remainder(client, workspace_factory, instance_admin):
+    """The row must agree with the detail page's balance, and the detail page's
+    balance is the SPENDABLE one -- a hold moves money out of it."""
+    from plane.billing.services import wallet
+
+    workspace = workspace_factory(name="تیم قفل")
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=700_000,
+        description="اعتبار اولیه",
+        created_by=None,
+        idempotency_key="hold-list-1",
+    )
+    wallet.hold_funds(workspace=workspace, amount_toman=200_000, description="نگه‌داری", idempotency_key="hold-list-2")
+    client.force_login(instance_admin)
+
+    rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
+
+    assert rows[workspace.slug]["balance_toman"] == 500_000
+
+
+@pytest.mark.django_db
+def test_the_workspace_list_reads_a_workspace_with_no_wallet_as_zero(client, workspace_factory, instance_admin):
+    """An absent account is the list page's zero, and reaching the page must not
+    have created one."""
+    from plane.billing.models import LedgerAccount, Wallet
+    from plane.billing.services import money
+
+    workspace = workspace_factory(name="تیم بی‌موجودی")
+    client.force_login(instance_admin)
+
+    rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
+
+    assert rows[workspace.slug]["balance_toman"] == 0
+    assert Wallet.objects.filter(workspace=workspace).count() == 0
+    assert not LedgerAccount.objects.filter(code=money.WalletAccountCode.wallet_default(workspace.pk)).exists()
+
+
+@pytest.mark.django_db
+def test_the_workspace_list_is_not_audited_row_by_row(client, funded_workspace, instance_admin):
+    """The list page exists to choose a workspace to open; the money is inspected
+    on the detail page. One row per tenant per page view would bury that."""
+    client.force_login(instance_admin)
+
+    client.get("/api/billing/admin/workspaces/")
+
+    assert BillingAccessLog.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_the_detail_page_returns_plan_seats_and_money(client, workspace_factory, instance_admin):
+    from plane.billing.services import wallet
+
+    workspace = workspace_factory(name="تیم جزئیات")
+    plan = Plan.objects.create(code="detail", name="پلن جزئیات")
+    Subscription.objects.create(
+        workspace=workspace,
+        user=workspace.owner,
+        plan=plan,
+        status=SubscriptionStatus.ACTIVE,
+        seats=5,
+        cycle=BillingCycle.YEARLY,
+    )
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=1_000_000,
+        description="اعتبار برای صفحهٔ جزئیات",
+        created_by=None,
+        idempotency_key="det-1",
+    )
+    client.force_login(instance_admin)
+
+    response = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/")
+
+    assert response.status_code == 200, response.content
+    body = response.json()
+    assert body["slug"] == workspace.slug
+    assert body["name"] == "تیم جزئیات"
+    assert body["plan_code"] == "detail"
+    assert body["seats"] == 5
+    assert body["balance_toman"] == 1_000_000
+
+
+@pytest.mark.django_db
+def test_the_detail_page_separates_the_held_amount_from_the_spendable_one(client, workspace_factory, instance_admin):
+    from plane.billing.services import wallet
+
+    workspace = workspace_factory(name="تیم نگه‌داری جزئیات")
+    wallet.grant_from_admin(
+        workspace=workspace,
+        amount_toman=500_000,
+        description="اعتبار اولیه",
+        created_by=None,
+        idempotency_key="det-hold-1",
+    )
+    wallet.hold_funds(workspace=workspace, amount_toman=150_000, description="نگه‌داری", idempotency_key="det-hold-2")
+    client.force_login(instance_admin)
+
+    body = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/").json()
+
+    assert body["balance_toman"] == 350_000
+    assert body["hold_balance_toman"] == 150_000
+
+
+@pytest.mark.django_db
+def test_the_detail_page_of_a_workspace_with_no_subscription_reports_nulls(client, workspace_factory, instance_admin):
+    """A workspace with no plan is a normal state, not an error: nulls and zeros,
+    never a 404."""
+    workspace = workspace_factory(name="تیم بدون پلن")
+    client.force_login(instance_admin)
+
+    body = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/").json()
+
+    assert body["plan_code"] is None
+    assert body["plan_name"] is None
+    assert body["seats"] == 0
+    assert body["balance_toman"] == 0
+    assert body["hold_balance_toman"] == 0
+    assert body["subscription_status"] is None
+
+
+@pytest.mark.django_db
+def test_the_detail_page_of_an_unknown_workspace_is_404(client, instance_admin):
+    client.force_login(instance_admin)
+
+    assert client.get("/api/billing/admin/workspaces/no-such-workspace/billing/").status_code == 404
+
+
+@pytest.mark.django_db
+def test_a_404_detail_page_leaves_no_audit_row(client, instance_admin):
+    """The row must name a read that happened. A refused lookup is not one."""
+    client.force_login(instance_admin)
+
+    client.get("/api/billing/admin/workspaces/no-such-workspace/billing/")
+
+    assert BillingAccessLog.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_the_detail_page_is_refused_to_a_plain_user(client, funded_workspace):
+    from plane.db.models import User
+
+    workspace, _operator = funded_workspace
+    plain = User.objects.create(username="detail-plain", email="detail-plain@example.com")
+    client.force_login(plain)
+
+    response = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/")
+
+    assert response.status_code in (401, 403)
+
+
+@pytest.mark.django_db
+def test_the_detail_page_writes_an_access_log_row(client, funded_workspace, instance_admin):
+    """It returns the balance, so it is a money read and must be audited like one."""
+    workspace, _operator = funded_workspace
+    client.force_login(instance_admin)
+
+    client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/")
+
+    assert BillingAccessLog.objects.filter(view=BillingAccessLog.VIEW_WALLET).count() == 1
+
+
+@pytest.mark.django_db
+def test_the_detail_page_ignores_a_forged_workspace_query_parameter(client, workspace_factory, instance_admin):
+    """The URL decides which workspace; ?slug= must not widen it."""
+    mine = workspace_factory(name="تیم خودم")
+    other = workspace_factory(name="تیم بیگانه")
+    client.force_login(instance_admin)
+
+    response = client.get(f"/api/billing/admin/workspaces/{mine.slug}/billing/?slug={other.slug}")
+
+    assert response.status_code == 200
+    assert response.json()["slug"] == mine.slug
+
+
+@pytest.mark.django_db
+def test_the_detail_page_counts_the_active_members(client, workspace_factory, instance_admin):
+    from plane.db.models import User, WorkspaceMember
+
+    workspace = workspace_factory(name="تیم اعضا")
+    live = User.objects.create(username="live-member", email="live-member@example.com")
+    gone = User.objects.create(username="gone-member", email="gone-member@example.com")
+    WorkspaceMember.objects.create(workspace=workspace, member=live, role=20)
+    WorkspaceMember.objects.create(workspace=workspace, member=gone, role=15, is_active=False)
+    client.force_login(instance_admin)
+
+    body = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/").json()
+
+    assert body["active_members"] == 1
+
+
+@pytest.mark.django_db
+def test_the_feature_flag_catalogue_is_instance_admin_only(client):
+    from plane.db.models import User
+
+    plain = User.objects.create(username="flag-plain", email="flag-plain@example.com")
+    client.force_login(plain)
+
+    assert client.get("/api/billing/admin/feature-flags/").status_code in (401, 403)
+
+
+@pytest.mark.django_db
+def test_the_feature_flag_catalogue_returns_the_typed_limit(client, instance_admin):
+    FeatureFlag.objects.create(code="typed", name="پرچم نوع‌دار", limit_type="number", unit_label="پروژه")
+    client.force_login(instance_admin)
+
+    body = client.get("/api/billing/admin/feature-flags/").json()
+
+    assert body["results"][0]["limit_type"] == "number"
+    assert body["results"][0]["unit_label"] == "پروژه"

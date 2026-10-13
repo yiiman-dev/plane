@@ -65,6 +65,7 @@ from rest_framework.response import Response
 
 # Module imports
 from plane.billing.api.permissions import WorkspaceBillingLedgerPermission
+from plane.billing.api.views.base import WORKSPACE_NOT_FOUND, WorkspaceContextMixin
 from plane.billing.api.serializers import (
     AdminLedgerEntrySerializer,
     WalletGrantSerializer,
@@ -76,10 +77,13 @@ from plane.billing.api.views.admin_views import BillingAdminAPIView
 from plane.billing.models import BillingAccessLog, LedgerEntry, Wallet
 from plane.billing.services import ledger as ledger_service
 from plane.billing.services import wallet as wallet_service
-from plane.db.models import Workspace
 from plane.license.api.permissions import InstanceAdminPermission
 
-WORKSPACE_NOT_FOUND = {"error": "ورک‌اسپیس یافت نشد."}
+# ``WORKSPACE_NOT_FOUND`` and ``WorkspaceContextMixin`` are defined in
+# ``plane.billing.api.views.base`` and imported above: ``admin_views`` needs
+# both, and it is imported BY this module, so defining them here would close a
+# cycle. Re-exported by the import, so ``from ...wallet_views import
+# WORKSPACE_NOT_FOUND`` keeps working for anything already doing that.
 
 # ``WalletError`` subclasses that mean "this request is malformed", mapped to
 # 400. Listed rather than caught wholesale, because the base class also
@@ -199,27 +203,6 @@ def handle_wallet_error(error: Exception) -> Response:
     # Not a wallet policy failure at all -- a programming error here should be a
     # 500 rather than dressed up as a client mistake.
     raise error
-
-
-class WorkspaceContextMixin:
-    """Resolves the workspace from the URL and nothing else.
-
-    ``workspace_slug`` is also what the permission classes read, so the
-    object that was authorised and the object being served cannot differ:
-    both spellings go through the same ``self.kwargs["slug"]``.
-    """
-
-    @property
-    def workspace_slug(self):
-        # ``WorkspaceBillingLedgerPermission`` resolves the workspace from
-        # this property, and returns False when it is missing or blank. That
-        # is the safe direction to fail in: a view that forgot it is denied,
-        # not served.
-        return self.kwargs.get("slug")
-
-    @property
-    def workspace(self):
-        return Workspace.objects.filter(slug=self.workspace_slug).first()
 
 
 class AdminWorkspaceWalletView(WorkspaceContextMixin, BillingAdminAPIView):

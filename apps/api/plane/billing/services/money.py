@@ -14,6 +14,8 @@ No balance is ever stored. ``account_balance`` derives it from entries.
 
 # Python imports
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Dict, Iterable
+from uuid import UUID
 
 # Django imports
 from django.db import IntegrityError, transaction as db_transaction
@@ -355,3 +357,74 @@ def wallet_hold_balance(workspace) -> int:
     """How much of the workspace's money is currently withheld."""
     _spendable, held = get_or_create_wallet_accounts(workspace)
     return max(0, _signed_total(held))
+
+
+def wallet_balances(workspace_ids: Iterable[UUID]) -> Dict[UUID, int]:
+    """Spendable balance for many workspaces in three queries.
+
+    The admin workspace list needs a balance per row. Calling
+    ``wallet_balance`` per workspace is two aggregate queries each, which turns
+    a 50-row page into 100 round trips.
+
+    A workspace whose wallet has no ledger account yet is simply absent from the
+    result, and the caller reads that as zero. It is NOT created here:
+    ``get_or_create_wallet_accounts`` would write a row per workspace on a
+    read-only list page, so a GET would create hundreds of rows. The detail page
+    already creates them on demand.
+
+    The aggregates are over one account set, never one pass over a kind. A
+    single ``Case``/``When`` over ``debit_account__kind`` is first-match-wins, so
+    it silently drops the credit leg of an entry whose debit side is
+    debit-normal -- the exact defect ``_signed_total``'s docstring warns about.
+    """
+    # Materialised once: ``workspace_ids`` is typed as an Iterable, so a caller
+    # passing a generator would otherwise be exhausted by the first loop.
+    workspace_ids = list(workspace_ids)
+    if not workspace_ids:
+        return {}
+
+    account_ids = list(
+        LedgerAccount.objects.filter(
+            workspace_id__in=workspace_ids,
+            # NOT a kind filter. BOTH wallet legs are ASSET -- see the note in
+            # get_or_create_wallet_accounts above -- so filtering on kind=ASSET
+            # would return the HELD account as well and a page row would report
+            # a wallet as fully funded when its money is in hold. The spendable
+            # leg is identified by its account code, which is the only thing
+            # that distinguishes the two accounts.
+            code__in=[WalletAccountCode.wallet_default(workspace_id) for workspace_id in workspace_ids],
+        ).values_list("id", "workspace_id")
+    )
+    if not account_ids:
+        return {}
+
+    ids = [account_id for account_id, _workspace_id in account_ids]
+    workspace_by_account = dict(account_ids)
+
+    debits: Dict[UUID, int] = {}
+    for row in (
+        LedgerEntry.objects.filter(debit_account_id__in=ids)
+        .values("debit_account_id")
+        .annotate(total=Sum("amount_toman"))
+    ):
+        debits[row["debit_account_id"]] = row["total"] or 0
+
+    credits: Dict[UUID, int] = {}
+    for row in (
+        LedgerEntry.objects.filter(credit_account_id__in=ids)
+        .values("credit_account_id")
+        .annotate(total=Sum("amount_toman"))
+    ):
+        credits[row["credit_account_id"]] = row["total"] or 0
+
+    # NO ``LedgerEntry.workspace`` filter, for the reason ``_signed_total``
+    # gives: a workspace-owned account owns every entry that touches it, and
+    # ``post_entry`` accepts ``workspace=None``, so scoping the entries as well
+    # would make those postings invisible and under-count the balance.
+    #
+    # Every wallet account is ASSET (debit-normal), so the sign is fixed here.
+    # Read ``is_debit_normal`` from the account instead if a wallet account ever
+    # stops being debit-normal; the assumption is local to this return.
+    return {
+        workspace_by_account[account_id]: debits.get(account_id, 0) - credits.get(account_id, 0) for account_id in ids
+    }

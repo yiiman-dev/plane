@@ -533,3 +533,32 @@ class WalletRevokeSerializer(serializers.Serializer):
         if len(stripped) < 10:
             raise serializers.ValidationError("توضیح ابطال اعتبار باید حداقل ۱۰ کاراکتر باشد.")
         return stripped
+
+
+class AdminWorkspaceBillingSerializer(serializers.Serializer):
+    """The whole billing picture of one workspace for the admin detail page.
+
+    A hand-written ``Serializer`` rather than a ``ModelSerializer`` because no
+    single model holds these fields: the plan, the subscription, the workspace
+    and the derived balances are four sources. It declares no writable field,
+    so a POST body against the detail route is rejected rather than ignored.
+
+    This projection carries the balance, so the view that serves it must write
+    an access-log row: returning money to an operator is a money read whatever
+    the response shape looks like.
+    """
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    slug = serializers.SlugField()
+    plan_code = serializers.CharField(allow_null=True)
+    plan_name = serializers.CharField(allow_null=True)
+    seats = serializers.IntegerField()
+    balance_toman = serializers.IntegerField()
+    hold_balance_toman = serializers.IntegerField()
+    subscription_status = serializers.CharField(allow_null=True)
+    starts_at = serializers.DateTimeField(allow_null=True)
+    ends_at = serializers.DateTimeField(allow_null=True)
+    renew_lock_days = serializers.IntegerField(allow_null=True)
+    proration_mode = serializers.CharField(allow_null=True)
+    active_members = serializers.IntegerField()
