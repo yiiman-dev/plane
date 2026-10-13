@@ -309,13 +309,19 @@ class PlanFeatureFlagEndpoint(BillingAdminAPIView):
         # to resend the limit. On a genuinely new grant the write is full, and a
         # ``number`` flag then has to arrive with its bound.
         feature_flag_id = request.data.get("feature_flag")
-        existing = PlanFeatureFlag.objects.filter(plan=plan, feature_flag_id=feature_flag_id).exists()
+        existing = (
+            feature_flag_id is not None
+            and PlanFeatureFlag.objects.filter(plan=plan, feature_flag_id=feature_flag_id).exists()
+        )
         serializer = PlanFeatureFlagSerializer(data=request.data, partial=existing)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         feature_flag = serializer.validated_data["feature_flag"]
         defaults = {
             "is_enabled": serializer.validated_data.get("is_enabled", True),
+            # KNOWN, PRE-EXISTING, NOT FIXED HERE: unlike ``limit_value`` below,
+            # an omitted ``config`` is wiped rather than left alone. Out of scope
+            # for the limit work; recorded so it reads as known, not overlooked.
             "config": serializer.validated_data.get("config", {}),
         }
         # Only when a limit was actually supplied. ``update_or_create`` ignores
