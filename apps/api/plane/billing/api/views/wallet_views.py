@@ -24,6 +24,15 @@ lazy -- it is what makes ``test_the_two_families_use_different_permissions``
 a meaningful assertion, because the two families would otherwise differ in
 authentication, pagination and error handling as well as in authority.
 
+Scope note -- who is audited, and who is not
+-------------------------------------------
+Only the ``admin/`` READS call ``ledger_service.record_admin_read``. The
+workspace family must not: a tenant admin looking at their own balance is not
+an operator event, and an accountability log that records it is noise an
+investigation has to sift through. Grant and revoke are writes already
+attributed by ``LedgerEntry.created_by``, so logging them here would file them
+under a read they did not perform.
+
 Scope note -- the revoke endpoint is here ON PURPOSE
 ----------------------------------------------------
 This module ships SIX endpoints: four reads/writes the task brief named, plus
@@ -64,7 +73,7 @@ from plane.billing.api.serializers import (
     WorkspaceLedgerEntrySerializer,
 )
 from plane.billing.api.views.admin_views import BillingAdminAPIView
-from plane.billing.models import LedgerEntry, Wallet
+from plane.billing.models import BillingAccessLog, LedgerEntry, Wallet
 from plane.billing.services import ledger as ledger_service
 from plane.billing.services import wallet as wallet_service
 from plane.db.models import Workspace
@@ -228,6 +237,10 @@ class AdminWorkspaceWalletView(WorkspaceContextMixin, BillingAdminAPIView):
             return Response(WORKSPACE_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
 
         wallet_row, _created = Wallet.objects.get_or_create(workspace=workspace)
+        # After the 404 guard, never before: a row must name a read that
+        # actually happened, and the workspace family below deliberately does
+        # NOT call this -- see the module docstring.
+        ledger_service.record_admin_read(workspace=workspace, view=BillingAccessLog.VIEW_WALLET, request=request)
         return Response(WalletSerializer(wallet_row).data)
 
 
@@ -248,6 +261,7 @@ class AdminWorkspaceLedgerView(WorkspaceContextMixin, BillingAdminAPIView):
         if workspace is None:
             return Response(WORKSPACE_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
 
+        ledger_service.record_admin_read(workspace=workspace, view=BillingAccessLog.VIEW_LEDGER, request=request)
         return self.paginated(request, ledger_service.workspace_entries(workspace), AdminLedgerEntrySerializer)
 
 

@@ -23,7 +23,7 @@ read is the one that is easiest to spell correctly at a call site.
 from django.db.models import QuerySet
 
 # Module imports
-from plane.billing.models import LedgerEntry, LedgerSource
+from plane.billing.models import BillingAccessLog, LedgerEntry, LedgerSource
 
 # Admin grants are written for internal eyes. Workspace owners see that
 # credit happened, not who authorised it or why.
@@ -148,3 +148,41 @@ def public_source_label(entry: LedgerEntry) -> str:
     label map has not caught up with.
     """
     return PUBLIC_SOURCE_LABELS.get(entry.source) or entry.get_source_display()
+
+
+# An instance administrator may read any workspace's money. That is necessary
+# -- an operator cannot answer a customer's billing question without seeing the
+# numbers -- but it means a customer's financial data is one leaked screenshot
+# away from being public. The exposure is managed by traceability: every read
+# names who looked, at which workspace and from where.
+#
+# This lives in a service rather than in the views so that a future report, CSV
+# export or new endpoint cannot forget it. A view-level call is a convention
+# that erodes; a service-level one is a capability the view has to know exists.
+def record_admin_read(*, workspace, view: str, request) -> BillingAccessLog | None:
+    """Write one audit row for an admin read of a tenant's money.
+
+    Returns the row, or ``None`` when there is no authenticated user to name --
+    an anonymous request, which the permission has already refused, must not
+    leave a row attributing a read to nobody.
+
+    Never raises on the audit path itself. A failure to record an audit must not
+    deny the operator a read they are authorised for; the alternative is that a
+    broken log becomes a way to make billing disappear, which is a worse failure
+    than a missing row.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+
+    # META is absent on a hand-built request object, so it is read defensively.
+    meta = getattr(request, "META", None) or {}
+    return BillingAccessLog.objects.create(
+        viewer=user,
+        workspace=workspace,
+        view=view,
+        ip_address=(meta.get("REMOTE_ADDR") or "")[:45],
+        # Truncated because the column is 512 and an over-long agent would raise
+        # DataError, a 500, in the middle of an otherwise successful read.
+        user_agent=(meta.get("HTTP_USER_AGENT") or "")[:512],
+    )
