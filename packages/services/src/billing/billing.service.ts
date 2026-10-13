@@ -26,6 +26,9 @@ import type {
   TPaymentOrderCreateResponse,
   TPlanQuote,
   TPlanQuoteParams,
+  TAdminWorkspaceBilling,
+  TAdminWorkspaceListResponse,
+  TFeatureFlagListResponse,
   TPublicPlanListResponse,
   TUserPaymentTransaction,
 } from "@plane/types";
@@ -338,6 +341,46 @@ export class BillingService extends APIService {
     code: string
   ): Promise<TBillingWorkspaceFeatureFlagMutationResponse> {
     return this.post(`/api/billing/workspaces/${workspaceSlug}/feature-flags/${code}/disable/`, {})
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /* instance admin workspace billing */
+
+  /**
+   * Every workspace with the plan, seat count and wallet balance an operator
+   * triages by. Not audited row by row on the backend, the detail read is.
+   */
+  async adminWorkspaces(params: TBillingListParams): Promise<TAdminWorkspaceListResponse> {
+    return this.get("/api/billing/admin/workspaces/", { params })
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * The billing picture of one workspace. The backend writes an access-log row
+   * on every call, so this is the audited read.
+   */
+  async adminWorkspaceBilling(workspaceSlug: string): Promise<TAdminWorkspaceBilling> {
+    return this.get(`/api/billing/admin/workspaces/${workspaceSlug}/billing/`)
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /* feature flag catalogue */
+
+  /**
+   * The flag catalogue, already ordered by (category, code) on the server so the
+   * UI can group directly.
+   */
+  async featureFlags(params: TBillingListParams): Promise<TFeatureFlagListResponse> {
+    return this.get("/api/billing/admin/feature-flags/", { params })
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;
