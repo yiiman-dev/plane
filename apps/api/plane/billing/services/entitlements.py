@@ -18,6 +18,7 @@ from django.utils import timezone
 
 # Module imports
 from plane.billing.models import (
+    LIMIT_TYPE_NUMBER,
     FeatureFlag,
     Plan,
     PlanFeatureFlag,
@@ -192,6 +193,52 @@ def has_feature(workspace, code: str) -> bool:
         return False
 
     return WorkspaceFeatureFlag.objects.filter(workspace=workspace, feature_flag=feature_flag, is_enabled=True).exists()
+
+
+def feature_limit(workspace, code: str) -> Optional[int]:
+    """The effective numeric limit of a ``number`` feature flag, or None.
+
+    None means "this question does not apply", and it covers every case that is
+    not a countable bound: the flag is not a number flag, the plan does not grant
+    it, the workspace has not switched it on, the catalogue row is inactive, or
+    there is no such flag at all. ``0`` is a bound -- "none allowed" -- and is
+    returned as ``0``.
+
+    The three layers below are the same three ``has_feature`` checks, in the
+    same order, on the same rows. Two functions answering two questions about
+    one switch must not disagree: a feature ``has_feature`` reports as off but
+    that still reports a limit is a feature a caller will start trusting.
+    ``test_feature_limit_agrees_with_has_feature`` pins that, and dropping the
+    ``WorkspaceFeatureFlag`` check below is what makes it fail.
+
+    Phase 2 has no production caller for this yet. It is written and tested now
+    so that Phase 3 gates its first real capability on proven behaviour rather
+    than on a function nobody has run.
+    """
+    if workspace is None or not code:
+        return None
+
+    feature_flag = FeatureFlag.objects.filter(code=code, is_active=True).first()
+    if feature_flag is None or feature_flag.limit_type != LIMIT_TYPE_NUMBER:
+        return None
+
+    plan = resolve_workspace_plan(workspace)
+    if plan is None:
+        return None
+
+    grant = PlanFeatureFlag.objects.filter(plan=plan, feature_flag=feature_flag, is_enabled=True).first()
+    if grant is None:
+        return None
+
+    if not WorkspaceFeatureFlag.objects.filter(
+        workspace=workspace, feature_flag=feature_flag, is_enabled=True
+    ).exists():
+        return None
+
+    # A granted number flag with no stored limit cannot be gated on, so it grants
+    # nothing rather than granting an unbounded amount by accident. The
+    # serializer refuses creating that row; this handles one that predates it.
+    return grant.limit_value
 
 
 def grantable_feature_codes(workspace) -> List[str]:
