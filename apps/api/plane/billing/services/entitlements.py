@@ -175,24 +175,56 @@ def check_seat_availability(workspace, additional: int = 1) -> Tuple[bool, Optio
     return False, rejection["error"]
 
 
-def has_feature(workspace, code: str) -> bool:
-    """True only when the flag is on, granted by the plan, and switched on here."""
+def _resolve_active_grant(workspace, code: str) -> Tuple[Optional[FeatureFlag], Optional[PlanFeatureFlag]]:
+    """The active flag and the plan's grant of it, or ``(None, None)``.
+
+    This is the ONE implementation of the three layers a feature needs before it
+    is usable: the catalogue row is active, the workspace's plan grants it, and
+    the workspace itself has switched it on. ``has_feature`` and
+    ``feature_limit`` both delegate here rather than restating the sequence.
+
+    Why a shared helper rather than two parallel implementations: the two
+    functions answer different questions about the same switch, and a pair of
+    hand-written copies drifts the moment one of them is fixed. A feature that
+    ``has_feature`` calls off but that still reports a limit is one a caller
+    starts trusting. Returning the grant (not just a bool) saves
+    ``feature_limit`` a second query for the same row.
+
+    The order of the checks is also the order of the cheapest first: a missing
+    flag costs one query, and only an existing flag reaches plan resolution.
+    """
     if workspace is None or not code:
-        return False
+        return None, None
 
     feature_flag = FeatureFlag.objects.filter(code=code, is_active=True).first()
     if feature_flag is None:
-        return False
+        return None, None
 
     plan = resolve_workspace_plan(workspace)
     if plan is None:
-        return False
+        return None, None
 
-    granted = PlanFeatureFlag.objects.filter(plan=plan, feature_flag=feature_flag, is_enabled=True).exists()
-    if not granted:
-        return False
+    grant = PlanFeatureFlag.objects.filter(plan=plan, feature_flag=feature_flag, is_enabled=True).first()
+    if grant is None:
+        return None, None
 
-    return WorkspaceFeatureFlag.objects.filter(workspace=workspace, feature_flag=feature_flag, is_enabled=True).exists()
+    switched_on = WorkspaceFeatureFlag.objects.filter(
+        workspace=workspace, feature_flag=feature_flag, is_enabled=True
+    ).exists()
+    if not switched_on:
+        return None, None
+
+    return feature_flag, grant
+
+
+def has_feature(workspace, code: str) -> bool:
+    """True only when the flag is on, granted by the plan, and switched on here.
+
+    Delegates to ``_resolve_active_grant`` so it cannot come to disagree with
+    ``feature_limit`` about the same switch.
+    """
+    feature_flag, _grant = _resolve_active_grant(workspace, code)
+    return feature_flag is not None
 
 
 def feature_limit(workspace, code: str) -> Optional[int]:
@@ -204,40 +236,31 @@ def feature_limit(workspace, code: str) -> Optional[int]:
     there is no such flag at all. ``0`` is a bound -- "none allowed" -- and is
     returned as ``0``.
 
-    The three layers below are the same three ``has_feature`` checks, in the
-    same order, on the same rows. Two functions answering two questions about
-    one switch must not disagree: a feature ``has_feature`` reports as off but
-    that still reports a limit is a feature a caller will start trusting.
-    ``test_feature_limit_agrees_with_has_feature`` pins that, and dropping the
-    ``WorkspaceFeatureFlag`` check below is what makes it fail.
+    The three layers are NOT restated here. ``_resolve_active_grant`` is the
+    single implementation of "the flag exists, the plan grants it, the workspace
+    switched it on", and ``has_feature`` calls the same helper. Two hand-written
+    copies of that sequence is how they drift: a later fix to one would leave
+    the other answering a different question about the same switch, and a
+    feature reported off while still reporting a limit is one a caller starts
+    trusting. Sharing the helper removes the possibility rather than documenting
+    the risk.
 
     Phase 2 has no production caller for this yet. It is written and tested now
     so that Phase 3 gates its first real capability on proven behaviour rather
     than on a function nobody has run.
     """
-    if workspace is None or not code:
-        return None
-
-    feature_flag = FeatureFlag.objects.filter(code=code, is_active=True).first()
+    feature_flag, grant = _resolve_active_grant(workspace, code)
     if feature_flag is None or feature_flag.limit_type != LIMIT_TYPE_NUMBER:
-        return None
-
-    plan = resolve_workspace_plan(workspace)
-    if plan is None:
-        return None
-
-    grant = PlanFeatureFlag.objects.filter(plan=plan, feature_flag=feature_flag, is_enabled=True).first()
-    if grant is None:
-        return None
-
-    if not WorkspaceFeatureFlag.objects.filter(
-        workspace=workspace, feature_flag=feature_flag, is_enabled=True
-    ).exists():
         return None
 
     # A granted number flag with no stored limit cannot be gated on, so it grants
     # nothing rather than granting an unbounded amount by accident. The
     # serializer refuses creating that row; this handles one that predates it.
+    #
+    # ``None`` and ``0`` are different answers and must stay different: None is
+    # "no bound is known", 0 is "none allowed". A caller writing
+    # ``if not limit:`` conflates them and treats a workspace allowed zero of
+    # something as one with no limit at all.
     return grant.limit_value
 
 
