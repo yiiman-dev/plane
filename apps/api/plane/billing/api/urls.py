@@ -5,6 +5,8 @@
 from django.urls import path
 
 from plane.billing.api.views.admin_views import (
+    AdminWorkspaceBillingEndpoint,
+    AdminWorkspaceListEndpoint,
     FeatureFlagDetailEndpoint,
     FeatureFlagListCreateEndpoint,
     GatewayDetailEndpoint,
@@ -101,6 +103,17 @@ urlpatterns = [
         "workspaces/<slug:slug>/feature-flags/<str:code>/disable/",
         WorkspaceFeatureFlagDisableEndpoint.as_view(),
         name="billing-workspace-feature-flag-disable",
+    ),
+    # Instance admin workspace triage. Guarded by InstanceAdminPermission.
+    # The COLLECTION path is registered before the slug-parameterised one on
+    # purpose: ``path()`` matches in declaration order, so a future greedy
+    # ``admin/workspaces/<slug>/...`` catch-all registered above this would
+    # shadow the list. Keep the collection route first in this block.
+    path("admin/workspaces/", AdminWorkspaceListEndpoint.as_view(), name="billing-admin-workspaces"),
+    path(
+        "admin/workspaces/<str:slug>/billing/",
+        AdminWorkspaceBillingEndpoint.as_view(),
+        name="billing-admin-workspace-billing",
     ),
     # Instance admin wallet management. Guarded by InstanceAdminPermission and
     # able to read any workspace's wallet and ledger.

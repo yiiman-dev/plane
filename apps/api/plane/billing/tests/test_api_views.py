@@ -39,6 +39,10 @@ ADMIN_URLS = [
     ("post", "/api/billing/admin/plans/"),
     ("get", "/api/billing/admin/invoices/"),
     ("get", "/api/billing/admin/transactions/"),
+    # The feature-flag catalogue predates this list, so this entry is the canary
+    # finally covering it rather than a new route being added.
+    ("get", "/api/billing/admin/feature-flags/"),
+    ("get", "/api/billing/admin/workspaces/"),
     ("get", "/api/billing/admin/workspaces/canary-team/wallet/"),
     ("get", "/api/billing/admin/workspaces/canary-team/wallet/ledger/"),
     ("post", "/api/billing/admin/workspaces/canary-team/wallet/grant/"),
@@ -112,6 +116,26 @@ def test_every_workspace_wallet_route_rejects_an_anonymous_caller(anonymous_clie
     for method, url in WORKSPACE_WALLET_URLS:
         response = getattr(anonymous_client, method)(url.format(slug=workspace.slug), format="json")
         assert response.status_code in (401, 403), f"{method} {url} -> {response.status_code}"
+
+
+def test_the_workspace_detail_route_rejects_a_plain_user(client, django_user_model, workspace_factory):
+    """The slug-parameterised admin route is not in ``ADMIN_URLS``, which can only
+    carry literal URLs. It gets the same canary, written against a real slug."""
+    user = django_user_model.objects.create(username="canary", email="canary@example.com")
+    client.force_login(user)
+    workspace = workspace_factory()
+
+    response = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/")
+
+    assert response.status_code in (401, 403), response.status_code
+
+
+def test_the_workspace_detail_route_rejects_an_anonymous_caller(anonymous_client, workspace_factory):
+    workspace = workspace_factory()
+
+    response = anonymous_client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/")
+
+    assert response.status_code in (401, 403), response.status_code
 
 
 def test_gateway_credentials_are_never_returned_to_the_client(client, django_user_model, instance_admin):
