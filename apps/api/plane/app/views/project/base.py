@@ -24,6 +24,7 @@ from plane.app.serializers import (
 )
 from plane.app.views.base import BaseAPIView, BaseViewSet
 from plane.bgtasks.recent_visited_task import recent_visited_task
+from plane.billing.services.entitlements import project_limit_rejection
 from plane.bgtasks.webhook_task import model_activity, webhook_activity
 from plane.db.models import (
     UserFavorite,
@@ -257,6 +258,13 @@ class ProjectViewSet(BaseViewSet):
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER], level="WORKSPACE")
     def create(self, request, slug):
         workspace = Workspace.objects.get(slug=slug)
+
+        # The first capability gated by a plan. It refuses only when the flag is
+        # active and the workspace is outside its grant or its bound, so an
+        # installation that has not configured the flag is unaffected.
+        rejection = project_limit_rejection(workspace)
+        if rejection is not None:
+            return Response(rejection, status=status.HTTP_403_FORBIDDEN)
 
         serializer = ProjectSerializer(data={**request.data}, context={"workspace_id": workspace.id})
         if serializer.is_valid():

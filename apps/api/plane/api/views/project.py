@@ -21,6 +21,7 @@ from drf_spectacular.types import OpenApiTypes
 
 
 # Module imports
+from plane.billing.services.entitlements import project_limit_rejection
 from plane.db.models import (
     Cycle,
     Intake,
@@ -229,6 +230,12 @@ class ProjectListCreateAPIEndpoint(BaseAPIView):
         """
         try:
             workspace = Workspace.objects.get(slug=slug)
+
+            # The same gate the app API applies: an API token must not be a way
+            # around a plan limit that the session API enforces.
+            rejection = project_limit_rejection(workspace)
+            if rejection is not None:
+                return Response(rejection, status=status.HTTP_403_FORBIDDEN)
 
             serializer = ProjectCreateSerializer(data={**request.data}, context={"workspace_id": workspace.id})
 
