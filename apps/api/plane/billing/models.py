@@ -211,6 +211,13 @@ class Plan(BaseModel):
     features = models.JSONField(default=list, blank=True, verbose_name="Features")
     is_active = models.BooleanField(default=True, verbose_name="Active")
     sort_order = models.IntegerField(default=0, verbose_name="Sort Order")
+    # Position in the upgrade ladder: a higher rank is a higher tier. Equal ranks
+    # are sideways moves, so they are never treated as an upgrade.
+    tier_rank = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Tier Rank",
+        help_text="Higher numbers are higher tiers. Decides whether a purchase is an upgrade.",
+    )
     currency = models.CharField(max_length=8, default="IRT", verbose_name="Currency")
 
     # Phase 2: policy fields the Phase 3 and Phase 4 code reads. They land together
