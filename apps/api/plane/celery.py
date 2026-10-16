@@ -51,6 +51,12 @@ app.conf.beat_schedule = {
         "task": "plane.bgtasks.notification_channel_task.stack_notification_channel",
         "schedule": crontab(minute="*"),  # Every minute
     },
+    # Re-verify payments a gateway left processing or unavailable. Runs from beat
+    # so retries still happen when the broker is down at callback time.
+    "retry-pending-payment-verifications": {
+        "task": "plane.billing.services.tasks.retry_pending_verifications",
+        "schedule": crontab(minute="*"),  # Every minute
+    },
     "push-instance-metrics": {
         "task": "plane.license.bgtasks.telemetry_metrics.push_instance_metrics",
         "schedule": schedule(run_every=timedelta(minutes=METRICS_PUSH_INTERVAL_MINUTES)),
