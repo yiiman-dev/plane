@@ -26,7 +26,7 @@ from plane.billing.models import (
     SubscriptionStatus,
     WorkspaceFeatureFlag,
 )
-from plane.db.models import WorkspaceMember, WorkspaceMemberInvite
+from plane.db.models import Project, WorkspaceMember, WorkspaceMemberInvite
 from plane.license.utils.instance_value import get_workspace_free_seat_limit
 
 FREE_PLAN_CODE = "free"
@@ -34,12 +34,27 @@ WORKSPACE_ADMIN_ROLE = 20
 
 SEAT_LIMIT_REACHED_CODE = "seat_limit_reached"
 FEATURE_NOT_IN_PLAN_CODE = "feature_not_in_plan"
+FEATURE_LIMIT_REACHED_CODE = "feature_limit_reached"
+FEATURE_LIMIT_UNSET_CODE = "feature_limit_unset"
+
+# The code of the first capability gated by a flag. The catalogue row is created
+# by a migration and ships INACTIVE on purpose: an instance that has never
+# configured it keeps creating projects exactly as before, and an operator turns
+# the gate on by activating the row and granting it to a plan.
+PROJECT_LIMIT_FLAG_CODE = "projects"
 
 SEAT_LIMIT_REACHED_MESSAGE = "سقف صندلی این پلن تکمیل است. برای افزودن عضو بیشتر باید پلن ورک‌اسپیس را ارتقا دهید."
 SEAT_LIMIT_REACHED_PROJECT_MESSAGE = (
     "سقف صندلی این پلن تکمیل است و دعوت این پروژه پذیرفته نمی‌شود. برای پذیرش آن باید پلن ورک‌اسپیس را ارتقا دهید."
 )
 FEATURE_NOT_IN_PLAN_MESSAGE = "این قابلیت در پلن فعلی ورک‌اسپیس شما فعال نیست."
+FEATURE_LIMIT_UNSET_MESSAGE = "حد این قابلیت در پلن فعلی تعیین نشده است."
+FEATURE_LIMIT_REACHED_TEMPLATE = (
+    "سقف «{unit}» این پلن تکمیل است ({used} از {limit}). برای افزودن مورد بیشتر باید پلن ورک‌اسپیس را ارتقا دهید."
+)
+FEATURE_LIMIT_REACHED_NO_UNIT_TEMPLATE = (
+    "سقف این قابلیت در پلن فعلی تکمیل است ({used} از {limit}). برای افزودن مورد بیشتر باید پلن ورک‌اسپیس را ارتقا دهید."
+)
 FEATURE_UNKNOWN_MESSAGE = "قابلیت درخواستی وجود ندارد."
 FEATURE_UNAVAILABLE_MESSAGE = "این قابلیت در حال حاضر روی این نمونه فعال نیست."
 
@@ -262,6 +277,98 @@ def feature_limit(workspace, code: str) -> Optional[int]:
     # ``if not limit:`` conflates them and treats a workspace allowed zero of
     # something as one with no limit at all.
     return grant.limit_value
+
+
+def get_project_usage(workspace) -> int:
+    """Projects the workspace currently holds against its limit.
+
+    Archived projects are history, not capacity, so they do not count. Soft
+    deleted rows are already excluded by the model's own manager.
+    """
+    if workspace is None:
+        return 0
+
+    return Project.objects.filter(workspace=workspace, archived_at__isnull=True).count()
+
+
+def feature_limit_rejection(workspace, code: str, used: int, additional: int = 1) -> Optional[Dict[str, Any]]:
+    """Error body for a refused countable capability, or None when it may proceed.
+
+    Four answers, and the order they are asked in is deliberate:
+
+    1. The catalogue row is missing or inactive -> ``None``, allowed. The flag
+       catalogue is opt-in configuration an instance admin fills in, so an
+       installation that has never created the row must keep the behaviour it
+       had before the gate existed. Failing closed here would take a capability
+       away from every workspace on every installation the moment the code
+       shipped, which is a worse outcome than an ungated capability.
+    2. The plan does not grant it, or the workspace switched it off ->
+       ``feature_not_in_plan``. This is the branch the acceptance criterion
+       names: off really does mean the capability does not work.
+    3. A ``number`` flag with a stored bound -> allowed while
+       ``used + additional`` fits, refused past that.
+    4. A ``number`` flag with no stored bound -> ``feature_limit_unset``.
+       Treating an unknown bound as unlimited is how a workspace gets an
+       unbounded amount of a countable thing by accident; the plan serializer
+       already refuses to create such a row, and this catches the older ones.
+
+    A non-number flag that is granted and switched on is treated as "on, no
+    bound" -- for a countable capability the operator has to register the flag
+    as ``number`` or ``unlimited``, and ``boolean`` then behaves as unlimited
+    rather than silently refusing.
+    """
+    if workspace is None:
+        return None
+
+    feature_flag = FeatureFlag.objects.filter(code=code, is_active=True).first()
+    if feature_flag is None:
+        return None
+
+    if not has_feature(workspace, code):
+        return {
+            "error": FEATURE_NOT_IN_PLAN_MESSAGE,
+            "code": FEATURE_NOT_IN_PLAN_CODE,
+        }
+
+    limit = feature_limit(workspace, code)
+    if feature_flag.limit_type != LIMIT_TYPE_NUMBER:
+        return None
+
+    requested = max(int(additional or 0), 0)
+    counted = max(int(used or 0), 0)
+    if limit is None:
+        return {
+            "error": FEATURE_LIMIT_UNSET_MESSAGE,
+            "code": FEATURE_LIMIT_UNSET_CODE,
+            "used": counted,
+        }
+
+    if counted + requested <= limit:
+        return None
+
+    unit = (feature_flag.unit_label or "").strip()
+    template = FEATURE_LIMIT_REACHED_TEMPLATE if unit else FEATURE_LIMIT_REACHED_NO_UNIT_TEMPLATE
+    return {
+        "error": template.format(unit=unit, used=counted, limit=limit),
+        "code": FEATURE_LIMIT_REACHED_CODE,
+        "limit": limit,
+        "used": counted,
+    }
+
+
+def project_limit_rejection(workspace, additional: int = 1) -> Optional[Dict[str, Any]]:
+    """Error body for a refused project creation, or None when it may proceed.
+
+    Named for the resource rather than the flag, matching
+    ``seat_limit_rejection``: a caller refuses an operation, and which flag
+    represents it stays in here.
+    """
+    return feature_limit_rejection(
+        workspace,
+        PROJECT_LIMIT_FLAG_CODE,
+        used=get_project_usage(workspace),
+        additional=additional,
+    )
 
 
 def grantable_feature_codes(workspace) -> List[str]:
