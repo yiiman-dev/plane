@@ -29,6 +29,9 @@ import type {
   TAdminWorkspaceBilling,
   TAdminWorkspaceListResponse,
   TFeatureFlagListResponse,
+  TPlanFeatureFlagGrantInput,
+  TPlanFeatureFlagListResponse,
+  TPlanFeatureFlagSaveResponse,
   TPublicPlanListResponse,
   TUserPaymentTransaction,
 } from "@plane/types";
@@ -367,6 +370,36 @@ export class BillingService extends APIService {
    */
   async adminWorkspaceBilling(workspaceSlug: string): Promise<TAdminWorkspaceBilling> {
     return this.get(`/api/billing/admin/workspaces/${workspaceSlug}/billing/`)
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /* plan feature-flag grants */
+
+  /**
+   * Every grant of one plan, each with the limit it carries. The plan form reads
+   * this to seed its rows before the administrator changes anything.
+   */
+  async planFeatureFlags(planId: string): Promise<TPlanFeatureFlagListResponse> {
+    return this.get(`/api/billing/admin/plans/${planId}/feature-flags/`)
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Save the plan form's whole grant set in one request. The backend refuses the
+   * entire payload when one row is invalid, so this either applies every row or
+   * none of them -- never the half-saved plan a loop of single writes produces.
+   */
+  async updatePlanFeatureFlags(
+    planId: string,
+    grants: TPlanFeatureFlagGrantInput[]
+  ): Promise<TPlanFeatureFlagSaveResponse> {
+    return this.patch(`/api/billing/admin/plans/${planId}/feature-flags/`, { grants })
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;

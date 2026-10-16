@@ -460,6 +460,23 @@ export type TAdminWorkspaceBilling = {
   subscription_status: string | null;
 };
 
+/** One grant as the plan form sends it: named by code, so the screen never needs the pk. */
+export type TPlanFeatureFlagGrantInput = {
+  feature_flag_code: string;
+  is_enabled: boolean;
+  limit_value?: number | null;
+};
+
+/**
+ * The answer to saving the plan form. It carries the stored set in the order the
+ * payload named it, so the screen re-renders exactly what the backend holds
+ * instead of what it hoped it held.
+ */
+export type TPlanFeatureFlagSaveResponse = {
+  grants: TPlanFeatureFlag[];
+};
+
 /** The admin list endpoints return the same envelope as every other list. */
 export type TAdminWorkspaceListResponse = TPaginatedResponse<TAdminWorkspaceSummary[]>;
 export type TFeatureFlagListResponse = TPaginatedResponse<TFeatureFlag[]>;
+export type TPlanFeatureFlagListResponse = TPaginatedResponse<TPlanFeatureFlag[]>;
