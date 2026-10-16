@@ -6,6 +6,7 @@ from django.urls import path
 
 from plane.billing.api.views.admin_views import (
     AdminAccessLogEndpoint,
+    AdminSmsReportEndpoint,
     AdminWorkspaceBillingEndpoint,
     AdminWorkspaceListEndpoint,
     FeatureFlagDetailEndpoint,
@@ -74,6 +75,10 @@ urlpatterns = [
     # them. Registered with the other instance-admin routes; the only thing that
     # separates it from ``admin/workspaces/<slug>/...`` is its own literal path.
     path("admin/access-log/", AdminAccessLogEndpoint.as_view(), name="billing-admin-access-log"),
+    # What the wallets paid for SMS, and what was delivered for it. Registered
+    # apart from the workspace-scoped routes because it spans tenants; the
+    # ``admin/workspaces/`` prefix belongs to routes that name one.
+    path("admin/sms-report/", AdminSmsReportEndpoint.as_view(), name="billing-admin-sms-report"),
     path("admin/invoices/", InvoiceListEndpoint.as_view(), name="billing-invoices"),
     path("admin/invoices/<uuid:pk>/", InvoiceDetailEndpoint.as_view(), name="billing-invoice-detail"),
     path("admin/transactions/", TransactionListEndpoint.as_view(), name="billing-transactions"),

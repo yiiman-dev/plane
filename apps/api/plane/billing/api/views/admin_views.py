@@ -10,6 +10,7 @@
 
 # Third party imports
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -32,6 +33,7 @@ from plane.billing.models import (
     FeatureFlag,
     GatewayRoutingConfig,
     Invoice,
+    LedgerSource,
     PaymentGateway,
     PaymentTransaction,
     Plan,
@@ -41,7 +43,8 @@ from plane.billing.models import (
 )
 from plane.billing.services import ledger as ledger_service
 from plane.billing.services import money as money_service
-from plane.db.models import Workspace, WorkspaceMember
+from plane.billing.services import sms as sms_service
+from plane.db.models import NOTIFICATION_CHANNEL_SMS, Workspace, WorkspaceMember
 from plane.license.api.permissions import InstanceAdminPermission
 from plane.license.api.views.base import BaseAPIView
 
@@ -587,3 +590,59 @@ class AdminWorkspaceBillingEndpoint(WorkspaceContextMixin, BillingAdminAPIView):
                 }
             ).data
         )
+
+
+class AdminSmsReportEndpoint(BillingAdminAPIView):
+    """What the wallets were charged for SMS, next to what was actually delivered.
+
+    The phase's cost report, and it is deliberately not a list of messages: an
+    operator asking "what is SMS costing us" cannot answer that from delivery
+    rows alone, because the row that says a message went out does not say whether
+    the wallet paid for it, and the row that says the wallet paid does not say
+    whether the message arrived. The aggregation itself lives in
+    ``sms.workspace_cost_rows``, which owns the arithmetic; this endpoint owns
+    the scope, the filter and the audit.
+
+    Audited with one row per workspace whose figures the page returned, under
+    ``ledger``, through the service so a future report cannot forget it. The
+    triage list next door is deliberately NOT audited row by row -- it exists to
+    decide which tenant to open, and opening one writes its own row -- but what
+    this page hands over is a ledger figure per tenant that no other screen
+    shows in bulk, which is the read the trail is for.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+
+    def get(self, request):
+        # Only workspaces with something to report: a row per tenant would be a
+        # page of zeros for every installation that prices nothing.
+        queryset = (
+            Workspace.objects.filter(
+                Q(notification_channel_logs__channel=NOTIFICATION_CHANNEL_SMS)
+                | Q(ledger_entries__source=LedgerSource.SMS_CHARGE)
+            )
+            .distinct()
+            # ``id`` breaks the tie so the cursor has a total order: two
+            # workspaces sharing a name would otherwise page unstably.
+            .order_by("name", "id")
+        )
+
+        # A filter on an instance-wide list the caller is already entitled to
+        # read in full, exactly like the access log's workspace filter. It cannot
+        # widen anything, because nothing in this module takes a scope from the
+        # query string.
+        workspace_slug = request.GET.get("workspace_slug")
+        if workspace_slug:
+            queryset = queryset.filter(slug=workspace_slug)
+
+        def build(page):
+            workspaces = list(page)
+
+            for workspace in workspaces:
+                ledger_service.record_admin_read(
+                    workspace=workspace, view=BillingAccessLog.VIEW_LEDGER, request=request
+                )
+
+            return sms_service.workspace_cost_rows(workspaces)
+
+        return self.paginate(request, queryset=queryset, on_results=build, default_per_page=50)

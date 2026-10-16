@@ -26,6 +26,7 @@ export default [
     route("billing/workspaces/:slug", "./(all)/(dashboard)/billing/workspaces/[slug]/page.tsx"),
     route("billing/feature-flags", "./(all)/(dashboard)/billing/feature-flags/page.tsx"),
     route("billing/access-log", "./(all)/(dashboard)/billing/access-log/page.tsx"),
+    route("billing/sms-report", "./(all)/(dashboard)/billing/sms-report/page.tsx"),
     route("billing/transactions", "./(all)/(dashboard)/billing/transactions/page.tsx"),
     route("authentication", "./(all)/(dashboard)/authentication/page.tsx"),
     route("authentication/github", "./(all)/(dashboard)/authentication/github/page.tsx"),

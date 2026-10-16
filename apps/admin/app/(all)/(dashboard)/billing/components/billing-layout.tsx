@@ -18,6 +18,7 @@ const BILLING_TABS: { href: string; label: string }[] = [
   { href: "/billing/feature-flags/", label: "پرچم‌های قابلیت" },
   { href: "/billing/transactions/", label: "تراکنش‌ها و فاکتورها" },
   { href: "/billing/access-log/", label: "رد دسترسی‌ها" },
+  { href: "/billing/sms-report/", label: "گزارش هزینهٔ پیامک" },
 ];
 
 /** Billing routes are registered with a trailing slash, so compare both sides without one. */

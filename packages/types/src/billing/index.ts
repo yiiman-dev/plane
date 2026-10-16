@@ -499,8 +499,50 @@ export type TBillingAccessLogRow = {
 /** The two reads the audit trail records. */
 export type TBillingAccessLogView = "wallet" | "ledger";
 
+/**
+ * One event code's slice of a workspace's SMS spend. `snapshotted_toman` is what
+ * the messages cost at the time they were sent and `current_rate_toman` is what
+ * the plan charges for that event today. The two are shown together because
+ * after any price change they differ, and only the snapshot describes money
+ * already spent.
+ */
+export type TBillingSmsReportEvent = {
+  count: number;
+  current_rate_toman: number;
+  event: string;
+  snapshotted_toman: number;
+};
+
+/**
+ * One workspace's SMS spend next to what it was delivered for. The event code is
+ * a machine value; the Persian label lives in the admin app's constants, beside
+ * every other label it renders.
+ *
+ * `unexplained_toman` is the wallet's charge minus what the delivery rows
+ * account for. Anything other than zero is a discrepancy: a positive value is
+ * money taken with no delivery row to show for it, which is exactly what the
+ * charge-before-send order can leave behind when the process dies in between.
+ */
+export type TBillingSmsReportRow = {
+  charged_toman: number;
+  delivered_toman: number;
+  events: TBillingSmsReportEvent[];
+  failed_count: number;
+  lost_toman: number;
+  pending_count: number;
+  plan_code: string | null;
+  refused_toman: number;
+  sent_count: number;
+  skipped_count: number;
+  unexplained_toman: number;
+  workspace_id: string;
+  workspace_name: string;
+  workspace_slug: string;
+};
+
 /** The admin list endpoints return the same envelope as every other list. */
 export type TAdminWorkspaceListResponse = TPaginatedResponse<TAdminWorkspaceSummary[]>;
+export type TBillingSmsReportListResponse = TPaginatedResponse<TBillingSmsReportRow[]>;
 export type TFeatureFlagListResponse = TPaginatedResponse<TFeatureFlag[]>;
 export type TPlanFeatureFlagListResponse = TPaginatedResponse<TPlanFeatureFlag[]>;
 export type TBillingAccessLogListResponse = TPaginatedResponse<TBillingAccessLogRow[]>;

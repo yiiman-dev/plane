@@ -33,6 +33,7 @@ export const buildBillingListKey = (
     | "billing-feature-flags"
     | "billing-invoices"
     | "billing-plan-quote"
+    | "billing-sms-report"
     | "billing-transactions"
     | "billing-workspace-entitlement"
     | "billing-workspace-feature-flags",
@@ -81,6 +82,13 @@ export const BILLING_PLAN_FEATURE_FLAGS = (planId: string) => `billing-plan-feat
  */
 export const BILLING_ACCESS_LOG = (params: Record<string, string | number | undefined> = {}) =>
   buildBillingListKey("billing-access-log", params);
+
+/**
+ * The SMS cost report is filtered by workspace and paged, so its key carries the
+ * whole query for the same reason the other filtered lists do.
+ */
+export const BILLING_SMS_REPORT = (params: Record<string, string | number | undefined> = {}) =>
+  buildBillingListKey("billing-sms-report", params);
 
 /* workspace scoped reads */
 

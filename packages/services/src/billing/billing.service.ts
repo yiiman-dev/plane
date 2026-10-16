@@ -29,6 +29,7 @@ import type {
   TAdminWorkspaceBilling,
   TAdminWorkspaceListResponse,
   TBillingAccessLogListResponse,
+  TBillingSmsReportListResponse,
   TFeatureFlagListResponse,
   TPlanFeatureFlagGrantInput,
   TPlanFeatureFlagListResponse,
@@ -371,6 +372,21 @@ export class BillingService extends APIService {
    */
   async adminWorkspaceBilling(workspaceSlug: string): Promise<TAdminWorkspaceBilling> {
     return this.get(`/api/billing/admin/workspaces/${workspaceSlug}/billing/`)
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /* sms cost report */
+
+  /**
+   * What each wallet paid for SMS, next to what was delivered for it. Instance
+   * admins only, and the backend writes one access-log row per workspace whose
+   * figures come back, because this hands over a ledger figure per tenant.
+   */
+  async smsReport(params: TBillingListParams): Promise<TBillingSmsReportListResponse> {
+    return this.get("/api/billing/admin/sms-report/", { params })
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;

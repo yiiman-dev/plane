@@ -14,6 +14,7 @@ from django.utils import timezone
 from celery import shared_task
 
 # Module imports
+from plane.billing.services import sms as sms_service
 from plane.db.models import (
     NOTIFICATION_CHANNEL_BALE,
     NOTIFICATION_CHANNEL_SMS,
@@ -25,6 +26,7 @@ from plane.db.models import (
     NOTIFICATION_CHANNEL_STATUS_FAILED,
     NOTIFICATION_CHANNEL_STATUS_PENDING,
     NOTIFICATION_CHANNEL_STATUS_SENT,
+    NOTIFICATION_CHANNEL_STATUS_SKIPPED,
     Notification,
     NotificationChannelLog,
     NotificationChannelPreference,
@@ -62,6 +64,27 @@ def resolve_channel_event(notification: Notification):
         return NOTIFICATION_EVENT_ISSUE_COMPLETED
 
     return EVENT_MAP.get(str(issue_data.get("event") or verb))
+
+
+def _record_channel_state(channel_log) -> None:
+    """Mirror the outcome of one message onto the user's channel configuration.
+
+    Shared by the delivered and the skipped paths: both are outcomes the user has
+    to be able to see, and a skipped message that left ``last_status`` untouched
+    would look like it was never attempted.
+    """
+    configuration, _created = UserNotificationChannel.objects.get_or_create(
+        user=channel_log.receiver, channel=channel_log.channel
+    )
+    configuration.last_status = channel_log.status
+    configuration.last_error = channel_log.error_message
+    if channel_log.status == NOTIFICATION_CHANNEL_STATUS_SENT:
+        configuration.is_verified = True
+        configuration.verified_at = channel_log.sent_at
+        configuration.last_delivered_at = channel_log.sent_at
+    configuration.save(
+        update_fields=["last_status", "last_error", "is_verified", "verified_at", "last_delivered_at", "updated_at"]
+    )
 
 
 def queue_notification_channel_logs(notifications):
@@ -108,6 +131,9 @@ def queue_notification_channel_logs(notifications):
                 continue
             bulk_logs.append(
                 NotificationChannelLog(
+                    # Carried over so the delivery can be billed to the workspace
+                    # whose plan pays for it; the log is otherwise self contained.
+                    workspace_id=notification.workspace_id,
                     receiver_id=notification.receiver_id,
                     triggered_by_id=notification.triggered_by_id,
                     channel=channel,
@@ -130,8 +156,7 @@ def stack_notification_channel(batch_size: int = 100):
     log_ids = list(
         NotificationChannelLog.objects.filter(
             channel__in=list(PROVIDERS.keys()), status=NOTIFICATION_CHANNEL_STATUS_PENDING, processed_at__isnull=True
-        )
-        .values_list("id", flat=True)[:batch_size]
+        ).values_list("id", flat=True)[:batch_size]
     )
     if not log_ids:
         return
@@ -154,6 +179,24 @@ def send_notification_channel_log(log_id):
     if channel_log.status != NOTIFICATION_CHANNEL_STATUS_PENDING:
         return
 
+    # The money comes first and the message second, on purpose: if the process
+    # dies in between, the log row says failed while the ledger entry says paid,
+    # and an operator can see and refund that. The other order gives away free
+    # messages that nobody can see. See ``plane.billing.services.sms``.
+    charge = (
+        sms_service.charge_for_log(channel_log)
+        if channel_log.channel == NOTIFICATION_CHANNEL_SMS
+        else sms_service.SMSCharge()
+    )
+    channel_log.sms_price_toman = charge.price_toman or None
+    if not charge.may_send:
+        channel_log.status = NOTIFICATION_CHANNEL_STATUS_SKIPPED
+        channel_log.error_message = (charge.skipped_reason or "")[:255]
+        channel_log.save(update_fields=["status", "error_message", "sms_price_toman", "updated_at"])
+        _record_channel_state(channel_log)
+        logger.warning("Notification channel %s skipped: %s", channel_log.channel, charge.skipped_reason)
+        return
+
     provider = get_provider(channel_log.channel)
     try:
         message = build_channel_message(channel_log.event, channel_log.data or {})
@@ -174,20 +217,9 @@ def send_notification_channel_log(log_id):
         channel_log.status = NOTIFICATION_CHANNEL_STATUS_FAILED
         channel_log.error_message = result.summary
 
-    channel_log.save(update_fields=["status", "sent_at", "error_message", "updated_at"])
+    channel_log.save(update_fields=["status", "sent_at", "error_message", "sms_price_toman", "updated_at"])
 
-    configuration, _created = UserNotificationChannel.objects.get_or_create(
-        user=channel_log.receiver, channel=channel_log.channel
-    )
-    configuration.last_status = channel_log.status
-    configuration.last_error = channel_log.error_message
-    if result is not None and result.ok:
-        configuration.is_verified = True
-        configuration.verified_at = channel_log.sent_at
-        configuration.last_delivered_at = channel_log.sent_at
-    configuration.save(
-        update_fields=["last_status", "last_error", "is_verified", "verified_at", "last_delivered_at", "updated_at"]
-    )
+    _record_channel_state(channel_log)
 
 
 __all__ = [

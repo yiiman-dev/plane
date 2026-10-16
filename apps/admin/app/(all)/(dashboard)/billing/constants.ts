@@ -233,6 +233,23 @@ export const TRANSACTION_STATUS_VARIANTS: Record<
 
 export const TRANSACTION_STATUSES = Object.keys(TRANSACTION_STATUS_LABELS) as TPaymentTransactionStatus[];
 
+/* sms report */
+
+/**
+ * Persian labels for the notification events the SMS report breaks a workspace's
+ * spend down by. The API sends the machine code, because that is what a plan's
+ * price table is keyed by; the label is a display concern and belongs beside the
+ * other labels this panel renders. An event the map does not know falls back to
+ * its code on screen rather than disappearing.
+ */
+export const SMS_EVENT_LABELS: Record<string, string> = {
+  comment: "دیدگاه",
+  issue_completed: "تکمیل کار",
+  mention: "منشن",
+  property_change: "تغییر ویژگی",
+  state_change: "تغییر وضعیت",
+};
+
 /* pagination */
 
 export const BILLING_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];

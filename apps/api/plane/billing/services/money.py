@@ -83,6 +83,20 @@ def get_or_create_account(code: str, kind: str, title: str, workspace=None) -> L
     only stamps ``deleted_at`` and the row keeps occupying its unique
     ``code``. The default manager hides it, so a plain ``get_or_create``
     would try to insert a duplicate and raise ``IntegrityError``.
+
+    Must also survive LOSING the create race. Everything above is a read, and
+    two transactions can pass it together. Most accounts are per workspace, so
+    they collide only with themselves, but the SMS expense account and the
+    admin grant pool are global: on a fresh installation the first two
+    deliveries -- on different workspaces, which is exactly why no per
+    workspace lock helps here -- both find no expense account and both insert,
+    and the unique ``code`` refuses one of them. That loser re-reads the
+    winner's row instead of failing the message its caller was delivering.
+
+    The insert runs inside its own ``atomic()`` block, which is a savepoint
+    when the caller already opened a transaction. Without it the
+    ``IntegrityError`` would abort a caller's surrounding transaction over a
+    race that has nothing to do with the work in it.
     """
     account = LedgerAccount.objects.filter(code=code).first()
     if account is not None:
@@ -96,7 +110,22 @@ def get_or_create_account(code: str, kind: str, title: str, workspace=None) -> L
         revived.save(update_fields=["deleted_at", "kind", "title", "updated_at"])
         return revived
 
-    return LedgerAccount.objects.create(code=code, kind=kind, title=title, workspace=workspace)
+    try:
+        with db_transaction.atomic():
+            return LedgerAccount.objects.create(code=code, kind=kind, title=title, workspace=workspace)
+    except IntegrityError:
+        # The winner has committed -- an uncommitted conflicting insert would
+        # have blocked this one instead of failing it -- so its row is the one
+        # to use. A soft-deleted row it revived is visible here too, since the
+        # unique ``code`` is what collided either way.
+        account = LedgerAccount.objects.filter(code=code).first()
+        if account is None:
+            # Not the create race, then: something else refused the insert, and
+            # returning an account that does not exist would be worse than
+            # failing. Re-raised inside the ``except`` so the original traceback
+            # survives.
+            raise
+        return account
 
 
 def get_or_create_wallet_accounts(workspace) -> tuple[LedgerAccount, LedgerAccount]:
