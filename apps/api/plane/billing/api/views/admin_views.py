@@ -17,6 +17,7 @@ from rest_framework.response import Response
 from plane.billing.api.views.base import WORKSPACE_NOT_FOUND, WorkspaceContextMixin
 from plane.billing.api.serializers import (
     AdminWorkspaceBillingSerializer,
+    BillingAccessLogSerializer,
     FeatureFlagSerializer,
     GatewayRoutingConfigSerializer,
     InvoiceSerializer,
@@ -436,6 +437,45 @@ class PlanFeatureFlagEndpoint(BillingAdminAPIView):
         if not deleted:
             return Response({"error": "این پرچم به پلن متصل نیست."}, status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminAccessLogEndpoint(BillingAdminAPIView):
+    """Who read which tenant's money: the accountability side of the audit trail.
+
+    Instance admins only, and that is the point of the table rather than a
+    limitation of this view. ``BillingAccessLog`` exists because an operator can
+    see any workspace's wallet and ledger; "who looked at me" has no meaning to a
+    workspace admin, and exposing it to one would widen the surface the log is
+    there to narrow.
+
+    This read writes no row of its own. The log records reads that returned a
+    balance or a ledger, and this page returns neither -- if it audited itself,
+    the trail would fill with entries about operators reading the trail.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+
+    def get(self, request):
+        # ``Meta.ordering`` is ``-created_at``, so the newest read comes first
+        # without a second order_by here that could disagree with it.
+        queryset = BillingAccessLog.objects.select_related("workspace", "viewer").all()
+
+        # A query parameter here narrows an instance-wide list the caller is
+        # already entitled to read in full, so it cannot widen what they see the
+        # way a forged ``?slug=`` on a workspace-scoped route could. It is a
+        # filter, like the invoice status filter, and not a scope.
+        workspace_slug = request.GET.get("workspace_slug")
+        if workspace_slug:
+            queryset = queryset.filter(workspace__slug=workspace_slug)
+
+        # Comma separated like the invoice status filter, so one request can ask
+        # for both kinds of money read at once. An unknown value matches nothing
+        # rather than failing: a filter typo is an empty screen, not a 500.
+        view_filter = request.GET.get("view")
+        if view_filter:
+            queryset = queryset.filter(view__in=str(view_filter).split(","))
+
+        return self.paginated(request, queryset, BillingAccessLogSerializer)
 
 
 class AdminWorkspaceListEndpoint(BillingAdminAPIView):

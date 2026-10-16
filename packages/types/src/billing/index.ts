@@ -476,7 +476,31 @@ export type TPlanFeatureFlagSaveResponse = {
   grants: TPlanFeatureFlag[];
 };
 
+/**
+ * One entry of the operator audit trail: an instance admin read a tenant's money.
+ * `viewer_email` and `viewer_name` are null when the admin who looked has since
+ * been deleted -- the row outlives the account on purpose, so the page has to
+ * render an unattributed read rather than assume a name is there.
+ */
+export type TBillingAccessLogRow = {
+  created_at: string;
+  id: string;
+  ip_address: string;
+  user_agent: string;
+  view: TBillingAccessLogView;
+  /** Persian label for `view`, taken from the model's own choices. */
+  view_label: string;
+  viewer_email: string | null;
+  viewer_name: string | null;
+  workspace_name: string | null;
+  workspace_slug: string | null;
+};
+
+/** The two reads the audit trail records. */
+export type TBillingAccessLogView = "wallet" | "ledger";
+
 /** The admin list endpoints return the same envelope as every other list. */
 export type TAdminWorkspaceListResponse = TPaginatedResponse<TAdminWorkspaceSummary[]>;
 export type TFeatureFlagListResponse = TPaginatedResponse<TFeatureFlag[]>;
 export type TPlanFeatureFlagListResponse = TPaginatedResponse<TPlanFeatureFlag[]>;
+export type TBillingAccessLogListResponse = TPaginatedResponse<TBillingAccessLogRow[]>;

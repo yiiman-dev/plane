@@ -28,6 +28,7 @@ export const BILLING_PLANS = "billing-plans";
  */
 export const buildBillingListKey = (
   resource:
+    | "billing-access-log"
     | "billing-admin-workspaces"
     | "billing-feature-flags"
     | "billing-invoices"
@@ -73,6 +74,13 @@ export const BILLING_ORDER_STATUS = (transactionId: string) => `billing-order-st
  * key is the plan id and two plans edited in one session never share an entry.
  */
 export const BILLING_PLAN_FEATURE_FLAGS = (planId: string) => `billing-plan-feature-flags-${planId}`;
+
+/**
+ * The audit trail is filtered by view, workspace and page, so its key carries the
+ * whole query: one entry per filter combination, never one entry for every filter.
+ */
+export const BILLING_ACCESS_LOG = (params: Record<string, string | number | undefined> = {}) =>
+  buildBillingListKey("billing-access-log", params);
 
 /* workspace scoped reads */
 

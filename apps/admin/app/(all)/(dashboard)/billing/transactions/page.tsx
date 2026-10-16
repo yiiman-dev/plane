@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { BILLING_INVOICES, BILLING_TRANSACTIONS, BillingService } from "@plane/services";
 import type {
@@ -22,6 +22,7 @@ import { Pagination } from "@makeplane/propel/components/pagination";
 import { Select, SelectContent, SelectItem, SelectList, SelectTrigger } from "@makeplane/propel/components/select";
 
 import { BillingEmptyState, BillingNav, BillingRTLFrame } from "../components/billing-layout";
+import { useDebouncedValue } from "../hooks";
 import {
   BILLING_CYCLE_LABELS,
   BILLING_PAGE_SIZE_OPTIONS,
@@ -73,17 +74,6 @@ const collectGatewayCodes = (payload: unknown, prefix = ""): string[] => {
     return [`${prefix}${key}: ${String(value)}`];
   });
 };
-
-function useDebouncedValue<TValue>(value: TValue, delay = 400): TValue {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(timeout);
-  }, [value, delay]);
-
-  return debouncedValue;
-}
 
 function JsonBlock({ label, payload }: { label: string; payload: Record<string, unknown> | undefined }) {
   if (!payload || !Object.keys(payload).length) return null;

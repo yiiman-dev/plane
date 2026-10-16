@@ -7,6 +7,7 @@ from rest_framework import serializers
 
 # Module imports
 from plane.billing.models import (
+    BillingAccessLog,
     FeatureFlag,
     GatewayRoutingConfig,
     Invoice,
@@ -380,6 +381,64 @@ class PlanFeatureFlagSerializer(serializers.ModelSerializer):
         if limit_value is not None:
             raise serializers.ValidationError({"limit_value": "این پرچم محدودیت عددی ندارد."})
         return attrs
+
+
+class BillingAccessLogSerializer(serializers.ModelSerializer):
+    """One operator read of a tenant's money, as the accountability screen shows it.
+
+    The workspace and the viewer are flattened rather than nested: the page exists
+    to answer "who read which tenant, and when" at a glance, and both of those are
+    nullable -- ``viewer`` is ``SET_NULL``, so a deleted admin's rows stay behind
+    unattributed, and ``workspace`` is the tenant whose money was read.
+    """
+
+    workspace_slug = serializers.SerializerMethodField()
+    workspace_name = serializers.SerializerMethodField()
+    viewer_email = serializers.SerializerMethodField()
+    viewer_name = serializers.SerializerMethodField()
+    view_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BillingAccessLog
+        fields = [
+            "id",
+            "view",
+            "view_label",
+            "workspace_slug",
+            "workspace_name",
+            "viewer_email",
+            "viewer_name",
+            "ip_address",
+            "user_agent",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_view_label(self, instance) -> str:
+        # The label comes from the model's own choices, so a new view type gets a
+        # Persian name in one place instead of a second map here that drifts.
+        return instance.get_view_display()
+
+    @staticmethod
+    def _workspace(instance):
+        return instance.workspace
+
+    def get_workspace_slug(self, instance):
+        workspace = self._workspace(instance)
+        return workspace.slug if workspace else None
+
+    def get_workspace_name(self, instance):
+        workspace = self._workspace(instance)
+        return workspace.name if workspace else None
+
+    def get_viewer_email(self, instance):
+        return instance.viewer.email if instance.viewer else None
+
+    def get_viewer_name(self, instance):
+        viewer = instance.viewer
+        if viewer is None:
+            return None
+        return f"{viewer.first_name} {viewer.last_name}".strip() or viewer.email
 
 
 class AdminLedgerEntrySerializer(serializers.ModelSerializer):

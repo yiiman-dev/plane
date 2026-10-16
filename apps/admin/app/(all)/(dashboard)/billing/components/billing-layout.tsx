@@ -17,6 +17,7 @@ const BILLING_TABS: { href: string; label: string }[] = [
   { href: "/billing/workspaces/", label: "ورک‌اسپیس‌ها" },
   { href: "/billing/feature-flags/", label: "پرچم‌های قابلیت" },
   { href: "/billing/transactions/", label: "تراکنش‌ها و فاکتورها" },
+  { href: "/billing/access-log/", label: "رد دسترسی‌ها" },
 ];
 
 /** Billing routes are registered with a trailing slash, so compare both sides without one. */
@@ -33,6 +34,8 @@ export function BillingNav() {
   return (
     <nav aria-label="ناوبری درگاه پرداخت" className="flex flex-wrap items-center gap-1 border-b border-subtle pb-3">
       {BILLING_TABS.map((tab) => {
+        // The detail route lives underneath the list route, so the workspaces tab
+        // stays current while an operator is looking at one tenant.
         const isActive =
           currentPath === normalizePath(tab.href) ||
           (tab.href === "/billing/workspaces/" && currentPath.startsWith("/billing/workspaces/"));
