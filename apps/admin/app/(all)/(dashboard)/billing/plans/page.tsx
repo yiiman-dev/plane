@@ -48,6 +48,7 @@ import { AddOutline } from "@makeplane/propel/icons";
 import { setToast } from "@plane/blocks/toast";
 
 import { BillingNav, BillingRTLFrame, BillingSection } from "../components/billing-layout";
+import { SMS_EVENT_LABELS } from "../constants";
 import { formatNumber, formatToman, getErrorMessage, toSafeNumber } from "../utils";
 
 type TPlanForm = {
@@ -62,6 +63,8 @@ type TPlanForm = {
   monthly_price_toman: string;
   name: string;
   per_seat_price_toman: string;
+  /** Event code to the Toman price typed for it, as a string so the field can be empty. */
+  sms_prices: Record<string, string>;
   sort_order: string;
   yearly_price_toman: string;
 };
@@ -72,6 +75,12 @@ type TPlanForm = {
  * definition is one field away from a form that sends what the backend ignores.
  */
 type TFeatureFlagGrant = TPlanFeatureFlagGrantInput;
+
+/** The events the SMS price fields cover, in the order they are rendered. */
+const SMS_PRICE_EVENTS = Object.keys(SMS_EVENT_LABELS);
+
+/** One empty field per known event: an absent key and a blank input mean the same thing here. */
+const emptySmsPrices = (): Record<string, string> => Object.fromEntries(SMS_PRICE_EVENTS.map((event) => [event, ""]));
 
 const emptyForm = (): TPlanForm => ({
   access_level: "",
@@ -85,6 +94,7 @@ const emptyForm = (): TPlanForm => ({
   monthly_price_toman: "0",
   name: "",
   per_seat_price_toman: "0",
+  sms_prices: emptySmsPrices(),
   sort_order: "0",
   yearly_price_toman: "0",
 });
@@ -103,10 +113,44 @@ const toForm = (plan?: TBillingPlan): TPlanForm =>
         monthly_price_toman: plan.monthly_price_toman.toString(),
         name: plan.name,
         per_seat_price_toman: plan.per_seat_price_toman.toString(),
+        // Spread over the blank map rather than replacing it, so a plan priced
+        // for an event this build does not know about keeps its field instead
+        // of losing it the next time an admin saves the plan.
+        sms_prices: {
+          ...emptySmsPrices(),
+          ...Object.fromEntries(
+            Object.entries(plan.sms_prices ?? {}).map(([event, price]) => [event, price.toString()])
+          ),
+        },
         sort_order: plan.sort_order.toString(),
         yearly_price_toman: plan.yearly_price_toman.toString(),
       }
     : emptyForm();
+
+/**
+ * The per-event SMS prices the plan stores, as Toman amounts.
+ *
+ * A blank field or a zero means the event is free, and free is sent as the
+ * ABSENCE of an entry rather than a stored zero: the delivery path reads the map
+ * event by event, where a missing key and a zero behave identically, but a
+ * stored zero makes the blob say something it does not mean and makes the
+ * plan card list a price it will never charge.
+ *
+ * A negative amount is dropped for the same reason rather than sent: the charge
+ * path treats one as free, so storing it would leave a number in the blob that
+ * contradicts what the code does with it.
+ */
+const parseSmsPrices = (prices: Record<string, string>): Record<string, number> => {
+  const parsed: Record<string, number> = {};
+  for (const [event, value] of Object.entries(prices)) {
+    const typed = value.trim();
+    if (typed === "") continue;
+    const amount = Number.parseInt(typed, 10);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    parsed[event] = amount;
+  }
+  return parsed;
+};
 
 const toPayload = (form: TPlanForm): TBillingPlanPayload => ({
   access_level: form.access_level.trim(),
@@ -124,12 +168,16 @@ const toPayload = (form: TPlanForm): TBillingPlanPayload => ({
   monthly_price_toman: toSafeNumber(form.monthly_price_toman),
   name: form.name.trim(),
   per_seat_price_toman: toSafeNumber(form.per_seat_price_toman),
+  sms_prices: parseSmsPrices(form.sms_prices),
   sort_order: toSafeNumber(form.sort_order),
   yearly_price_toman: toSafeNumber(form.yearly_price_toman),
 });
 
+// ``sms_prices`` is excluded because it is the one field whose value is not a
+// string: it has its own per-event section, and leaving it in this list would
+// make ``form[field.key]`` a string or a map in every one of them.
 const TEXT_FIELDS: ReadonlyArray<{
-  key: keyof Omit<TPlanForm, "is_active">;
+  key: keyof Omit<TPlanForm, "is_active" | "sms_prices">;
   label: string;
   placeholder: string;
   type?: "number";
@@ -215,6 +263,36 @@ function PlanFormFields({
             onChange={(event) => onChange({ ...form, features: event.target.value })}
           />
         </TextAreaGroup>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:col-span-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-13 text-tertiary">قیمت پیامک به تفکیک رویداد (تومان)</span>
+          <span className="text-12 text-tertiary">
+            خالی گذاشتن هر رویداد یعنی پیامک آن رویداد رایگان است و هیچ مبلغی از کیف پول ورک‌اسپیس کسر نمی‌شود. تغییر این
+            قیمت‌ها فقط روی پیامک‌های بعدی اثر دارد؛ نرخ هر پیامک در لحظهٔ ارسال ثبت می‌شود و گزارش گذشته تغییر نمی‌کند.
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {SMS_PRICE_EVENTS.map((code) => (
+            <div key={code} className="flex flex-col gap-1">
+              <label className="text-13 text-tertiary" htmlFor={fieldId(`sms-${code}`)}>
+                {SMS_EVENT_LABELS[code] ?? code}
+              </label>
+              <Input
+                id={fieldId(`sms-${code}`)}
+                name={`sms_prices.${code}`}
+                type="number"
+                size="lg"
+                placeholder="رایگان"
+                value={form.sms_prices[code] ?? ""}
+                onChange={(event) =>
+                  onChange({ ...form, sms_prices: { ...form.sms_prices, [code]: event.target.value } })
+                }
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 text-13 text-secondary sm:col-span-2">
@@ -368,6 +446,9 @@ function PlanCard({
 }) {
   // De-duplicated so each chip keeps a stable, data-derived key even when a feature was entered twice.
   const features = Array.from(new Set(plan.features ?? []));
+  // What this plan charges per SMS event. An empty map is the honest thing to
+  // show for a plan that prices nothing, so the section is omitted entirely.
+  const smsPrices = Object.entries(plan.sms_prices ?? {});
 
   return (
     <article className="flex h-full flex-col gap-3 rounded-lg border border-subtle bg-layer-1 p-4 transition-colors hover:bg-layer-1-hover">
@@ -405,6 +486,19 @@ function PlanCard({
             {features.map((feature) => (
               <li key={feature} className="rounded-full bg-layer-2 px-2 py-1 text-12 text-secondary">
                 {feature}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {smsPrices.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <h3 className="text-12 text-tertiary">قیمت پیامک</h3>
+          <ul className="flex flex-wrap gap-1.5">
+            {smsPrices.map(([code, price]) => (
+              <li key={code} className="rounded-full bg-layer-2 px-2 py-1 text-12 text-secondary">
+                {SMS_EVENT_LABELS[code] ?? code}: {formatToman(price)}
               </li>
             ))}
           </ul>

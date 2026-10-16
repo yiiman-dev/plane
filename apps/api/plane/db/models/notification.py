@@ -255,6 +255,18 @@ class NotificationChannelPreference(BaseModel):
 class NotificationChannelLog(BaseModel):
     """Delivery log for a single message queued on an external notification channel"""
 
+    # The workspace whose plan pays for this message, carried over from the in app
+    # notification it was queued from. Nullable: rows queued before billing knew
+    # about this column have none, and such a message is delivered and simply not
+    # billed -- an unattributed message must never be dropped or charged to
+    # somebody else's wallet.
+    workspace = models.ForeignKey(
+        "db.Workspace",
+        on_delete=models.CASCADE,
+        related_name="notification_channel_logs",
+        null=True,
+        blank=True,
+    )
     receiver = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -284,6 +296,10 @@ class NotificationChannelLog(BaseModel):
     processed_at = models.DateTimeField(null=True)
     # sent at marks a successful delivery
     sent_at = models.DateTimeField(null=True)
+    # The rate the plan charged for this message, snapshotted when the message was
+    # sent. A later price change must not rewrite what the past cost, and the
+    # delivery row is the only place that answers "what did this cost then".
+    sms_price_toman = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Notification Channel Log"
