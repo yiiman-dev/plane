@@ -14,6 +14,7 @@ import pytest
 from django.contrib.auth.models import AnonymousUser
 
 # Module imports
+from plane.billing.tests.conftest import force_instance_admin_login
 from plane.billing.models import BillingAccessLog
 from plane.billing.services import ledger, wallet
 from plane.db.models import User, WorkspaceMember
@@ -47,7 +48,7 @@ def funded_workspace(workspace_factory):
 
 def test_reading_a_wallet_as_admin_writes_one_row(client, funded_workspace, instance_admin):
     workspace, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/wallet/")
 
@@ -60,7 +61,7 @@ def test_reading_a_wallet_as_admin_writes_one_row(client, funded_workspace, inst
 
 def test_reading_the_ledger_as_admin_writes_one_row(client, funded_workspace, instance_admin):
     workspace, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/wallet/ledger/")
 
@@ -71,7 +72,7 @@ def test_reading_the_ledger_as_admin_writes_one_row(client, funded_workspace, in
 def test_every_repeated_read_is_recorded(client, funded_workspace, instance_admin):
     """A log that collapses repeats cannot show a pattern."""
     workspace, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     for _ in range(3):
         client.get(f"/api/billing/admin/workspaces/{workspace.slug}/wallet/ledger/")
@@ -81,7 +82,7 @@ def test_every_repeated_read_is_recorded(client, funded_workspace, instance_admi
 
 def test_the_row_records_where_the_read_came_from(client, funded_workspace, instance_admin):
     workspace, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     client.get(f"/api/billing/admin/workspaces/{workspace.slug}/wallet/", HTTP_USER_AGENT="plane-ops-console/1.0")
 

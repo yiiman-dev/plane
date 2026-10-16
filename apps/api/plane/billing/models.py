@@ -48,6 +48,10 @@ class TransactionStatus(models.TextChoices):
     FAILED = "failed", "Failed"
     UNAVAILABLE = "unavailable", "Unavailable"
     REVERSED = "reversed", "Reversed"
+    # The last allowed verification could not say whether the payer was charged.
+    # The amount sits in the workspace's hold account until an instance admin
+    # decides, or the hold expires (M5).
+    HELD = "held", "Held"
 
 
 class LedgerAccountKind(models.TextChoices):
@@ -76,6 +80,11 @@ class LedgerSource(models.TextChoices):
     # so its description can be redacted WITHOUT also redacting the payment
     # reference a payer is entitled to.
     GRANT_REVERSAL = "grant_reversal", "Grant reversal"
+    # A hold ending WITHOUT the wallet being credited: the gateway confirmed the
+    # payment after all (the money became a plan), or it confirmed the payer was
+    # never charged. ``RELEASE_HOLD`` is the other way a hold ends, and it does
+    # credit the wallet; the two must stay distinguishable on a statement.
+    HOLD_CLOSED = "hold_closed", "Hold closed"
 
 
 class SubscriptionStatus(models.TextChoices):
@@ -334,6 +343,9 @@ class PaymentTransaction(BaseModel):
     attempts = models.PositiveIntegerField(default=0, verbose_name="Attempts")
     verified_at = models.DateTimeField(null=True, blank=True, verbose_name="Verified At")
     paid_at = models.DateTimeField(null=True, blank=True, verbose_name="Paid At")
+    # When the money was parked in the hold (see ``TransactionStatus.HELD``).
+    # Kept after the hold ends, so a row still says it was once in the queue.
+    held_at = models.DateTimeField(null=True, blank=True, verbose_name="Held At")
     meta = models.JSONField(default=dict, blank=True, verbose_name="Meta")
 
     class Meta:
@@ -715,3 +727,62 @@ class BillingAccessLog(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.view}:{self.workspace_id}"
+
+
+# The days before a subscription ends on which its workspace admins are told.
+DEFAULT_RENEWAL_NOTICE_DAYS = [7, 3, 1]
+
+
+def default_renewal_notice_days():
+    return list(DEFAULT_RENEWAL_NOTICE_DAYS)
+
+
+class RenewalNoticeSchedule(BaseModel):
+    """The instance's renewal reminder schedule. One row; see ``services.renewal``.
+
+    The days are stored as a list rather than one row per day so the admin
+    page replaces the whole schedule in one save, which keeps two admins from
+    each adding a day the other one removed.
+    """
+
+    days_before = models.JSONField(default=default_renewal_notice_days, verbose_name="Days Before Expiry")
+
+    class Meta:
+        verbose_name = "Renewal Notice Schedule"
+        verbose_name_plural = "Renewal Notice Schedules"
+
+    def __str__(self) -> str:
+        return f"renewal-notice-schedule:{self.days_before}"
+
+
+class RenewalNotice(BaseModel):
+    """One reminder sent for one subscription period.
+
+    The unique key is the reminder itself: the subscription, which mark it was
+    for, and the moment the period ends. A beat run that repeats the day, or a
+    worker that retries after a crash, finds the row and sends nothing again.
+    """
+
+    subscription = models.ForeignKey(
+        "billing.Subscription",
+        on_delete=models.CASCADE,
+        related_name="renewal_notices",
+        verbose_name="Subscription",
+    )
+    days_before = models.PositiveSmallIntegerField(verbose_name="Days Before Expiry")
+    period_ends_at = models.DateTimeField(verbose_name="Period Ends At")
+    recipients = models.PositiveIntegerField(default=0, verbose_name="Recipients")
+
+    class Meta:
+        verbose_name = "Renewal Notice"
+        verbose_name_plural = "Renewal Notices"
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subscription", "days_before", "period_ends_at"],
+                name="billing_renewal_notice_once_per_mark",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subscription_id}:{self.days_before}"

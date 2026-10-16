@@ -26,6 +26,8 @@ from plane.billing.api.serializers import (
     PaymentTransactionSerializer,
     PlanFeatureFlagSerializer,
     PlanSerializer,
+    QueuedTransactionSerializer,
+    RenewalNoticeScheduleSerializer,
 )
 from plane.billing.gateways.registry import supported_codes
 from plane.billing.models import (
@@ -40,10 +42,14 @@ from plane.billing.models import (
     PlanFeatureFlag,
     Subscription,
     SubscriptionStatus,
+    TransactionStatus,
 )
+from plane.billing.services import hold as hold_service
 from plane.billing.services import ledger as ledger_service
 from plane.billing.services import money as money_service
+from plane.billing.services import renewal as renewal_service
 from plane.billing.services import sms as sms_service
+from plane.billing.services.wallet import WalletError
 from plane.db.models import NOTIFICATION_CHANNEL_SMS, Workspace, WorkspaceMember
 from plane.license.api.permissions import InstanceAdminPermission
 from plane.license.api.views.base import BaseAPIView
@@ -239,6 +245,89 @@ class TransactionDetailEndpoint(BillingAdminAPIView):
         if transaction is None:
             return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response(PaymentTransactionSerializer(transaction).data, status=status.HTTP_200_OK)
+
+
+class QueuedTransactionListEndpoint(BillingAdminAPIView):
+    """The ambiguous payment queue (M5): payments whose money sits in a hold.
+
+    Oldest first, because the oldest hold is the one closest to being released
+    automatically and the one a payer has been waiting on longest.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+    search_fields = ["gateway_token", "gateway_ref_id", "invoice__number"]
+
+    def get(self, request):
+        queryset = (
+            PaymentTransaction.objects.filter(status=TransactionStatus.HELD)
+            .select_related("invoice", "user")
+            .order_by("held_at", "id")
+        )
+        gateway_code = request.GET.get("gateway_code")
+        if gateway_code:
+            queryset = queryset.filter(gateway_code=gateway_code)
+        return self.paginated(request, queryset, QueuedTransactionSerializer)
+
+
+NOT_HELD = {"error": "این تراکنش در صف پرداخت‌های مبهم نیست."}
+DESCRIPTION_REQUIRED = {"error": "توضیح تصمیم الزامی است."}
+TRANSACTION_NOT_FOUND = {"error": "Transaction not found"}
+
+
+class HeldTransactionDecisionEndpoint(BillingAdminAPIView):
+    """One admin decision on a queued payment. Subclasses say which.
+
+    The decision itself lives in ``services.hold``; this layer only turns the
+    outcome into a status code: 404 for a row that is not there, 409 for one
+    that is not in the queue, 400 for a decision with no reason.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+    requires_description = True
+
+    def decide(self, transaction, description, request):  # pragma: no cover - abstract
+        raise NotImplementedError
+
+    def post(self, request, pk):
+        transaction = PaymentTransaction.objects.filter(pk=pk).select_related("invoice", "user").first()
+        if transaction is None:
+            return Response(TRANSACTION_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        description = str(request.data.get("description") or "").strip()
+        if self.requires_description and not description:
+            return Response(DESCRIPTION_REQUIRED, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            self.decide(transaction, description, request)
+        except hold_service.NotHeld:
+            return Response(NOT_HELD, status=status.HTTP_409_CONFLICT)
+        except hold_service.DescriptionRequired:
+            return Response(DESCRIPTION_REQUIRED, status=status.HTTP_400_BAD_REQUEST)
+        except WalletError as exc:
+            return Response({"error": str(exc) or "wallet refused the movement"}, status=status.HTTP_409_CONFLICT)
+        transaction.refresh_from_db()
+        return Response(PaymentTransactionSerializer(transaction).data, status=status.HTTP_200_OK)
+
+
+class TransactionReleaseHoldEndpoint(HeldTransactionDecisionEndpoint):
+    """Finalise the refund: the held amount becomes the workspace's spendable balance."""
+
+    def decide(self, transaction, description, request):
+        hold_service.release_held_payment(transaction, description=description, created_by=request.user)
+
+
+class TransactionRejectHoldEndpoint(HeldTransactionDecisionEndpoint):
+    """Close the hold without crediting the wallet: the payer was never charged."""
+
+    def decide(self, transaction, description, request):
+        hold_service.reject_held_payment(transaction, description=description, created_by=request.user)
+
+
+class TransactionRetryEndpoint(HeldTransactionDecisionEndpoint):
+    """Verify the payment once more with a fresh attempt budget."""
+
+    requires_description = False
+
+    def decide(self, transaction, description, request):
+        hold_service.retry_held_payment(transaction, created_by=request.user)
 
 
 class FeatureFlagListCreateEndpoint(BillingAdminAPIView):
@@ -646,3 +735,24 @@ class AdminSmsReportEndpoint(BillingAdminAPIView):
             return sms_service.workspace_cost_rows(workspaces)
 
         return self.paginate(request, queryset=queryset, on_results=build, default_per_page=50)
+
+
+class RenewalNoticeScheduleEndpoint(BillingAdminAPIView):
+    """The days before a subscription ends on which workspace admins are reminded (phase 5).
+
+    One schedule for the whole instance. A PATCH replaces the list in one save,
+    so two admins cannot each add a day the other one removed.
+    """
+
+    permission_classes = [InstanceAdminPermission]
+
+    def get(self, request):
+        return Response(RenewalNoticeScheduleSerializer(renewal_service.get_schedule()).data)
+
+    def patch(self, request):
+        schedule = renewal_service.get_schedule()
+        serializer = RenewalNoticeScheduleSerializer(schedule, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data)

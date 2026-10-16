@@ -339,6 +339,7 @@ export type TInvoiceDetail = TInvoice & {
 
 export type TPaymentTransactionStatus =
   | "failed"
+  | "held"
   | "paid"
   | "pending"
   | "processing"
@@ -378,6 +379,17 @@ export type TPaymentGatewayListResponse = TPaginatedResponse<TPaymentGateway[]>;
 export type TBillingPlanListResponse = TPaginatedResponse<TBillingPlan[]>;
 export type TInvoiceListResponse = TPaginatedResponse<TInvoice[]>;
 export type TPaymentTransactionListResponse = TPaginatedResponse<TPaymentTransaction[]>;
+
+/** A payment waiting in the ambiguous queue, with what the admin decision needs. */
+export type TQueuedTransaction = TPaymentTransaction & {
+  age_days: number | null;
+  auto_release_at: string | null;
+  held_at: string | null;
+  workspace_name: string | null;
+  workspace_slug: string | null;
+};
+
+export type TQueuedTransactionListResponse = TPaginatedResponse<TQueuedTransaction[]>;
 
 /* feature flag catalogue */
 

@@ -15,7 +15,7 @@ import pytest
 from plane.billing.models import PaymentGateway, Plan
 
 # Local imports
-from plane.billing.tests.conftest import CREDENTIALS, make_gateway
+from plane.billing.tests.conftest import CREDENTIALS, make_gateway, force_instance_admin_login
 
 pytestmark = pytest.mark.django_db
 
@@ -47,6 +47,12 @@ ADMIN_URLS = [
     ("get", "/api/billing/admin/workspaces/canary-team/wallet/ledger/"),
     ("post", "/api/billing/admin/workspaces/canary-team/wallet/grant/"),
     ("post", "/api/billing/admin/workspaces/canary-team/wallet/revoke/"),
+    # The ambiguous payment queue and its three decisions. The uuid does not
+    # exist on purpose, for the same reason as the canary slug above.
+    ("get", "/api/billing/admin/transactions/queued/"),
+    ("post", "/api/billing/admin/transactions/00000000-0000-4000-8000-00000000c0de/retry/"),
+    ("post", "/api/billing/admin/transactions/00000000-0000-4000-8000-00000000c0de/release-hold/"),
+    ("post", "/api/billing/admin/transactions/00000000-0000-4000-8000-00000000c0de/reject-hold/"),
 ]
 
 # Every wallet route that resolves a workspace from the URL and is guarded by
@@ -140,7 +146,7 @@ def test_the_workspace_detail_route_rejects_an_anonymous_caller(anonymous_client
 
 def test_gateway_credentials_are_never_returned_to_the_client(client, django_user_model, instance_admin):
     instance_admin
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     make_gateway("zarinpal")
     make_gateway("payping")
 
@@ -212,7 +218,7 @@ def test_plan_list_is_closed_to_anonymous_callers(anonymous_client):
 
 
 def test_admin_routing_round_trip(client, instance_admin):
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         "/api/billing/admin/routing/",
@@ -237,7 +243,7 @@ def test_admin_routing_round_trip(client, instance_admin):
 
 
 def test_admin_plan_crud(client, instance_admin):
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     created = client.post(
         "/api/billing/admin/plans/",
@@ -265,7 +271,7 @@ def test_admin_plan_crud(client, instance_admin):
 
 
 def test_admin_gateway_create_encrypts_the_credentials(client, instance_admin):
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         "/api/billing/admin/gateways/",
@@ -427,7 +433,7 @@ def test_admin_transaction_list_filters_by_invoice_cycle(client, instance_admin,
     # The payer above was attached with force_authenticate, which DRF prefers over the session, so
     # it has to be detached before the admin session login takes effect.
     client.force_authenticate(user=None)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     response = client.get("/api/billing/admin/transactions/", {"cycle": "yearly"})
 
     assert response.status_code == 200, response.content

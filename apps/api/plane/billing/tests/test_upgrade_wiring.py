@@ -133,7 +133,8 @@ def test_order_creation_charges_the_prorated_amount(member, monkeypatch, no_retr
     from plane.billing.models import RoutingStrategy
 
     workspace, user = member
-    low, high = make_plan("low", 1, 1_000_000), make_plan("high", 2, 2_000_000)
+    low = make_plan("low", 1, 1_000_000)
+    make_plan("high", 2, 2_000_000)
     subscribe(workspace, user, low, days_left=15, charge=1_000_000)
     make_gateway("zarinpal")
     configuring(monkeypatch, RoutingStrategy.PRIORITY, ["zarinpal"])

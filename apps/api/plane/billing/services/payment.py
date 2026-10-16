@@ -27,8 +27,9 @@ from plane.billing.models import (
     SubscriptionStatus,
     TransactionStatus,
 )
+from plane.billing.services import hold as hold_service
 from plane.billing.services.router import GatewayRouter
-from plane.billing.services.tasks import schedule_verification_retry
+from plane.billing.services.tasks import max_verify_attempts, schedule_verification_retry
 from plane.billing.services.upgrade import RenewalLockedError, UpgradeQuote, quote_for_workspace
 from plane.db.models import Workspace
 
@@ -348,6 +349,40 @@ def _activate_subscription(invoice: Invoice, transaction: PaymentTransaction) ->
     subscription.save()
 
 
+def _settle_hold(transaction: PaymentTransaction, description: str) -> None:
+    """A parked payment got its answer: the hold ends and the wallet is not credited.
+
+    Paid means the money became a plan; failed means there never was any. Either
+    way the amount leaves the hold account without passing through the wallet.
+    """
+    if transaction.held_at is not None:
+        hold_service.close_hold(transaction, description=description)
+
+
+def _fail(transaction: PaymentTransaction, reason: str, message: str = "") -> dict:
+    """The gateway (or the payer) said no. A confirmed failure is never retried."""
+    transaction.mark_status(TransactionStatus.FAILED, reason)
+    transaction.save()
+    _settle_hold(transaction, reason or "Payment failed.")
+    return _serialize(transaction, message=message or reason or "Payment failed.")
+
+
+def _leave_ambiguous(transaction: PaymentTransaction, status: str, message: str) -> dict:
+    """The gateway could not say yet: retry later, or park the money if this was the last try.
+
+    ``transaction.attempts`` already counts the attempt being answered here, so
+    reaching the budget means the retry loop is over and the amount goes to the
+    hold queue (M5) instead of being retried for ever or quietly failed.
+    """
+    if int(transaction.attempts or 0) >= max_verify_attempts():
+        hold_service.park_ambiguous_payment(transaction, reason=message)
+        return _serialize(transaction, message=message)
+    transaction.mark_status(status, message)
+    transaction.save()
+    schedule_verification_retry(transaction)
+    return _serialize(transaction, message=message)
+
+
 def process_callback(
     gateway_code: str,
     payload: dict,
@@ -384,23 +419,16 @@ def process_callback(
         indicator = adapter.callback_indicates_payment(payload)
         if indicator is False:
             # confirmed payer failure, never a failover trigger
-            transaction.mark_status(TransactionStatus.FAILED, "Payer reported a failed payment.")
-            transaction.save()
-            return _serialize(transaction, message="Payment was not completed.")
+            return _fail(transaction, "Payer reported a failed payment.", message="Payment was not completed.")
 
         # the adapter needs the merchant side ids it generated, not just the callback
         callback_payload = {**payload, **(transaction.meta or {})}
         try:
             result = adapter.verify(token, transaction.amount_toman, callback_payload)
         except GatewayUnavailable as exc:
-            transaction.mark_status(TransactionStatus.UNAVAILABLE, str(exc))
-            transaction.save()
-            schedule_verification_retry(transaction)
-            return _serialize(transaction, message=str(exc))
+            return _leave_ambiguous(transaction, TransactionStatus.UNAVAILABLE, str(exc))
         except GatewayValidationError as exc:
-            transaction.mark_status(TransactionStatus.FAILED, str(exc))
-            transaction.save()
-            return _serialize(transaction, message=str(exc))
+            return _fail(transaction, str(exc))
 
         transaction.verify_payload = result.raw or {}
         if result.status == GatewayStatus.PAID:
@@ -412,24 +440,20 @@ def process_callback(
                     f"{gateway_code} reported a successful verification without a confirmed "
                     "amount, the payment is not marked paid until it does."
                 )
-                transaction.mark_status(TransactionStatus.PROCESSING, message)
-                transaction.save()
-                schedule_verification_retry(transaction)
-                return _serialize(transaction, message=message)
+                return _leave_ambiguous(transaction, TransactionStatus.PROCESSING, message)
             if int(confirmed) != int(transaction.amount_toman):
                 message = (
                     f"Amount mismatch: the gateway confirmed {confirmed} toman "
                     f"while the invoice is {transaction.amount_toman} toman."
                 )
-                transaction.mark_status(TransactionStatus.FAILED, message)
-                transaction.save()
-                return _serialize(transaction, message=message)
+                return _fail(transaction, message)
             transaction.mark_paid(
                 ref_id=result.ref_id,
                 amount_toman=transaction.amount_toman,
                 fee=result.fee,
             )
             transaction.save()
+            _settle_hold(transaction, "پرداخت توسط درگاه تأیید شد")
             invoice = transaction.invoice
             if invoice is not None:
                 invoice.status = InvoiceStatus.PAID
@@ -447,22 +471,16 @@ def process_callback(
                 _activate_subscription(invoice, transaction)
             return _serialize(transaction, message=result.message or "Paid")
         if result.status == GatewayStatus.PROCESSING:
-            transaction.mark_status(TransactionStatus.PROCESSING, result.message)
-            transaction.save()
-            schedule_verification_retry(transaction)
-            return _serialize(transaction, message=result.message or "Payment is being processed.")
+            return _leave_ambiguous(
+                transaction, TransactionStatus.PROCESSING, result.message or "Payment is being processed."
+            )
         if result.status == GatewayStatus.UNAVAILABLE:
             # a gateway outage is never a payer failure, so the transaction stays
             # retryable instead of being recorded as a failed payment
             message = result.message or f"{gateway_code} is currently unavailable."
-            transaction.mark_status(TransactionStatus.UNAVAILABLE, message)
-            transaction.save()
-            schedule_verification_retry(transaction)
-            return _serialize(transaction, message=message)
+            return _leave_ambiguous(transaction, TransactionStatus.UNAVAILABLE, message)
 
-        transaction.mark_status(TransactionStatus.FAILED, result.message)
-        transaction.save()
-        return _serialize(transaction, message=result.message or "Payment failed.")
+        return _fail(transaction, result.message or "", message=result.message or "Payment failed.")
 
 
 def _serialize(transaction: PaymentTransaction, message: str = "") -> dict:

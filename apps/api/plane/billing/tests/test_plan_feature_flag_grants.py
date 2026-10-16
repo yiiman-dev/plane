@@ -19,6 +19,7 @@ from uuid import uuid4
 import pytest
 
 # Module imports
+from plane.billing.tests.conftest import force_instance_admin_login
 from plane.billing.models import FeatureFlag, Plan, PlanFeatureFlag
 from plane.db.models import User
 
@@ -42,7 +43,7 @@ def test_the_plan_form_saves_every_grant_and_limit_in_one_patch(client, instance
     plan = Plan.objects.create(code="pro", name="حرفه‌ای")
     flag_a = number_flag("projects")
     flag_b = boolean_flag("charts")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         grants_url(plan),
@@ -68,7 +69,7 @@ def test_the_save_response_carries_every_grant_so_the_screen_can_re_render(clien
     plan = Plan.objects.create(code="pro", name="حرفه‌ای")
     number_flag("projects")
     boolean_flag("charts")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         grants_url(plan),
@@ -98,7 +99,7 @@ def test_a_limit_on_a_boolean_flag_refuses_the_whole_batch(client, instance_admi
     plan = Plan.objects.create(code="pro", name="حرفه‌ای")
     number_flag("projects")
     boolean_flag("charts")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         grants_url(plan),
@@ -121,7 +122,7 @@ def test_a_number_grant_without_a_bound_refuses_the_whole_batch(client, instance
     plan = Plan.objects.create(code="pro", name="حرفه‌ای")
     number_flag("projects")
     boolean_flag("charts")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         grants_url(plan),
@@ -137,7 +138,7 @@ def test_a_number_grant_without_a_bound_refuses_the_whole_batch(client, instance
 def test_an_unknown_flag_code_is_refused_rather_than_ignored(client, instance_admin):
     """A silently skipped grant is a screen that saved and did nothing."""
     plan = Plan.objects.create(code="pro", name="حرفه‌ای")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         grants_url(plan),
@@ -157,7 +158,7 @@ def test_the_batch_leaves_a_grant_it_does_not_list_alone(client, instance_admin)
     listed = boolean_flag("charts")
     unlisted = boolean_flag("wiki")
     PlanFeatureFlag.objects.create(plan=plan, feature_flag=unlisted, is_enabled=True)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         grants_url(plan),
@@ -175,7 +176,7 @@ def test_the_batch_keeps_an_existing_config_it_does_not_mention(client, instance
     plan = Plan.objects.create(code="pro", name="حرفه‌ای")
     flag = boolean_flag("charts")
     PlanFeatureFlag.objects.create(plan=plan, feature_flag=flag, is_enabled=False, config={"notes": "نگه‌داشته شود"})
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(
         grants_url(plan),
@@ -192,7 +193,7 @@ def test_the_batch_keeps_an_existing_config_it_does_not_mention(client, instance
 @pytest.mark.django_db
 def test_a_missing_grants_list_is_refused(client, instance_admin):
     plan = Plan.objects.create(code="pro", name="حرفه‌ای")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.patch(grants_url(plan), {}, format="json")
 

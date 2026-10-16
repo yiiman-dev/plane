@@ -17,6 +17,7 @@ const BILLING_TABS: { href: string; label: string }[] = [
   { href: "/billing/workspaces/", label: "ورک‌اسپیس‌ها" },
   { href: "/billing/feature-flags/", label: "پرچم‌های قابلیت" },
   { href: "/billing/transactions/", label: "تراکنش‌ها و فاکتورها" },
+  { href: "/billing/payment-queue/", label: "صف پرداخت‌های مبهم" },
   { href: "/billing/access-log/", label: "رد دسترسی‌ها" },
   { href: "/billing/sms-report/", label: "گزارش هزینهٔ پیامک" },
 ];

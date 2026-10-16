@@ -19,6 +19,7 @@ from uuid import uuid4
 import pytest
 
 # Module imports
+from plane.billing.tests.conftest import force_instance_admin_login
 from plane.billing.models import BillingAccessLog
 from plane.db.models import User
 
@@ -39,7 +40,7 @@ def add_row(workspace, view: str = BillingAccessLog.VIEW_WALLET, viewer=None, ip
 def test_the_page_lists_each_read_with_its_workspace_and_viewer(client, workspace_factory, instance_admin):
     workspace = workspace_factory(name="تیم الف")
     add_row(workspace, BillingAccessLog.VIEW_LEDGER, viewer=instance_admin)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(URL)
 
@@ -61,7 +62,7 @@ def test_the_page_shows_the_newest_read_first(client, workspace_factory, instanc
     workspace = workspace_factory(name="تیم ب")
     older = add_row(workspace, BillingAccessLog.VIEW_WALLET)
     newer = add_row(workspace, BillingAccessLog.VIEW_LEDGER)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     rows = client.get(URL).json()["results"]
 
@@ -73,7 +74,7 @@ def test_the_page_can_be_narrowed_to_one_kind_of_read(client, workspace_factory,
     workspace = workspace_factory(name="تیم ج")
     add_row(workspace, BillingAccessLog.VIEW_WALLET)
     add_row(workspace, BillingAccessLog.VIEW_LEDGER)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     rows = client.get(f"{URL}?view=ledger").json()["results"]
 
@@ -87,7 +88,7 @@ def test_the_page_can_be_narrowed_to_one_workspace(client, workspace_factory, in
     other = workspace_factory(name="تیم دیگر")
     add_row(mine)
     add_row(other)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     rows = client.get(f"{URL}?workspace_slug={mine.slug}").json()["results"]
 
@@ -98,7 +99,7 @@ def test_the_page_can_be_narrowed_to_one_workspace(client, workspace_factory, in
 def test_an_unknown_filter_value_matches_nothing_instead_of_failing(client, workspace_factory, instance_admin):
     workspace = workspace_factory(name="تیم د")
     add_row(workspace)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     for query in ("view=no-such-view", "workspace_slug=no-such-workspace"):
         response = client.get(f"{URL}?{query}")
@@ -111,7 +112,7 @@ def test_a_row_whose_viewer_was_deleted_still_appears_unattributed(client, works
     """``viewer`` is ``SET_NULL`` on purpose: the evidence outlives the account."""
     workspace = workspace_factory(name="تیم ه")
     add_row(workspace, viewer=None)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     row = client.get(URL).json()["results"][0]
 
@@ -124,7 +125,7 @@ def test_reading_the_page_is_not_itself_recorded(client, workspace_factory, inst
     """The page returns no money, so it must not write rows about itself."""
     workspace = workspace_factory(name="تیم و")
     add_row(workspace)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     client.get(URL)
 

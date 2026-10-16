@@ -32,6 +32,7 @@ export const buildBillingListKey = (
     | "billing-admin-workspaces"
     | "billing-feature-flags"
     | "billing-invoices"
+    | "billing-queued-transactions"
     | "billing-plan-quote"
     | "billing-sms-report"
     | "billing-transactions"
@@ -53,6 +54,10 @@ export const BILLING_TRANSACTIONS = (params: Record<string, string | number | un
 
 export const BILLING_INVOICES = (params: Record<string, string | number | undefined> = {}) =>
   buildBillingListKey("billing-invoices", params);
+
+/** The ambiguous payment queue, paged, so its key carries the query like the other filtered lists. */
+export const BILLING_QUEUED_TRANSACTIONS = (params: Record<string, string | number | undefined> = {}) =>
+  buildBillingListKey("billing-queued-transactions", params);
 
 /* public checkout */
 
