@@ -89,7 +89,12 @@ class PlanQuoteEndpoint(BaseAPIView):
             quote = quote_for_workspace(workspace=workspace, plan=plan, seats=seats, cycle=cycle)
         except RenewalLockedError as exc:
             return Response(
-                {"error": RENEWAL_LOCKED, "code": "renewal_locked", "lock_days": exc.lock_days, "days_left": exc.days_left},
+                {
+                    "error": RENEWAL_LOCKED,
+                    "code": "renewal_locked",
+                    "lock_days": exc.lock_days,
+                    "days_left": exc.days_left,
+                },
                 status=status.HTTP_409_CONFLICT,
             )
 

@@ -63,6 +63,18 @@ app.conf.beat_schedule = {
         "task": "plane.billing.services.tasks.retry_pending_verifications",
         "schedule": crontab(minute="*"),  # Every minute
     },
+    # Money an ambiguous payment parked in a workspace's hold goes back to the
+    # wallet after ninety days if no operator decided on it, so it is never lost.
+    "release-expired-payment-holds": {
+        "task": "plane.billing.services.tasks.release_expired_holds",
+        "schedule": crontab(hour=1, minute=0),  # UTC 01:00, daily
+    },
+    # Renewal reminders for workspace admins. Daily, after the hold release, and
+    # only the day's mark is looked at, so a missed run is not made up later.
+    "send-renewal-notices": {
+        "task": "plane.billing.services.tasks.send_renewal_notices",
+        "schedule": crontab(hour=2, minute=0),  # UTC 02:00, daily
+    },
     "push-instance-metrics": {
         "task": "plane.license.bgtasks.telemetry_metrics.push_instance_metrics",
         "schedule": schedule(run_every=timedelta(minutes=METRICS_PUSH_INTERVAL_MINUTES)),

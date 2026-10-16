@@ -18,6 +18,7 @@ import pytest
 # Django imports
 
 # Module imports
+from plane.billing.tests.conftest import force_instance_admin_login
 from plane.billing.api.permissions import WorkspaceBillingLedgerPermission
 from plane.billing.models import LedgerEntry, LedgerSource
 from plane.billing.services import ledger, money, wallet
@@ -781,7 +782,7 @@ def test_plain_member_cannot_read_the_admin_wallet(client, funded_roles):
 
 def test_instance_admin_can_grant_and_the_actor_comes_from_the_session(client, funded_roles, instance_admin):
     ws, plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -806,7 +807,7 @@ def test_instance_admin_can_grant_and_the_actor_comes_from_the_session(client, f
 
 def test_instance_admin_sees_the_internal_description(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(f"/api/billing/admin/workspaces/{ws.slug}/wallet/ledger/")
 
@@ -817,7 +818,7 @@ def test_instance_admin_sees_the_internal_description(client, funded_roles, inst
 def test_instance_admin_may_read_any_workspaces_wallet(client, funded_roles, workspace_factory, instance_admin):
     _ws, _plain, _ws_admin = funded_roles
     other = workspace_factory(name="تیم بیگانه برای ادمین")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(f"/api/billing/admin/workspaces/{other.slug}/wallet/")
 
@@ -836,7 +837,7 @@ def test_a_forged_workspace_in_the_body_does_not_retarget_the_grant(
     """
     ws, _plain, _ws_admin = funded_roles
     other = workspace_factory(name="تیم هدف جعل")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -856,7 +857,7 @@ def test_a_forged_workspace_in_the_body_does_not_retarget_the_grant(
 
 def test_instance_admin_grant_rejects_a_short_description(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -870,7 +871,7 @@ def test_instance_admin_grant_rejects_a_short_description(client, funded_roles, 
 
 def test_instance_admin_grant_rejects_a_zero_amount(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -886,7 +887,7 @@ def test_instance_admin_grant_over_the_cap_is_a_conflict(client, funded_roles, i
 
     ws, _plain, _ws_admin = funded_roles
     Wallet.objects.filter(workspace=ws).update(admin_grant_cap_toman=100_000)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -899,7 +900,7 @@ def test_instance_admin_grant_over_the_cap_is_a_conflict(client, funded_roles, i
 
 
 def test_grant_for_a_slug_that_names_no_workspace_is_a_404(client, instance_admin):
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         "/api/billing/admin/workspaces/no-such-team/wallet/grant/",
@@ -919,7 +920,7 @@ def test_a_replayed_grant_is_a_200_and_posts_once(client, funded_roles, instance
     already applies, and it is the copy that drifted in an earlier task.
     """
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     payload = {"amount_toman": 250_000, "description": "اعتبار تکراری برای تست"}
 
     first = client.post(
@@ -945,7 +946,7 @@ def test_a_replayed_grant_is_a_200_and_posts_once(client, funded_roles, instance
 def test_the_idempotency_key_never_comes_from_the_body(client, funded_roles, instance_admin):
     """Two calls that differ only by a body key are two grants, not one."""
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     payload = {"amount_toman": 250_000, "description": "اعتبار با کلید در بدنه"}
 
     first = client.post(
@@ -968,7 +969,7 @@ def test_the_idempotency_key_never_comes_from_the_body(client, funded_roles, ins
 def test_reusing_a_key_for_a_different_amount_is_a_conflict(client, funded_roles, instance_admin):
     """``money._assert_same_movement`` raising is a 409, never a 500."""
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     first = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -990,7 +991,7 @@ def test_reusing_a_key_for_a_different_amount_is_a_conflict(client, funded_roles
 
 def test_the_admin_ledger_is_paginated_in_the_same_envelope(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(f"/api/billing/admin/workspaces/{ws.slug}/wallet/ledger/")
 
@@ -1006,7 +1007,7 @@ def test_the_admin_ledger_is_paginated_in_the_same_envelope(client, funded_roles
 def test_instance_admin_can_revoke_a_grant(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
     entry = LedgerEntry.objects.get(idempotency_key="leak-1")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
@@ -1036,7 +1037,7 @@ def test_revoke_refuses_an_entry_from_another_workspace(client, funded_roles, wo
         created_by=None,
         idempotency_key="foreign-grant",
     )
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
@@ -1051,7 +1052,7 @@ def test_revoke_refuses_an_entry_from_another_workspace(client, funded_roles, wo
 def test_revoke_refuses_a_row_that_is_not_a_grant(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
     charge = wallet.charge_sms(workspace=ws, amount_toman=1_000, log_id="revoke-me", idempotency_key="sms-for-revoke")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/revoke/",
@@ -1065,7 +1066,7 @@ def test_revoke_refuses_a_row_that_is_not_a_grant(client, funded_roles, instance
 def test_revoke_refuses_a_grant_that_was_already_reversed(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
     entry = LedgerEntry.objects.get(idempotency_key="leak-1")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     wallet.revoke_grant(
         workspace=ws,
         entry=entry,
@@ -1203,7 +1204,7 @@ def test_the_view_never_compares_timestamps_to_detect_a_replay():
 def test_the_service_states_the_replay_fact_not_a_timestamp(client, funded_roles, instance_admin):
     """200 on a replay, 201 on a fresh post -- from the service's own word."""
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     payload = {"amount_toman": 250_000, "description": "اعتبار برای آزمون سیگنال بازپخش"}
 
     first = client.post(
@@ -1258,7 +1259,7 @@ def test_the_replay_flag_is_true_on_the_second_call_and_false_on_the_first(funde
 def test_revoke_states_the_replay_fact_too(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
     entry = LedgerEntry.objects.get(idempotency_key="leak-1")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     payload = {"entry": str(entry.pk), "description": "ابطال برای بررسی پرچم بازپخش"}
 
     first = client.post(
@@ -1368,7 +1369,7 @@ def test_the_generated_idempotency_key_is_unique_per_request(client, funded_role
     told nothing happened.
     """
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     payload = {"amount_toman": 250_000, "description": "دو درخواست بدون هدر کلید یکتا"}
 
     first = client.post(
@@ -1394,7 +1395,7 @@ def test_the_generated_idempotency_key_is_unique_per_request(client, funded_role
 def test_a_blank_idempotency_header_falls_back_to_a_fresh_key(client, funded_roles, instance_admin):
     """Whitespace is not a key; it must not be stored as one."""
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     payload = {"amount_toman": 250_000, "description": "هدر کلید یکتا با فاصله"}
 
     first = client.post(
@@ -1417,7 +1418,7 @@ def test_a_blank_idempotency_header_falls_back_to_a_fresh_key(client, funded_rol
 
 def test_the_supplied_idempotency_key_is_still_honoured(client, funded_roles, instance_admin):
     ws, _plain, _ws_admin = funded_roles
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -1438,7 +1439,7 @@ def test_the_supplied_idempotency_key_is_still_honoured(client, funded_roles, in
 
 def test_an_out_of_range_amount_is_a_400_not_a_500(client, funded_workspace, instance_admin):
     ws, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -1451,7 +1452,7 @@ def test_an_out_of_range_amount_is_a_400_not_a_500(client, funded_workspace, ins
 
 def test_the_biggest_storable_amount_is_still_accepted(client, funded_workspace, instance_admin):
     ws, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",
@@ -1464,7 +1465,7 @@ def test_the_biggest_storable_amount_is_still_accepted(client, funded_workspace,
 
 def test_an_over_long_idempotency_key_is_a_400_not_a_500(client, funded_workspace, instance_admin):
     ws, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/workspaces/{ws.slug}/wallet/grant/",

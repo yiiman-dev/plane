@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 
 # Module imports
+from plane.billing.tests.conftest import force_instance_admin_login
 from plane.billing.models import (
     BillingAccessLog,
     BillingCycle,
@@ -291,7 +292,7 @@ def test_the_plan_projection_exposes_the_three_policy_fields(db):
 @pytest.mark.django_db
 def test_the_endpoint_passes_the_limit_through(client, instance_admin):
     """``update_or_create`` in the view: without the field in ``defaults`` the value is dropped."""
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     plan = Plan.objects.create(code="ep", name="پلن")
     flag = FeatureFlag.objects.create(code="projects", name="پروژه", limit_type="number", unit_label="پروژه")
 
@@ -314,7 +315,7 @@ def test_the_endpoint_omitting_the_limit_leaves_a_stored_one_alone(client, insta
     A bare ``defaults["limit_value"] = validated_data.get("limit_value")`` would
     clear the stored limit on every re-add of the same grant.
     """
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     plan = Plan.objects.create(code="ep2", name="پلن")
     flag = FeatureFlag.objects.create(code="projects2", name="پروژه", limit_type="number", unit_label="پروژه")
     PlanFeatureFlag.objects.create(plan=plan, feature_flag=flag, limit_value=7)
@@ -333,7 +334,7 @@ def test_the_endpoint_omitting_the_limit_leaves_a_stored_one_alone(client, insta
 
 @pytest.mark.django_db
 def test_the_endpoint_refuses_a_limit_on_a_boolean_flag(client, instance_admin):
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     plan = Plan.objects.create(code="ep3", name="پلن")
     flag = FeatureFlag.objects.create(code="dark", name="تاریک", limit_type="boolean")
 
@@ -357,7 +358,7 @@ def test_the_endpoint_refuses_a_new_number_grant_without_a_bound(client, instanc
     """
     plan = Plan.objects.create(code="boundless", name="پلن")
     flag = FeatureFlag.objects.create(code="boundless-flag", name="پروژه", limit_type="number", unit_label="پروژه")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
@@ -379,7 +380,7 @@ def test_a_malformed_feature_flag_pk_is_a_400_not_a_500(client, instance_admin):
     guard is what turns a 500 back into the serializer's 400.
     """
     plan = Plan.objects.create(code="badpk", name="پلن")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
@@ -394,7 +395,7 @@ def test_a_malformed_feature_flag_pk_is_a_400_not_a_500(client, instance_admin):
 def test_a_json_list_as_the_feature_flag_pk_is_a_400_not_a_500(client, instance_admin):
     """``str()`` of a list is not a UUID either, and must take the same path."""
     plan = Plan.objects.create(code="listpk", name="پلن")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
@@ -572,7 +573,7 @@ def test_a_zero_limit_on_a_number_flag_is_accepted_and_stored(client, instance_a
     """
     plan = Plan.objects.create(code="zero", name="پلن")
     flag = FeatureFlag.objects.create(code="zero-flag", name="صفر", limit_type="number", unit_label="پروژه")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
@@ -591,7 +592,7 @@ def test_a_zero_limit_on_a_boolean_flag_is_refused(client, instance_admin):
     """The other half of the same rule: any non-None limit on a non-number flag goes."""
     plan = Plan.objects.create(code="zero-bool", name="پلن")
     flag = FeatureFlag.objects.create(code="zero-bool-flag", name="تاریک", limit_type="boolean")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.post(
         f"/api/billing/admin/plans/{plan.pk}/feature-flags/",
@@ -783,7 +784,7 @@ def test_the_workspace_list_needs_an_instance_admin(client, funded_workspace):
 
 @pytest.mark.django_db
 def test_the_workspace_list_returns_each_workspace_with_its_plan_and_balance(client, workspace_factory, instance_admin):
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     first = workspace_factory(name="تیم الف")
     second = workspace_factory(name="تیم ب")
 
@@ -808,7 +809,7 @@ def test_the_workspace_list_reports_the_plan_code(client, workspace_factory, ins
         seats=3,
         cycle=BillingCycle.MONTHLY,
     )
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
 
@@ -828,7 +829,7 @@ def test_the_workspace_list_reports_the_wallet_balance(client, workspace_factory
         created_by=None,
         idempotency_key="list-1",
     )
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
 
@@ -850,7 +851,7 @@ def test_the_workspace_list_reports_a_held_wallet_as_its_spendable_remainder(cli
         idempotency_key="hold-list-1",
     )
     wallet.hold_funds(workspace=workspace, amount_toman=200_000, description="نگه‌داری", idempotency_key="hold-list-2")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
 
@@ -865,7 +866,7 @@ def test_the_workspace_list_reads_a_workspace_with_no_wallet_as_zero(client, wor
     from plane.billing.services import money
 
     workspace = workspace_factory(name="تیم بی‌موجودی")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     rows = {row["slug"]: row for row in client.get("/api/billing/admin/workspaces/").json()["results"]}
 
@@ -878,7 +879,7 @@ def test_the_workspace_list_reads_a_workspace_with_no_wallet_as_zero(client, wor
 def test_the_workspace_list_is_not_audited_row_by_row(client, funded_workspace, instance_admin):
     """The list page exists to choose a workspace to open; the money is inspected
     on the detail page. One row per tenant per page view would bury that."""
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     client.get("/api/billing/admin/workspaces/")
 
@@ -906,7 +907,7 @@ def test_the_detail_page_returns_plan_seats_and_money(client, workspace_factory,
         created_by=None,
         idempotency_key="det-1",
     )
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/")
 
@@ -932,7 +933,7 @@ def test_the_detail_page_separates_the_held_amount_from_the_spendable_one(client
         idempotency_key="det-hold-1",
     )
     wallet.hold_funds(workspace=workspace, amount_toman=150_000, description="نگه‌داری", idempotency_key="det-hold-2")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     body = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/").json()
 
@@ -945,7 +946,7 @@ def test_the_detail_page_of_a_workspace_with_no_subscription_reports_nulls(clien
     """A workspace with no plan is a normal state, not an error: nulls and zeros,
     never a 404."""
     workspace = workspace_factory(name="تیم بدون پلن")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     body = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/").json()
 
@@ -959,7 +960,7 @@ def test_the_detail_page_of_a_workspace_with_no_subscription_reports_nulls(clien
 
 @pytest.mark.django_db
 def test_the_detail_page_of_an_unknown_workspace_is_404(client, instance_admin):
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     assert client.get("/api/billing/admin/workspaces/no-such-workspace/billing/").status_code == 404
 
@@ -967,7 +968,7 @@ def test_the_detail_page_of_an_unknown_workspace_is_404(client, instance_admin):
 @pytest.mark.django_db
 def test_a_404_detail_page_leaves_no_audit_row(client, instance_admin):
     """The row must name a read that happened. A refused lookup is not one."""
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     client.get("/api/billing/admin/workspaces/no-such-workspace/billing/")
 
@@ -991,7 +992,7 @@ def test_the_detail_page_is_refused_to_a_plain_user(client, funded_workspace):
 def test_the_detail_page_writes_an_access_log_row(client, funded_workspace, instance_admin):
     """It returns the balance, so it is a money read and must be audited like one."""
     workspace, _operator = funded_workspace
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/")
 
@@ -1003,7 +1004,7 @@ def test_the_detail_page_ignores_a_forged_workspace_query_parameter(client, work
     """The URL decides which workspace; ?slug= must not widen it."""
     mine = workspace_factory(name="تیم خودم")
     other = workspace_factory(name="تیم بیگانه")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     response = client.get(f"/api/billing/admin/workspaces/{mine.slug}/billing/?slug={other.slug}")
 
@@ -1020,7 +1021,7 @@ def test_the_detail_page_counts_the_active_members(client, workspace_factory, in
     gone = User.objects.create(username="gone-member", email="gone-member@example.com")
     WorkspaceMember.objects.create(workspace=workspace, member=live, role=20)
     WorkspaceMember.objects.create(workspace=workspace, member=gone, role=15, is_active=False)
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     body = client.get(f"/api/billing/admin/workspaces/{workspace.slug}/billing/").json()
 
@@ -1040,7 +1041,7 @@ def test_the_feature_flag_catalogue_is_instance_admin_only(client):
 @pytest.mark.django_db
 def test_the_feature_flag_catalogue_returns_the_typed_limit(client, instance_admin):
     FeatureFlag.objects.create(code="typed", name="پرچم نوع‌دار", limit_type="number", unit_label="پروژه")
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     body = client.get("/api/billing/admin/feature-flags/").json()
 

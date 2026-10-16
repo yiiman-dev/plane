@@ -22,6 +22,7 @@ import type {
   TPaymentGatewayRoutingConfigPayload,
   TPaymentTransaction,
   TPaymentTransactionListResponse,
+  TQueuedTransactionListResponse,
   TPaymentOrderCreatePayload,
   TPaymentOrderCreateResponse,
   TPlanQuote,
@@ -228,6 +229,50 @@ export class BillingService extends APIService {
    */
   async transactions(params: TBillingListParams): Promise<TPaymentTransactionListResponse> {
     return this.get("/api/billing/admin/transactions/", { params })
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Retrieves the ambiguous payment queue: payments whose money sits in a hold
+   */
+  async queuedTransactions(params: TBillingListParams): Promise<TQueuedTransactionListResponse> {
+    return this.get("/api/billing/admin/transactions/queued/", { params })
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Finalises the refund of a queued payment: the held amount becomes spendable.
+   */
+  async releaseHold(transactionId: string, description: string): Promise<TPaymentTransaction> {
+    return this.post(`/api/billing/admin/transactions/${transactionId}/release-hold/`, { description })
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Closes a queued payment without crediting the wallet: the payer was never charged.
+   */
+  async rejectHold(transactionId: string, description: string): Promise<TPaymentTransaction> {
+    return this.post(`/api/billing/admin/transactions/${transactionId}/reject-hold/`, { description })
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Verifies a queued payment once more with a fresh attempt budget.
+   */
+  async retryTransaction(transactionId: string): Promise<TPaymentTransaction> {
+    return this.post(`/api/billing/admin/transactions/${transactionId}/retry/`, {})
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;

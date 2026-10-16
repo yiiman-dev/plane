@@ -19,8 +19,13 @@ from plane.billing.api.views.admin_views import (
     PlanDetailEndpoint,
     PlanFeatureFlagEndpoint,
     PlanListCreateEndpoint,
+    QueuedTransactionListEndpoint,
+    RenewalNoticeScheduleEndpoint,
     TransactionDetailEndpoint,
     TransactionListEndpoint,
+    TransactionRejectHoldEndpoint,
+    TransactionReleaseHoldEndpoint,
+    TransactionRetryEndpoint,
 )
 from plane.billing.api.views.callback_views import (
     PayPingCallbackEndpoint,
@@ -79,13 +84,40 @@ urlpatterns = [
     # apart from the workspace-scoped routes because it spans tenants; the
     # ``admin/workspaces/`` prefix belongs to routes that name one.
     path("admin/sms-report/", AdminSmsReportEndpoint.as_view(), name="billing-admin-sms-report"),
+    # The reminder days for renewals (phase 5). Instance-wide, so it sits with the other
+    # god mode routes rather than under ``admin/workspaces/``.
+    path(
+        "admin/renewal-notifications/",
+        RenewalNoticeScheduleEndpoint.as_view(),
+        name="billing-admin-renewal-notifications",
+    ),
     path("admin/invoices/", InvoiceListEndpoint.as_view(), name="billing-invoices"),
     path("admin/invoices/<uuid:pk>/", InvoiceDetailEndpoint.as_view(), name="billing-invoice-detail"),
     path("admin/transactions/", TransactionListEndpoint.as_view(), name="billing-transactions"),
+    # The ambiguous payment queue and the three decisions an operator can take
+    # on a queued payment (M5). The literal ``queued/`` route is registered
+    # before the ``<uuid:pk>/`` one; the converter would not match the word, but
+    # the order makes the intent visible.
+    path("admin/transactions/queued/", QueuedTransactionListEndpoint.as_view(), name="billing-transactions-queued"),
     path(
         "admin/transactions/<uuid:pk>/",
         TransactionDetailEndpoint.as_view(),
         name="billing-transaction-detail",
+    ),
+    path(
+        "admin/transactions/<uuid:pk>/retry/",
+        TransactionRetryEndpoint.as_view(),
+        name="billing-transaction-retry",
+    ),
+    path(
+        "admin/transactions/<uuid:pk>/release-hold/",
+        TransactionReleaseHoldEndpoint.as_view(),
+        name="billing-transaction-release-hold",
+    ),
+    path(
+        "admin/transactions/<uuid:pk>/reject-hold/",
+        TransactionRejectHoldEndpoint.as_view(),
+        name="billing-transaction-reject-hold",
     ),
     # user facing
     path("plans/", PlanListEndpoint.as_view(), name="billing-public-plans"),

@@ -24,6 +24,7 @@ import pytest
 from django.db.models import Sum
 
 # Module imports
+from plane.billing.tests.conftest import force_instance_admin_login
 from plane.bgtasks import notification_channel_task as task_module
 from plane.billing.models import (
     BillingAccessLog,
@@ -146,7 +147,9 @@ def test_a_workspace_member_is_refused(client, workspace_factory):
         username=f"report-member-{uuid4().hex}", email=f"report-member-{uuid4().hex}@example.com"
     )
     WorkspaceMember.objects.create(workspace=workspace, member=member, role=15)
-    client.force_login(member)
+    # Sent under the admin cookie: the member is authenticated but not an instance
+    # admin, so the answer is a refusal (403), not a missing login (401).
+    force_instance_admin_login(client, member)
 
     assert client.get(REPORT_URL).status_code == 403
 
@@ -164,7 +167,7 @@ def test_the_report_reconciles_with_the_ledger(client, workspace_factory, grante
     for _index in range(3):
         deliver(make_log(workspace))
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     row = only_row(client, workspace)
 
     assert row["workspace_slug"] == workspace.slug
@@ -189,7 +192,7 @@ def test_a_charge_with_no_delivery_row_is_reported_as_unexplained(client, worksp
     fund(workspace, RATE_TOMAN * 2, granter)
     wallet.charge_sms(workspace=workspace, amount_toman=RATE_TOMAN, log_id=uuid4())
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     row = only_row(client)
 
     assert row["charged_toman"] == RATE_TOMAN
@@ -216,7 +219,7 @@ def test_a_charge_for_a_message_that_failed_is_shown_as_lost(
     fund(workspace, RATE_TOMAN * 2, granter)
     deliver(make_log(workspace))
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     row = only_row(client, workspace)
 
     assert row["failed_count"] == 1
@@ -235,7 +238,7 @@ def test_todays_rate_is_shown_beside_the_snapshotted_one(client, workspace_facto
     plan.sms_prices = {NOTIFICATION_EVENT_MENTION: RATE_TOMAN * 3}
     plan.save(update_fields=["sms_prices", "updated_at"])
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     row = only_row(client, workspace)
 
     assert row["delivered_toman"] == RATE_TOMAN
@@ -253,7 +256,7 @@ def test_a_refused_message_is_counted_but_never_charged(client, workspace_factor
     plan_with_prices(workspace, {NOTIFICATION_EVENT_MENTION: RATE_TOMAN})
     deliver(make_log(workspace))
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     row = only_row(client, workspace)
 
     assert row["skipped_count"] == 1
@@ -270,7 +273,7 @@ def test_reading_the_report_does_not_create_a_wallet(client, workspace_factory, 
     deliver(make_log(workspace))
     assert LedgerAccount.objects.filter(workspace=workspace).count() == 0
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     row = only_row(client, workspace)
 
     assert row["sent_count"] == 1
@@ -283,7 +286,7 @@ def test_a_channel_that_is_not_sms_is_not_in_the_report(client, workspace_factor
     workspace = workspace_factory(name="تیم بله")
     make_log(workspace, channel=NOTIFICATION_CHANNEL_BALE)
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
 
     assert report(client)["results"] == []
 
@@ -297,7 +300,7 @@ def test_the_report_is_audited_once_per_workspace_shown(client, workspace_factor
         fund(workspace, RATE_TOMAN, granter)
         deliver(make_log(workspace))
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     report(client)
 
     rows = BillingAccessLog.objects.all()
@@ -321,7 +324,7 @@ def test_the_workspace_filter_narrows_both_the_report_and_the_trail(client, work
         fund(workspace, RATE_TOMAN, granter)
         deliver(make_log(workspace))
 
-    client.force_login(instance_admin)
+    force_instance_admin_login(client, instance_admin)
     payload = report(client, second)
 
     assert [row["workspace_slug"] for row in payload["results"]] == [second.slug]

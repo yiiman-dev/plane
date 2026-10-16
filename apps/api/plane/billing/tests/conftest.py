@@ -241,3 +241,17 @@ def payping_callback(value: Any = None):
 
 def optional_int(value) -> Optional[int]:
     return None if value is None else int(value)
+
+
+def force_instance_admin_login(client, user):
+    """Log an instance admin in the way the admin app does: under the admin session cookie.
+
+    ``force_login`` writes the user cookie, which the billing god-mode API no
+    longer reads. Moving the same session key to the admin cookie name gives
+    the request the cookie an instance admin really sends.
+    """
+    from django.conf import settings
+
+    client.force_login(user)
+    morsel = client.cookies.pop(settings.SESSION_COOKIE_NAME)
+    client.cookies[settings.ADMIN_SESSION_COOKIE_NAME] = morsel.value

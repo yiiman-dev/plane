@@ -50,6 +50,7 @@ PUBLIC_SOURCE_LABELS = {
     LedgerSource.RELEASE_HOLD: "آزادسازی وجه",
     LedgerSource.HOLD: "وجه قفل‌شده",
     LedgerSource.GRANT_REVERSAL: "ابطال اعتبار توسط مدیریت سامانه",
+    LedgerSource.HOLD_CLOSED: "بستن وجه قفل‌شده",
 }
 
 # Sources whose ``description`` is written by an operator for another operator.

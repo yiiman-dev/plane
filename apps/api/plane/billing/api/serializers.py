@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
 
-# Python imports
+# Third party imports
 from rest_framework import serializers
+
+# Django imports
+from django.utils import timezone
 
 # Module imports
 from plane.billing.models import (
@@ -16,11 +19,14 @@ from plane.billing.models import (
     PaymentTransaction,
     Plan,
     PlanFeatureFlag,
+    RenewalNoticeSchedule,
     Subscription,
     Wallet,
 )
+from plane.billing.services import hold as hold_service
 from plane.billing.services import ledger as ledger_service
 from plane.billing.services import money as money_service
+from plane.billing.services import renewal as renewal_service
 from plane.billing.services.credentials import (
     CredentialEncryptionError,
     decrypt_credentials,
@@ -218,6 +224,53 @@ class PaymentTransactionSerializer(serializers.ModelSerializer):
     def get_user_detail(self, instance):
         user = instance.user
         return {"id": str(user.id), "email": user.email, "display_name": user.display_name}
+
+
+class QueuedTransactionSerializer(PaymentTransactionSerializer):
+    """One row of the ambiguous payment queue: the transaction plus what the decision needs.
+
+    The raw payloads of the parent projection stay in, because "why did the
+    gateway keep saying maybe" is answered from them; the age, the automatic
+    release date and the workspace are added because that is what an operator
+    triages on.
+    """
+
+    age_days = serializers.SerializerMethodField()
+    auto_release_at = serializers.SerializerMethodField()
+    workspace_slug = serializers.SerializerMethodField()
+    workspace_name = serializers.SerializerMethodField()
+
+    class Meta(PaymentTransactionSerializer.Meta):
+        fields = PaymentTransactionSerializer.Meta.fields + [
+            "held_at",
+            "age_days",
+            "auto_release_at",
+            "workspace_slug",
+            "workspace_name",
+        ]
+        read_only_fields = fields
+
+    def get_age_days(self, instance):
+        if instance.held_at is None:
+            return None
+        return max(0, (timezone.now() - instance.held_at).days)
+
+    def get_auto_release_at(self, instance):
+        return hold_service.auto_release_at(instance)
+
+    def _workspace(self, instance):
+        cache = self.context.setdefault("_queued_workspaces", {})
+        if instance.pk not in cache:
+            cache[instance.pk] = hold_service.workspace_of(instance)
+        return cache[instance.pk]
+
+    def get_workspace_slug(self, instance):
+        workspace = self._workspace(instance)
+        return workspace.slug if workspace is not None else None
+
+    def get_workspace_name(self, instance):
+        workspace = self._workspace(instance)
+        return workspace.name if workspace is not None else None
 
 
 class UserPaymentTransactionSerializer(serializers.ModelSerializer):
@@ -621,3 +674,18 @@ class AdminWorkspaceBillingSerializer(serializers.Serializer):
     renew_lock_days = serializers.IntegerField(allow_null=True)
     proration_mode = serializers.CharField(allow_null=True)
     active_members = serializers.IntegerField()
+
+
+class RenewalNoticeScheduleSerializer(serializers.ModelSerializer):
+    """The reminder days. The list is checked by the service, the one place that knows the bounds."""
+
+    class Meta:
+        model = RenewalNoticeSchedule
+        fields = ["days_before", "updated_at"]
+        read_only_fields = ["updated_at"]
+
+    def validate_days_before(self, value):
+        try:
+            return renewal_service.validate_days(value)
+        except renewal_service.InvalidSchedule as exc:
+            raise serializers.ValidationError(str(exc))

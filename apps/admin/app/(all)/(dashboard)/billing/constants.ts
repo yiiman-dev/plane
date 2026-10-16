@@ -214,6 +214,7 @@ export const TRANSACTION_STATUS_LABELS: Record<TPaymentTransactionStatus, string
   processing: "در حال پردازش",
   paid: "پرداخت شده",
   failed: "ناموفق",
+  held: "قفل‌شده",
   unavailable: "در دسترس نیست",
   reversed: "بازگشت وجه",
 };
@@ -227,6 +228,7 @@ export const TRANSACTION_STATUS_VARIANTS: Record<
   processing: "info",
   paid: "success",
   failed: "danger",
+  held: "warning",
   unavailable: "warning",
   reversed: "brand",
 };
