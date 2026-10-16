@@ -68,6 +68,12 @@ export const BILLING_PLAN_QUOTE = (planCode: string, seats: number, cycle: strin
 /** One cache key per order, used by the result screen while it polls the verification state. */
 export const BILLING_ORDER_STATUS = (transactionId: string) => `billing-order-status-${transactionId}`;
 
+/**
+ * A plan's grant set belongs to the plan, not to the screen that edits it, so the
+ * key is the plan id and two plans edited in one session never share an entry.
+ */
+export const BILLING_PLAN_FEATURE_FLAGS = (planId: string) => `billing-plan-feature-flags-${planId}`;
+
 /* workspace scoped reads */
 
 /**

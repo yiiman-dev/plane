@@ -6,8 +6,14 @@
 
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
-import { BillingService, BILLING_PLANS, BILLING_FEATURE_FLAGS } from "@plane/services";
-import type { TBillingPlan, TBillingPlanPayload, TFeatureFlag, TPlanFeatureFlag } from "@plane/types";
+import { BillingService, BILLING_PLANS, BILLING_FEATURE_FLAGS, BILLING_PLAN_FEATURE_FLAGS } from "@plane/services";
+import type {
+  TBillingPlan,
+  TBillingPlanPayload,
+  TFeatureFlag,
+  TPlanFeatureFlag,
+  TPlanFeatureFlagGrantInput,
+} from "@plane/types";
 import {
   AlertDialog,
   AlertDialogActions,
@@ -60,11 +66,12 @@ type TPlanForm = {
   yearly_price_toman: string;
 };
 
-type TFeatureFlagGrant = {
-  feature_flag_code: string;
-  is_enabled: boolean;
-  limit_value?: number | null;
-};
+/**
+ * A row of the plan form and the payload the save sends are the same shape, so
+ * the type lives with the API instead of being restated here -- a second
+ * definition is one field away from a form that sends what the backend ignores.
+ */
+type TFeatureFlagGrant = TPlanFeatureFlagGrantInput;
 
 const emptyForm = (): TPlanForm => ({
   access_level: "",
@@ -475,9 +482,9 @@ export default function BillingPlansPage() {
   const allFlags = useMemo<TFeatureFlag[]>(() => flagsData?.results ?? [], [flagsData]);
 
   // Fetch grants for the plan being edited
-  const grantsKey = editPlan ? `billing-plan-grants-${editPlan.id}` : null;
-  const { data: grantsData } = useSWR(grantsKey, () =>
-    BillingService.get(`/api/billing/admin/plans/${editPlan!.id}/feature-flags/`).then((r) => r.data)
+  const grantsKey = editPlan ? BILLING_PLAN_FEATURE_FLAGS(editPlan.id) : null;
+  const { data: grantsData, mutate: mutateGrants } = useSWR(grantsKey, () =>
+    BillingService.planFeatureFlags(editPlan!.id)
   );
 
   const plans = useMemo<TBillingPlan[]>(() => data?.results ?? [], [data]);
@@ -554,15 +561,11 @@ export default function BillingPlansPage() {
     // The code is immutable after creation, so it is always taken from the stored plan.
     try {
       await BillingService.updatePlan(editPlan.id, { ...toPayload(editForm), code: editPlan.code });
-      // Also update feature flag grants
+      // The grants are saved in one request: the backend applies all of them or
+      // none, so this cannot leave a plan whose catalogue half-matches the form.
       if (grants.length > 0) {
-        await BillingService.patch(`/api/billing/admin/plans/${editPlan.id}/feature-flags/`, {
-          grants: grants.map((g) => ({
-            feature_flag_code: g.feature_flag_code,
-            is_enabled: g.is_enabled,
-            limit_value: g.limit_value,
-          })),
-        });
+        await BillingService.updatePlanFeatureFlags(editPlan.id, grants);
+        await mutateGrants();
       }
       setToast({ type: "success", title: "ذخیره شد", message: `پلن ${editPlan.name} ذخیره شد.` });
       setEditPlan(null);
@@ -576,7 +579,7 @@ export default function BillingPlansPage() {
     } finally {
       setIsPending(false);
     }
-  }, [editForm, editPlan, grants, mutate]);
+  }, [editForm, editPlan, grants, mutate, mutateGrants]);
 
   const handleDelete = useCallback(async () => {
     if (!deletePlan) return;

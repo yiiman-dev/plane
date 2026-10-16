@@ -9,6 +9,7 @@
 # Django imports
 
 # Third party imports
+from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -294,7 +295,20 @@ class FeatureFlagDetailEndpoint(BillingAdminAPIView):
 
 
 class PlanFeatureFlagEndpoint(BillingAdminAPIView):
-    """Attach or detach the feature flags a plan is allowed to unlock."""
+    """Attach, detach or edit the feature flags a plan is allowed to unlock.
+
+    Two write shapes, because the two admin screens are not the same screen.
+    ``POST`` changes one grant and is what a per-flag toggle needs; ``PATCH``
+    saves the whole grant set of the plan form in one request, which is what the
+    plan editor actually sends. A per-flag screen posting N times cannot report
+    a half-saved plan, but the batch has to: one invalid item refuses the whole
+    payload and writes nothing, or the catalogue ends up disagreeing with the
+    form the administrator is looking at.
+
+    ``PATCH`` deliberately never writes ``config``. It is free-form data other
+    code owns, and the ``POST`` path's habit of defaulting it to ``{}`` on every
+    upsert is a known pre-existing bug that this path does not copy.
+    """
 
     permission_classes = [InstanceAdminPermission]
 
@@ -345,6 +359,71 @@ class PlanFeatureFlagEndpoint(BillingAdminAPIView):
             defaults=defaults,
         )
         return Response(PlanFeatureFlagSerializer(grant).data, status=status.HTTP_201_CREATED)
+
+    def patch(self, request, pk):
+        """Save the plan form's entire grant set. All of it, or none of it."""
+        plan = self.get_plan(pk)
+        if plan is None:
+            return Response({"error": "پلن یافت نشد."}, status=status.HTTP_404_NOT_FOUND)
+
+        raw_grants = request.data.get("grants")
+        if not isinstance(raw_grants, list):
+            return Response(
+                {"grants": ["فهرست grants باید یک آرایه باشد."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        codes = [item.get("feature_flag_code") for item in raw_grants if isinstance(item, dict)]
+        flags_by_code = {flag.code: flag for flag in FeatureFlag.objects.filter(code__in=codes)}
+
+        # First pass: validate every item and write nothing. A single bad row
+        # must not leave the earlier rows saved -- the form would then show a
+        # state the database does not hold.
+        errors = {}
+        prepared = []
+        for index, item in enumerate(raw_grants):
+            if not isinstance(item, dict):
+                errors[index] = "هر مورد باید یک شیء باشد."
+                continue
+
+            code = item.get("feature_flag_code")
+            flag = flags_by_code.get(code)
+            if flag is None:
+                errors[code or index] = {"feature_flag_code": "پرچم قابلیت با این کد یافت نشد."}
+                continue
+
+            existing = PlanFeatureFlag.objects.filter(plan=plan, feature_flag=flag).first()
+            payload = {"feature_flag": str(flag.pk), "is_enabled": item.get("is_enabled", True)}
+            # Only when supplied: an omitted limit means "leave the stored one",
+            # and a null in the payload is not the same request as no key at all.
+            if "limit_value" in item:
+                payload["limit_value"] = item["limit_value"]
+
+            serializer = PlanFeatureFlagSerializer(existing, data=payload, partial=existing is not None)
+            if not serializer.is_valid():
+                errors[code] = serializer.errors
+                continue
+            prepared.append((flag, serializer))
+
+        if errors:
+            return Response({"grants": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        saved = []
+        with transaction.atomic():
+            for flag, serializer in prepared:
+                defaults = {"is_enabled": serializer.validated_data.get("is_enabled", True)}
+                if "limit_value" in serializer.validated_data:
+                    defaults["limit_value"] = serializer.validated_data["limit_value"]
+                grant, _ = PlanFeatureFlag.objects.update_or_create(
+                    plan=plan,
+                    feature_flag=flag,
+                    defaults=defaults,
+                )
+                saved.append(grant)
+
+        # The payload's order, so the screen can re-render rows without sorting
+        # them again and a second save of the same form is byte-identical.
+        return Response({"grants": PlanFeatureFlagSerializer(saved, many=True).data})
 
     def delete(self, request, pk):
         plan = self.get_plan(pk)
