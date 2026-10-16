@@ -5,6 +5,7 @@
 from django.urls import path
 
 from plane.billing.api.views.admin_views import (
+    AdminAccessLogEndpoint,
     AdminWorkspaceBillingEndpoint,
     AdminWorkspaceListEndpoint,
     FeatureFlagDetailEndpoint,
@@ -69,6 +70,10 @@ urlpatterns = [
         PlanFeatureFlagEndpoint.as_view(),
         name="billing-plan-feature-flags",
     ),
+    # The audit trail of the admin money reads above, for the operator who made
+    # them. Registered with the other instance-admin routes; the only thing that
+    # separates it from ``admin/workspaces/<slug>/...`` is its own literal path.
+    path("admin/access-log/", AdminAccessLogEndpoint.as_view(), name="billing-admin-access-log"),
     path("admin/invoices/", InvoiceListEndpoint.as_view(), name="billing-invoices"),
     path("admin/invoices/<uuid:pk>/", InvoiceDetailEndpoint.as_view(), name="billing-invoice-detail"),
     path("admin/transactions/", TransactionListEndpoint.as_view(), name="billing-transactions"),

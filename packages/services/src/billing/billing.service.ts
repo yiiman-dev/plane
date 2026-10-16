@@ -28,6 +28,7 @@ import type {
   TPlanQuoteParams,
   TAdminWorkspaceBilling,
   TAdminWorkspaceListResponse,
+  TBillingAccessLogListResponse,
   TFeatureFlagListResponse,
   TPlanFeatureFlagGrantInput,
   TPlanFeatureFlagListResponse,
@@ -370,6 +371,20 @@ export class BillingService extends APIService {
    */
   async adminWorkspaceBilling(workspaceSlug: string): Promise<TAdminWorkspaceBilling> {
     return this.get(`/api/billing/admin/workspaces/${workspaceSlug}/billing/`)
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /* operator audit trail */
+
+  /**
+   * Who read which tenant's money. Instance admins only, and this read writes no
+   * trail row of its own: it returns no balance and no ledger.
+   */
+  async accessLog(params: TBillingListParams): Promise<TBillingAccessLogListResponse> {
+    return this.get("/api/billing/admin/access-log/", { params })
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;
