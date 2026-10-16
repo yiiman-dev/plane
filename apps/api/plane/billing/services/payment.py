@@ -29,6 +29,7 @@ from plane.billing.models import (
 )
 from plane.billing.services.router import GatewayRouter
 from plane.billing.services.tasks import schedule_verification_retry
+from plane.billing.services.upgrade import RenewalLockedError, UpgradeQuote, quote_for_workspace
 from plane.db.models import Workspace
 
 logger = logging.getLogger("plane.billing")
@@ -100,14 +101,22 @@ def issue_invoice(
     cycle: str,
     notes: str = "",
     workspace_slug: str = "",
+    quote: Optional[UpgradeQuote] = None,
 ) -> Invoice:
     seats = max(plan.min_seats, min(int(seats or 0), plan.max_seats))
     subtotal = plan.calculate_subtotal(seats, cycle)
+    credit = quote.credit_applied_toman if quote is not None else 0
     now = timezone.now()
     due = now + timezone.timedelta(days=365 if cycle == BillingCycle.YEARLY else 31)
     # the workspace travels on the invoice metadata so the gateway callback, which only sees
     # the transaction row, can still bind the resulting subscription to that workspace
     metadata = {"workspace_slug": workspace_slug} if workspace_slug else {}
+    if quote is not None:
+        # the callback rebuilds the period from this, it must not re-price the order
+        metadata["proration"] = {
+            "credit_applied_toman": credit,
+            "new_ends_at": quote.new_ends_at.isoformat() if quote.new_ends_at else None,
+        }
     return Invoice.objects.create(
         number=Invoice.generate_number(),
         user=user,
@@ -115,8 +124,8 @@ def issue_invoice(
         seats=seats,
         cycle=cycle,
         subtotal_toman=subtotal,
-        discount_toman=0,
-        total_toman=subtotal,
+        discount_toman=credit,
+        total_toman=subtotal - credit,
         status=InvoiceStatus.ISSUED,
         issued_at=now,
         due_at=due,
@@ -150,6 +159,15 @@ def create_payment_order(
     if seats > plan.max_seats:
         raise BillingError(f"The plan allows at most {plan.max_seats} seat(s).")
 
+    # the lock window is checked again here: a quote shown earlier may be stale
+    quote = None
+    workspace = Workspace.objects.filter(slug=workspace_slug).first() if workspace_slug else None
+    if workspace is not None:
+        try:
+            quote = quote_for_workspace(workspace=workspace, plan=plan, seats=seats, cycle=cycle)
+        except RenewalLockedError as exc:
+            raise BillingError(str(exc)) from exc
+
     invoice = issue_invoice(
         user=user,
         plan=plan,
@@ -157,6 +175,7 @@ def create_payment_order(
         cycle=cycle,
         notes=notes,
         workspace_slug=workspace_slug,
+        quote=quote,
     )
     description = f"{plan.name} - {invoice.number}"
     router = GatewayRouter()
@@ -269,12 +288,40 @@ def resolve_invoice_workspace(invoice: Invoice) -> Optional[Workspace]:
     return Workspace.objects.filter(slug=slug).first()
 
 
+def _renewal_now_locked(invoice: Invoice) -> bool:
+    workspace = resolve_invoice_workspace(invoice)
+    if workspace is None or invoice.plan is None:
+        return False
+    try:
+        quote_for_workspace(workspace=workspace, plan=invoice.plan, seats=invoice.seats, cycle=invoice.cycle)
+    except RenewalLockedError:
+        return True
+    return False
+
+
 def _activate_subscription(invoice: Invoice, transaction: PaymentTransaction) -> None:
     now = timezone.now()
     period = timezone.timedelta(days=365 if invoice.cycle == BillingCycle.YEARLY else 31)
+    ends_at = now + period
+    # An order that kept the existing end date (a downgrade or sideways move) records
+    # new_ends_at as None, and the subscription must not be extended by paying for it.
+    keeps_end_date = False
+    proration = (invoice.metadata or {}).get("proration") if isinstance(invoice.metadata, dict) else None
+    if proration is not None and proration.get("new_ends_at") is None:
+        keeps_end_date = True
     # A plan is a workspace entitlement, so the subscription is bound to the workspace the
     # order was raised for. An order without one keeps the older owner level behaviour.
     workspace = resolve_invoice_workspace(invoice)
+    if workspace is not None:
+        # a purchase for another plan replaces the workspace's live subscription
+        previous = Subscription.objects.filter(workspace=workspace, status=SubscriptionStatus.ACTIVE).exclude(
+            plan=invoice.plan
+        )
+        if keeps_end_date:
+            latest = previous.order_by("-ends_at").first()
+            if latest is not None and latest.ends_at:
+                ends_at = latest.ends_at
+        previous.update(status=SubscriptionStatus.EXPIRED)
     queryset = Subscription.objects.filter(user=invoice.user, plan=invoice.plan, status=SubscriptionStatus.ACTIVE)
     if workspace is not None:
         queryset = queryset.filter(workspace=workspace)
@@ -287,7 +334,7 @@ def _activate_subscription(invoice: Invoice, transaction: PaymentTransaction) ->
             cycle=invoice.cycle,
             status=SubscriptionStatus.ACTIVE,
             starts_at=now,
-            ends_at=now + period,
+            ends_at=ends_at,
             source_transaction=transaction,
             workspace=workspace,
         )
@@ -295,7 +342,7 @@ def _activate_subscription(invoice: Invoice, transaction: PaymentTransaction) ->
     subscription.seats = invoice.seats
     subscription.cycle = invoice.cycle
     subscription.starts_at = now
-    subscription.ends_at = now + period
+    subscription.ends_at = ends_at
     subscription.source_transaction = transaction
     subscription.workspace = workspace
     subscription.save()
@@ -388,6 +435,15 @@ def process_callback(
                 invoice.status = InvoiceStatus.PAID
                 invoice.paid_at = timezone.now()
                 invoice.save(update_fields=["status", "paid_at", "updated_at"])
+                if _renewal_now_locked(invoice):
+                    # The window closed between the order and the payment. The money
+                    # is real and stays recorded, but it must not silently renew the plan.
+                    invoice.metadata = {**(invoice.metadata or {}), "activation_blocked": "renewal_locked"}
+                    invoice.save(update_fields=["metadata", "updated_at"])
+                    logger.warning("billing: invoice %s paid inside the renewal lock, not activated", invoice.number)
+                    return _serialize(
+                        transaction, message="Paid, but the plan cannot be renewed yet. Support will reconcile."
+                    )
                 _activate_subscription(invoice, transaction)
             return _serialize(transaction, message=result.message or "Paid")
         if result.status == GatewayStatus.PROCESSING:

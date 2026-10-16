@@ -4,9 +4,11 @@
 
 """Upgrade pricing and the renewal lock window.
 
-Pure arithmetic over values the caller has already read. Nothing here touches
-the database or the clock, so the money rules can be pinned without a fixture
-stack, and every endpoint that quotes a price calls the same function.
+``quote_upgrade`` is pure arithmetic over values the caller has already read:
+it touches neither the database nor the clock, so the money rules can be pinned
+without a fixture stack. ``quote_for_workspace`` is the one place that reads a
+workspace's live subscription, so the quote endpoint, the order endpoint and the
+gateway callback all price a purchase the same way.
 """
 
 # Python imports
@@ -16,7 +18,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 # Module imports
-from plane.billing.models import PRORATION_NO_EXTENSION
+from django.utils import timezone
+
+from plane.billing.models import PRORATION_NO_EXTENSION, BillingCycle, Subscription, SubscriptionStatus
 
 # Amounts shown to the customer are whole thousands of toman, so an invoice reads cleanly.
 ROUNDING_STEP_TOMAN = 1000
@@ -107,4 +111,46 @@ def quote_upgrade(
         credit_applied_toman=full - payable,
         payable_toman=payable,
         new_ends_at=now + target_cycle_length,
+    )
+
+
+def cycle_length(cycle: str) -> timedelta:
+    return timedelta(days=365 if cycle == BillingCycle.YEARLY else 31)
+
+
+def current_period(workspace, now: datetime) -> Optional[tuple]:
+    """The paid period a workspace is in, with the plan's proration mode."""
+    subscription = (
+        Subscription.objects.filter(workspace=workspace, status=SubscriptionStatus.ACTIVE, ends_at__gt=now)
+        .select_related("plan", "source_transaction")
+        .order_by("-ends_at")
+        .first()
+    )
+    if subscription is None:
+        return None
+    transaction = subscription.source_transaction
+    period = CurrentPeriod(
+        ends_at=subscription.ends_at,
+        cycle_length=cycle_length(subscription.cycle),
+        charge_toman=int(transaction.amount_toman) if transaction is not None else 0,
+        plan_code=subscription.plan.code,
+        tier_rank=subscription.plan.tier_rank,
+    )
+    return period, subscription.plan.proration_mode
+
+
+def quote_for_workspace(*, workspace, plan, seats: int, cycle: str, now: Optional[datetime] = None) -> UpgradeQuote:
+    """Quote buying ``plan`` for ``workspace``; raises ``RenewalLockedError`` inside the lock window."""
+    now = now or timezone.now()
+    found = current_period(workspace, now) if workspace is not None else None
+    current, proration_mode = found if found is not None else (None, PRORATION_NO_EXTENSION)
+    return quote_upgrade(
+        now=now,
+        current=current,
+        target_plan_code=plan.code,
+        target_tier_rank=plan.tier_rank,
+        target_full_price_toman=int(plan.calculate_subtotal(seats, cycle)),
+        target_cycle_length=cycle_length(cycle),
+        target_renew_lock_days=plan.renew_lock_days,
+        proration_mode=proration_mode,
     )

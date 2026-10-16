@@ -17,11 +17,13 @@ from plane.billing.api.serializers import (
 )
 from plane.billing.models import BillingCycle, PaymentTransaction, Plan, Subscription
 from plane.billing.services.payment import BillingError, create_payment_order
+from plane.billing.services.upgrade import RenewalLockedError, quote_for_workspace
 from plane.db.models import Workspace, WorkspaceMember
 from plane.license.api.views.base import BaseAPIView
 
 WORKSPACE_NOT_FOUND = "ورک‌اسپیس یافت نشد."
 WORKSPACE_MEMBERSHIP_REQUIRED = "برای خرید پلن این ورک‌اسپیس باید عضو فعال آن باشید."
+RENEWAL_LOCKED = "تمدید این پلن هنوز باز نشده است."
 
 
 class PlanListEndpoint(BaseAPIView):
@@ -73,6 +75,24 @@ class PlanQuoteEndpoint(BaseAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # With a workspace the payable amount accounts for what is left of its current
+        # period; without one the quote is the plain catalogue price, as before.
+        workspace = None
+        workspace_slug = (request.query_params.get("workspace_slug") or "").strip()
+        if workspace_slug:
+            workspace = Workspace.objects.filter(slug=workspace_slug).first()
+            if workspace is None:
+                return Response({"error": WORKSPACE_NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
+            if not WorkspaceMember.objects.filter(workspace=workspace, member=request.user, is_active=True).exists():
+                return Response({"error": WORKSPACE_MEMBERSHIP_REQUIRED}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            quote = quote_for_workspace(workspace=workspace, plan=plan, seats=seats, cycle=cycle)
+        except RenewalLockedError as exc:
+            return Response(
+                {"error": RENEWAL_LOCKED, "code": "renewal_locked", "lock_days": exc.lock_days, "days_left": exc.days_left},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         base = plan.price_for(cycle)
         extra_seats = max(0, seats - plan.included_seats)
         subtotal = plan.calculate_subtotal(seats, cycle)
@@ -90,7 +110,9 @@ class PlanQuoteEndpoint(BaseAPIView):
                 "per_seat_price_toman": int(plan.per_seat_price_toman),
                 "extra_seats_total_toman": int(plan.per_seat_price_toman) * extra_seats,
                 "subtotal_toman": int(subtotal),
-                "total_toman": int(subtotal),
+                "total_toman": quote.payable_toman,
+                "credit_applied_toman": quote.credit_applied_toman,
+                "new_ends_at": quote.new_ends_at.isoformat() if quote.new_ends_at else None,
                 "currency": plan.currency,
             },
             status=status.HTTP_200_OK,
@@ -113,7 +135,7 @@ class PaymentOrderCreateEndpoint(BaseAPIView):
             if workspace is None:
                 return Response({"error": WORKSPACE_NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
             is_active_member = WorkspaceMember.objects.filter(
-                workspace=workspace, user=request.user, is_active=True
+                workspace=workspace, member=request.user, is_active=True
             ).exists()
             if not is_active_member:
                 return Response(
