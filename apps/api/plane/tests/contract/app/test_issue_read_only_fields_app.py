@@ -34,7 +34,8 @@ def test_partial_update_does_not_set_read_only_field(workspace, create_user, fie
     WorkspaceMember.objects.create(workspace=workspace, member=member, role=15)
     project = Project.objects.create(name="P", identifier="P", workspace=workspace, created_by=create_user)
     ProjectMember.objects.create(project=project, member=create_user, workspace=workspace, role=20)
-    ProjectMember.objects.create(project=project, member=member, workspace=workspace, role=15)
+    # Admin, because only project admins may rename a work item
+    ProjectMember.objects.create(project=project, member=member, workspace=workspace, role=20)
     issue = Issue(name="I", workspace=workspace, project=project)
     issue.save(created_by_id=create_user.id)
     original = getattr(issue, field)
