@@ -129,3 +129,6 @@ packages/i18n/src/types/keys.generated.ts
 .orkas-logs/
 chat-*/
 *.orig.rej
+
+# Local pnpm store
+.pnpm-store/

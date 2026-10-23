@@ -1,0 +1,66 @@
+# Local dev frontends (web, admin, space) for the local API stack.
+#
+# Usage:
+#   docker compose -f docker-compose-local.yml -f docker-compose-local.nominedocker.yml \
+#     -f docker-compose-local.frontend.yml up -d frontend-install web admin space
+#
+# The repo is bind-mounted, so source edits hot-reload without a rebuild. Dependencies
+# are installed once by `frontend-install`, then the three dev servers start.
+#
+# Plain Node image: apps/web/Dockerfile.dev fails on `pnpm add -g turbo` (pnpm's global
+# bin directory is not on PATH), so install and run inside the container instead.
+
+x-frontend-base: &frontend-base
+  image: node:22-alpine
+  working_dir: /app
+  volumes:
+    - .:/app
+    - frontend_node_modules:/app/node_modules
+    - frontend_web_node_modules:/app/apps/web/node_modules
+    - frontend_admin_node_modules:/app/apps/admin/node_modules
+    - frontend_space_node_modules:/app/apps/space/node_modules
+  environment:
+    NODE_ENV: development
+
+services:
+  frontend-install:
+    <<: *frontend-base
+    container_name: plane-frontend-install
+    command: sh -c "corepack enable pnpm && pnpm install"
+    restart: "no"
+
+  web:
+    <<: *frontend-base
+    container_name: plane-web-dev
+    command: sh -c "corepack enable pnpm && pnpm dev --filter=web"
+    ports:
+      - "3000:3000"
+    depends_on:
+      frontend-install:
+        condition: service_completed_successfully
+
+  admin:
+    <<: *frontend-base
+    container_name: plane-admin-dev
+    command: sh -c "corepack enable pnpm && pnpm dev --filter=admin"
+    ports:
+      - "3001:3001"
+    depends_on:
+      frontend-install:
+        condition: service_completed_successfully
+
+  space:
+    <<: *frontend-base
+    container_name: plane-space-dev
+    command: sh -c "corepack enable pnpm && pnpm dev --filter=space"
+    ports:
+      - "3002:3002"
+    depends_on:
+      frontend-install:
+        condition: service_completed_successfully
+
+volumes:
+  frontend_node_modules:
+  frontend_web_node_modules:
+  frontend_admin_node_modules:
+  frontend_space_node_modules:
