@@ -28,7 +28,7 @@ from plane.utils.notifications import NotificationChannelError, NotificationChan
 from plane.license.api.serializers import InstanceConfigurationSerializer
 from plane.license.utils.encryption import encrypt_data
 from plane.utils.cache import cache_response, invalidate_cache
-from plane.license.utils.instance_value import get_email_configuration
+from plane.license.utils.instance_value import get_bale_bot_configuration, get_email_configuration
 from plane.utils.notifications.bale import (
     build_webhook_url,
     delete_webhook,
