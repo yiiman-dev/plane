@@ -37,6 +37,7 @@ export const TRANSACTION_STATUS_LABELS: Record<TPaymentTransactionStatus, string
   processing: "در حال پردازش",
   paid: "پرداخت شده",
   failed: "ناموفق",
+  held: "قفل‌شده",
   unavailable: "در دسترس نیست",
   reversed: "بازگشت وجه",
 };
@@ -50,6 +51,7 @@ export const TRANSACTION_STATUS_VARIANTS: Record<
   processing: "info",
   paid: "success",
   failed: "danger",
+  held: "warning",
   unavailable: "warning",
   reversed: "brand",
 };
@@ -58,7 +60,7 @@ export const TRANSACTION_STATUS_VARIANTS: Record<
  * Statuses that must not be polled again: either the payment reached a final state or it failed in
  * a way that retrying cannot fix.
  */
-export const TERMINAL_TRANSACTION_STATUSES: TPaymentTransactionStatus[] = ["paid", "failed", "reversed"];
+export const TERMINAL_TRANSACTION_STATUSES: TPaymentTransactionStatus[] = ["paid", "failed", "reversed", "held"];
 
 /* polling */
 

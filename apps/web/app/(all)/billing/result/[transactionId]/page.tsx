@@ -66,6 +66,13 @@ function getResultCopy(status: TPaymentTransactionStatus | undefined): {
       description: "این پرداخت توسط درگاه بازگشت داده شد. مبلغ پس از تأیید به حساب شما بازمی‌گردد.",
       tone: "warning",
     };
+  if (status === "held")
+    return {
+      title: "پرداخت در انتظار بررسی",
+      description:
+        "وضعیت این پرداخت در حال حاضر مبهم است و در صف بررسی قرار گرفته است. نتیجه پس از بررسی مشخص خواهد شد.",
+      tone: "warning",
+    };
   if (status === "unavailable")
     return {
       title: "درگاه پرداخت در دسترس نبود",
