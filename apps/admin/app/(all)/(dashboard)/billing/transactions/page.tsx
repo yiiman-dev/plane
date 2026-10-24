@@ -34,13 +34,17 @@ import {
   TRANSACTION_STATUS_LABELS,
   TRANSACTION_STATUS_VARIANTS,
 } from "../constants";
+import { Download } from "lucide-react";
 import {
   DEFAULT_BILLING_PER_PAGE,
+  downloadCsv,
   formatDateTime,
   formatNumber,
   formatToman,
   getErrorMessage,
+  makeBillingCursor,
   pageToCursor,
+  type TCsvColumn,
 } from "../utils";
 
 type TTab = "invoices" | "transactions";
@@ -286,10 +290,146 @@ export default function BillingTransactionsPage() {
     setExpandedInvoice((previous) => (previous === invoiceId ? null : invoiceId));
   }, []);
 
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCsv = async () => {
+    try {
+      setIsExporting(true);
+      const timestamp = new Date().toISOString().slice(0, 10);
+
+      if (activeTab === "transactions") {
+        let exportRows = transactions;
+        if (transactionTotal > transactions.length) {
+          const fullData = await BillingService.transactions({
+            ...transactionParams,
+            per_page: Math.min(transactionTotal, 2000),
+            cursor: makeBillingCursor(Math.min(transactionTotal, 2000), 0),
+          });
+          if (fullData?.results) {
+            exportRows = fullData.results;
+          }
+        }
+
+        const columns: TCsvColumn<TPaymentTransaction>[] = [
+          { label: "شناسه تراکنش", value: (t) => t.id },
+          { label: "شماره فاکتور", value: (t) => t.invoice_number ?? "" },
+          { label: "مبلغ (تومان)", value: (t) => t.amount_toman },
+          { label: "درگاه پرداخت", value: (t) => GATEWAY_LABELS[t.gateway_code] ?? t.gateway_code },
+          { label: "وضعیت", value: (t) => TRANSACTION_STATUS_LABELS[t.status] ?? t.status },
+          { label: "شناسه مرجع درگاه", value: (t) => t.gateway_ref_id ?? "" },
+          { label: "توکن درگاه", value: (t) => t.gateway_token ?? "" },
+          { label: "نام کاربر", value: (t) => t.user_detail?.display_name ?? "" },
+          { label: "ایمیل کاربر", value: (t) => t.user_detail?.email ?? "" },
+          { label: "تعداد تلاش", value: (t) => t.attempts },
+          { label: "علت ناموفق بودن", value: (t) => t.failure_reason ?? "" },
+          { label: "تاریخ ایجاد", value: (t) => formatDateTime(t.created_at) },
+          { label: "تاریخ پرداخت", value: (t) => formatDateTime(t.paid_at) },
+          { label: "تاریخ تایید", value: (t) => formatDateTime(t.verified_at) },
+          { label: "تاریخ (ISO)", value: (t) => t.created_at },
+        ];
+
+        downloadCsv(`billing-transactions-${timestamp}`, columns, exportRows);
+      } else {
+        let exportRows = invoices;
+        if (invoiceTotal > invoices.length) {
+          const fullData = await BillingService.invoices({
+            ...invoiceParams,
+            per_page: Math.min(invoiceTotal, 2000),
+            cursor: makeBillingCursor(Math.min(invoiceTotal, 2000), 0),
+          });
+          if (fullData?.results) {
+            exportRows = fullData.results;
+          }
+        }
+
+        const columns: TCsvColumn<TInvoice>[] = [
+          { label: "شناسه فاکتور", value: (i) => i.id },
+          { label: "شماره فاکتور", value: (i) => i.number },
+          { label: "کد پلن", value: (i) => i.plan_code || i.plan },
+          { label: "دوره پرداخت", value: (i) => BILLING_CYCLE_LABELS[i.cycle] ?? i.cycle },
+          { label: "تعداد صندلی", value: (i) => i.seats },
+          { label: "مبلغ خام (تومان)", value: (i) => i.subtotal_toman },
+          { label: "تخفیف (تومان)", value: (i) => i.discount_toman },
+          { label: "مبلغ کل (تومان)", value: (i) => i.total_toman },
+          { label: "وضعیت", value: (i) => INVOICE_STATUS_LABELS[i.status] ?? i.status },
+          { label: "نام کاربر", value: (i) => i.user_detail?.display_name ?? "" },
+          { label: "ایمیل کاربر", value: (i) => i.user_detail?.email ?? "" },
+          { label: "تاریخ صدور", value: (i) => formatDateTime(i.issued_at || i.created_at) },
+          { label: "تاریخ پرداخت", value: (i) => formatDateTime(i.paid_at) },
+          { label: "تاریخ سررسید", value: (i) => formatDateTime(i.due_at) },
+          { label: "یادداشت‌ها", value: (i) => i.notes ?? "" },
+          { label: "تاریخ (ISO)", value: (i) => i.created_at },
+        ];
+
+        downloadCsv(`billing-invoices-${timestamp}`, columns, exportRows);
+      }
+    } catch {
+      const timestamp = new Date().toISOString().slice(0, 10);
+      if (activeTab === "transactions") {
+        const columns: TCsvColumn<TPaymentTransaction>[] = [
+          { label: "شناسه تراکنش", value: (t) => t.id },
+          { label: "شماره فاکتور", value: (t) => t.invoice_number ?? "" },
+          { label: "مبلغ (تومان)", value: (t) => t.amount_toman },
+          { label: "درگاه پرداخت", value: (t) => GATEWAY_LABELS[t.gateway_code] ?? t.gateway_code },
+          { label: "وضعیت", value: (t) => TRANSACTION_STATUS_LABELS[t.status] ?? t.status },
+          { label: "شناسه مرجع درگاه", value: (t) => t.gateway_ref_id ?? "" },
+          { label: "توکن درگاه", value: (t) => t.gateway_token ?? "" },
+          { label: "نام کاربر", value: (t) => t.user_detail?.display_name ?? "" },
+          { label: "ایمیل کاربر", value: (t) => t.user_detail?.email ?? "" },
+          { label: "تعداد تلاش", value: (t) => t.attempts },
+          { label: "علت ناموفق بودن", value: (t) => t.failure_reason ?? "" },
+          { label: "تاریخ ایجاد", value: (t) => formatDateTime(t.created_at) },
+          { label: "تاریخ پرداخت", value: (t) => formatDateTime(t.paid_at) },
+          { label: "تاریخ تایید", value: (t) => formatDateTime(t.verified_at) },
+          { label: "تاریخ (ISO)", value: (t) => t.created_at },
+        ];
+        downloadCsv(`billing-transactions-${timestamp}`, columns, transactions);
+      } else {
+        const columns: TCsvColumn<TInvoice>[] = [
+          { label: "شناسه فاکتور", value: (i) => i.id },
+          { label: "شماره فاکتور", value: (i) => i.number },
+          { label: "کد پلن", value: (i) => i.plan_code || i.plan },
+          { label: "دوره پرداخت", value: (i) => BILLING_CYCLE_LABELS[i.cycle] ?? i.cycle },
+          { label: "تعداد صندلی", value: (i) => i.seats },
+          { label: "مبلغ خام (تومان)", value: (i) => i.subtotal_toman },
+          { label: "تخفیف (تومان)", value: (i) => i.discount_toman },
+          { label: "مبلغ کل (تومان)", value: (i) => i.total_toman },
+          { label: "وضعیت", value: (i) => INVOICE_STATUS_LABELS[i.status] ?? i.status },
+          { label: "نام کاربر", value: (i) => i.user_detail?.display_name ?? "" },
+          { label: "ایمیل کاربر", value: (i) => i.user_detail?.email ?? "" },
+          { label: "تاریخ صدور", value: (i) => formatDateTime(i.issued_at || i.created_at) },
+          { label: "تاریخ پرداخت", value: (i) => formatDateTime(i.paid_at) },
+          { label: "تاریخ سررسید", value: (i) => formatDateTime(i.due_at) },
+          { label: "یادداشت‌ها", value: (i) => i.notes ?? "" },
+          { label: "تاریخ (ISO)", value: (i) => i.created_at },
+        ];
+        downloadCsv(`billing-invoices-${timestamp}`, columns, invoices);
+      }
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const hasItemsToExport = activeTab === "transactions" ? transactions.length > 0 : invoices.length > 0;
+
+  const exportAction = (
+    <Button
+      variant="secondary"
+      size="sm"
+      stretch="auto"
+      label={activeTab === "transactions" ? "خروجی CSV تراکنش‌ها" : "خروجی CSV فاکتورها"}
+      icon={<Download className="h-3.5 w-3.5" />}
+      disabled={!hasItemsToExport || isExporting}
+      loading={isExporting}
+      onClick={handleExportCsv}
+    />
+  );
+
   return (
     <BillingRTLFrame
       title="تراکنش‌ها و فاکتورها"
       description="تراکنش‌های ثبت‌شده روی درگاه‌های پرداخت و فاکتورهای صادرشده، همراه با وضعیت و کدهای برگشتی درگاه."
+      actions={exportAction}
     >
       <BillingNav />
 

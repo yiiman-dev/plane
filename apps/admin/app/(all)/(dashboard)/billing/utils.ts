@@ -86,3 +86,42 @@ export const formatJsonValue = (value: unknown): string => {
   }
   return String(value);
 };
+
+/**
+ * Escapes a cell value for CSV (RFC 4180):
+ * - If it contains commas, double quotes, or newlines, enclose in double quotes.
+ * - Any double quotes inside are doubled ("").
+ */
+export const escapeCsvCell = (value: unknown): string => {
+  if (value === null || value === undefined) return "";
+  const str = String(value);
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
+export type TCsvColumn<T = Record<string, unknown>> = {
+  label: string;
+  value: (row: T) => unknown;
+};
+
+/**
+ * Generates and triggers the download of a CSV file in the browser.
+ * Uses UTF-8 BOM (\uFEFF) so Excel on Windows and Mac properly detects UTF-8 Persian text.
+ */
+export const downloadCsv = <T>(filename: string, columns: TCsvColumn<T>[], rows: T[]) => {
+  const headerLine = columns.map((col) => escapeCsvCell(col.label)).join(",");
+  const dataLines = rows.map((row) => columns.map((col) => escapeCsvCell(col.value(row))).join(","));
+
+  const csvContent = "\uFEFF" + [headerLine, ...dataLines].join("\r\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename.endsWith(".csv") ? filename : `${filename}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};

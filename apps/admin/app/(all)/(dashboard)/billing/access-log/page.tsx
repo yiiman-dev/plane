@@ -6,9 +6,11 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
+import { Download } from "lucide-react";
 import { BillingService, BILLING_ACCESS_LOG } from "@plane/services";
 import type { TBillingAccessLogRow, TBillingAccessLogView } from "@plane/types";
 import { Badge } from "@makeplane/propel/components/badge";
+import { Button } from "@makeplane/propel/components/button";
 import { Input } from "@makeplane/propel/components/input";
 import { Pagination } from "@makeplane/propel/components/pagination";
 import { Select, SelectContent, SelectItem, SelectList, SelectTrigger } from "@makeplane/propel/components/select";
@@ -16,7 +18,16 @@ import { Select, SelectContent, SelectItem, SelectList, SelectTrigger } from "@m
 import { BillingEmptyState, BillingNav, BillingRTLFrame, BillingSection } from "../components/billing-layout";
 import { BILLING_PAGE_SIZE_OPTIONS, PAGINATION_LABELS } from "../constants";
 import { useDebouncedValue } from "../hooks";
-import { DEFAULT_BILLING_PER_PAGE, formatDateTime, formatNumber, getErrorMessage, pageToCursor } from "../utils";
+import {
+  DEFAULT_BILLING_PER_PAGE,
+  downloadCsv,
+  formatDateTime,
+  formatNumber,
+  getErrorMessage,
+  makeBillingCursor,
+  pageToCursor,
+  type TCsvColumn,
+} from "../utils";
 
 const VIEW_FILTERS: { label: string; value: TBillingAccessLogView | "all" }[] = [
   { label: "همه خواندن‌ها", value: "all" },
@@ -96,8 +107,72 @@ export default function BillingAccessLogPage() {
     );
   }
 
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCsv = async () => {
+    try {
+      setIsExporting(true);
+      let exportRows = rows;
+      if (total > rows.length) {
+        const fullData = await BillingService.accessLog({
+          ...params,
+          per_page: Math.min(total, 2000),
+          cursor: makeBillingCursor(Math.min(total, 2000), 0),
+        });
+        if (fullData?.results) {
+          exportRows = fullData.results;
+        }
+      }
+
+      const columns: TCsvColumn<TBillingAccessLogRow>[] = [
+        { label: "شناسه", value: (r) => r.id },
+        { label: "نوع خواندن", value: (r) => r.view_label || (r.view === "wallet" ? "کیف پول" : "دفتر کل") },
+        { label: "نام ورک‌اسپیس", value: (r) => r.workspace_name ?? "" },
+        { label: "شناسه ورک‌اسپیس", value: (r) => r.workspace_slug ?? "" },
+        { label: "مشاهده‌کننده", value: (r) => r.viewer_name || r.viewer_email || "کاربر حذف‌شده" },
+        { label: "ایمیل مشاهده‌کننده", value: (r) => r.viewer_email ?? "" },
+        { label: "آدرس IP", value: (r) => r.ip_address ?? "" },
+        { label: "عامل کاربر", value: (r) => r.user_agent ?? "" },
+        { label: "تاریخ و زمان", value: (r) => formatDateTime(r.created_at) },
+        { label: "تاریخ (ISO)", value: (r) => r.created_at },
+      ];
+
+      const timestamp = new Date().toISOString().slice(0, 10);
+      downloadCsv(`billing-access-log-${timestamp}`, columns, exportRows);
+    } catch {
+      const columns: TCsvColumn<TBillingAccessLogRow>[] = [
+        { label: "شناسه", value: (r) => r.id },
+        { label: "نوع خواندن", value: (r) => r.view_label || (r.view === "wallet" ? "کیف پول" : "دفتر کل") },
+        { label: "نام ورک‌اسپیس", value: (r) => r.workspace_name ?? "" },
+        { label: "شناسه ورک‌اسپیس", value: (r) => r.workspace_slug ?? "" },
+        { label: "مشاهده‌کننده", value: (r) => r.viewer_name || r.viewer_email || "کاربر حذف‌شده" },
+        { label: "ایمیل مشاهده‌کننده", value: (r) => r.viewer_email ?? "" },
+        { label: "آدرس IP", value: (r) => r.ip_address ?? "" },
+        { label: "عامل کاربر", value: (r) => r.user_agent ?? "" },
+        { label: "تاریخ و زمان", value: (r) => formatDateTime(r.created_at) },
+        { label: "تاریخ (ISO)", value: (r) => r.created_at },
+      ];
+      downloadCsv(`billing-access-log-${new Date().toISOString().slice(0, 10)}`, columns, rows);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const exportAction = (
+    <Button
+      variant="secondary"
+      size="sm"
+      stretch="auto"
+      label="خروجی CSV"
+      icon={<Download className="h-3.5 w-3.5" />}
+      disabled={rows.length === 0 || isExporting}
+      loading={isExporting}
+      onClick={handleExportCsv}
+    />
+  );
+
   return (
-    <BillingRTLFrame title={heading} description={description}>
+    <BillingRTLFrame title={heading} description={description} actions={exportAction}>
       <BillingNav />
 
       <BillingSection title="صافی‌ها">
