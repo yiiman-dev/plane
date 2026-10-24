@@ -6,7 +6,8 @@
 
 # Python imports
 import logging
-from typing import Optional
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 # Django imports
 from django.conf import settings
@@ -103,12 +104,14 @@ def issue_invoice(
     notes: str = "",
     workspace_slug: str = "",
     quote: Optional[UpgradeQuote] = None,
+    extra_metadata: Optional[Dict[str, Any]] = None,
+    due_at: Optional[datetime] = None,
 ) -> Invoice:
     seats = max(plan.min_seats, min(int(seats or 0), plan.max_seats))
     subtotal = plan.calculate_subtotal(seats, cycle)
     credit = quote.credit_applied_toman if quote is not None else 0
     now = timezone.now()
-    due = now + timezone.timedelta(days=365 if cycle == BillingCycle.YEARLY else 31)
+    due = due_at or (now + timezone.timedelta(days=365 if cycle == BillingCycle.YEARLY else 31))
     # the workspace travels on the invoice metadata so the gateway callback, which only sees
     # the transaction row, can still bind the resulting subscription to that workspace
     metadata = {"workspace_slug": workspace_slug} if workspace_slug else {}
@@ -118,6 +121,8 @@ def issue_invoice(
             "credit_applied_toman": credit,
             "new_ends_at": quote.new_ends_at.isoformat() if quote.new_ends_at else None,
         }
+    if extra_metadata:
+        metadata.update(extra_metadata)
     return Invoice.objects.create(
         number=Invoice.generate_number(),
         user=user,

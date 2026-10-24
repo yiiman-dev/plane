@@ -769,6 +769,14 @@ class RenewalNotice(BaseModel):
         related_name="renewal_notices",
         verbose_name="Subscription",
     )
+    invoice = models.ForeignKey(
+        "billing.Invoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="renewal_notices",
+        verbose_name="Invoice",
+    )
     days_before = models.PositiveSmallIntegerField(verbose_name="Days Before Expiry")
     period_ends_at = models.DateTimeField(verbose_name="Period Ends At")
     recipients = models.PositiveIntegerField(default=0, verbose_name="Recipients")

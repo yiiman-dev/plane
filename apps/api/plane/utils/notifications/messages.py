@@ -12,6 +12,7 @@ from django.conf import settings
 
 # Module imports
 from plane.db.models.notification import (
+    NOTIFICATION_EVENT_BILLING_RENEWAL,
     NOTIFICATION_EVENT_COMMENT,
     NOTIFICATION_EVENT_ISSUE_COMPLETED,
     NOTIFICATION_EVENT_MENTION,
@@ -83,6 +84,12 @@ def build_channel_message(event: str, data: Dict[str, Any]) -> ChannelMessage:
     :param data: activity payload, shaped like the email notification payload
     :returns: channel agnostic message with the deep link to the issue
     """
+    if event == NOTIFICATION_EVENT_BILLING_RENEWAL:
+        title = data.get("title") or "یادآوری تمدید اشتراک"
+        text = data.get("text") or title
+        url = data.get("url")
+        return ChannelMessage(text=text, url=url, title=title, metadata={"event": event})
+
     issue_data = data.get("issue") or {}
     identifier = get_issue_identifier(issue_data)
     name = issue_data.get("name") or identifier or "An issue"

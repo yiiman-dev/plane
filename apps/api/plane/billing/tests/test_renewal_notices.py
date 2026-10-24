@@ -18,6 +18,7 @@ import pytest
 
 from plane.billing.models import (
     DEFAULT_RENEWAL_NOTICE_DAYS,
+    Invoice,
     Plan,
     RenewalNotice,
     RenewalNoticeSchedule,
@@ -27,7 +28,12 @@ from plane.billing.models import (
 from plane.billing.services import renewal
 from plane.billing.services import tasks as billing_tasks
 from plane.billing.tests.conftest import force_instance_admin_login
-from plane.db.models import Notification, WorkspaceMember
+from plane.db.models import (
+    Notification,
+    NotificationChannelLog,
+    UserNotificationChannel,
+    WorkspaceMember,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -231,3 +237,157 @@ def test_schedule_endpoint_is_closed_to_workspace_members(client):
     response = client.get("/api/billing/admin/renewal-notifications/")
 
     assert response.status_code in (401, 403)
+
+
+def test_renewal_notice_creates_proforma_invoice_and_links_it(workspace, plan, admins):
+    sub = subscribe(workspace, plan, ends_on=TODAY + timedelta(days=7))
+
+    assert renewal.send_due_renewal_notices(today=TODAY) == 1
+
+    notice = RenewalNotice.objects.get()
+    assert notice.invoice is not None
+    assert notice.invoice.plan == plan
+    assert notice.invoice.seats == sub.seats
+    assert notice.invoice.cycle == sub.cycle
+    assert notice.invoice.due_at == sub.ends_at
+    assert notice.invoice.metadata.get("renewal_subscription_id") == str(sub.pk)
+
+    # In-app notifications contain invoice information
+    notif = Notification.objects.filter(receiver_id=admins[0].pk).first()
+    assert notif is not None
+    assert notif.data["invoice_id"] == str(notice.invoice.pk)
+    assert notif.data["invoice_number"] == notice.invoice.number
+    assert notif.data["total_toman"] == notice.invoice.total_toman
+
+
+def test_renewal_notice_reuses_existing_proforma_invoice(workspace, plan, admins):
+    subscribe(workspace, plan, ends_on=TODAY + timedelta(days=7))
+
+    # Trigger notice on 7-day mark
+    assert renewal.send_due_renewal_notices(today=TODAY) == 1
+    invoice = RenewalNotice.objects.get().invoice
+    assert invoice is not None
+
+    # Advance time to 3-day mark (4 days later)
+    day_3 = TODAY + timedelta(days=4)
+    assert renewal.send_due_renewal_notices(today=day_3) == 1
+
+    # Should reuse the exact same invoice, not create a duplicate
+    notice_3 = RenewalNotice.objects.get(days_before=3)
+    assert notice_3.invoice == invoice
+    assert Invoice.objects.count() == 1
+
+
+def test_renewal_notice_dispatches_sms_when_configured(workspace, plan, admins, monkeypatch):
+    # Set mobile number on admin
+    admin = admins[0]
+    admin.mobile_number = "09123456789"
+    admin.save(update_fields=["mobile_number"])
+
+    sent_messages = []
+
+    class MockKavenegarProvider:
+        def is_configured(self):
+            return True
+
+        def send_to_user(self, user, message):
+            sent_messages.append((user.pk, message.text))
+            from plane.utils.notifications.base import ChannelResult
+
+            return ChannelResult(ok=True)
+
+    monkeypatch.setattr(renewal, "get_provider", lambda ch: MockKavenegarProvider() if ch == "SMS" else None)
+
+    subscribe(workspace, plan, ends_on=TODAY + timedelta(days=7))
+    assert renewal.send_due_renewal_notices(today=TODAY) == 1
+
+    assert len(sent_messages) == 1
+    assert sent_messages[0][0] == admin.pk
+    assert "اشتراک پلن «Pro»" in sent_messages[0][1]
+    assert "پیش‌فاکتور تمدید" in sent_messages[0][1]
+
+    # Verify NotificationChannelLog
+    channel_log = NotificationChannelLog.objects.filter(receiver=admin, channel="SMS").first()
+    assert channel_log is not None
+    assert channel_log.status == "sent"
+    assert channel_log.event == "billing_renewal"
+
+
+def test_renewal_notice_skips_sms_when_kavenegar_not_configured(workspace, plan, admins, monkeypatch):
+    admin = admins[0]
+    admin.mobile_number = "09123456789"
+    admin.save(update_fields=["mobile_number"])
+
+    class MockUnconfiguredProvider:
+        def is_configured(self):
+            return False
+
+    monkeypatch.setattr(renewal, "get_provider", lambda ch: MockUnconfiguredProvider())
+
+    subscribe(workspace, plan, ends_on=TODAY + timedelta(days=7))
+    assert renewal.send_due_renewal_notices(today=TODAY) == 1
+
+    channel_log = NotificationChannelLog.objects.filter(receiver=admin, channel="SMS").first()
+    assert channel_log is not None
+    assert channel_log.status == "skipped"
+    assert channel_log.error_message == "Kavenegar is not configured"
+
+
+def test_renewal_notice_dispatches_bale_bot_when_configured(workspace, plan, admins, monkeypatch):
+    admin = admins[0]
+    admin.bale_chat_id = "12345678"
+    admin.save(update_fields=["bale_chat_id"])
+    UserNotificationChannel.objects.create(user=admin, channel="BALE", is_enabled=True)
+
+    sent_bale = []
+
+    class MockBaleProvider:
+        def is_configured(self):
+            return True
+
+        def send_to_user(self, user, message):
+            sent_bale.append((user.pk, message.text))
+            from plane.utils.notifications.base import ChannelResult
+
+            return ChannelResult(ok=True)
+
+    monkeypatch.setattr(renewal, "get_provider", lambda ch: MockBaleProvider())
+
+    subscribe(workspace, plan, ends_on=TODAY + timedelta(days=7))
+    assert renewal.send_due_renewal_notices(today=TODAY) == 1
+
+    assert len(sent_bale) == 1
+    assert "یادآوری سررسید اشتراک پلن «Pro»" in sent_bale[0][1]
+
+    channel_log = NotificationChannelLog.objects.filter(receiver=admin, channel="BALE").first()
+    assert channel_log is not None
+    assert channel_log.status == "sent"
+    assert channel_log.event == "billing_renewal"
+
+
+def test_renewal_notice_dispatches_email_when_configured(workspace, plan, admins, monkeypatch):
+    sent_emails = []
+
+    class MockEmailMsg:
+        def __init__(self, subject, body, from_email, to, connection=None):
+            self.subject = subject
+            self.body = body
+            self.to = to
+
+        def send(self):
+            sent_emails.append((self.to, self.subject, self.body))
+
+    monkeypatch.setattr(
+        "plane.license.utils.instance_value.get_email_configuration",
+        lambda: ("smtp.example.com", "user", "pass", "587", "1", "0", "support@plane.so"),
+    )
+    monkeypatch.setattr("django.core.mail.EmailMultiAlternatives", MockEmailMsg)
+    monkeypatch.setattr("django.core.mail.get_connection", lambda **kwargs: None)
+
+    subscribe(workspace, plan, ends_on=TODAY + timedelta(days=7))
+    assert renewal.send_due_renewal_notices(today=TODAY) == 1
+
+    assert len(sent_emails) == 2  # 2 active admins
+    assert "یادآوری سررسید اشتراک پلن «Pro»" in sent_emails[0][1]
+    assert "پیش‌فاکتور تمدید" in sent_emails[0][2]
+
