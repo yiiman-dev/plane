@@ -19,6 +19,7 @@ export default [
     // react-router uses this explicit config, so a page file that is not listed
     // falls through to the catch-all 404 while the navigation still shows its
     // tab. The workspaces and feature-flag pages were linked but unregistered.
+    route("billing/analytics", "./(all)/(dashboard)/billing/analytics/page.tsx"),
     route("billing/gateways", "./(all)/(dashboard)/billing/gateways/page.tsx"),
     route("billing/routing", "./(all)/(dashboard)/billing/routing/page.tsx"),
     route("billing/plans", "./(all)/(dashboard)/billing/plans/page.tsx"),

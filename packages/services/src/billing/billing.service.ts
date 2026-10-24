@@ -7,6 +7,7 @@
 // plane imports
 import { API_BASE_URL } from "@plane/constants";
 import type {
+  TBillingAnalyticsResponse,
   TBillingWorkspaceEntitlement,
   TBillingWorkspaceFeatureFlagListResponse,
   TBillingWorkspaceFeatureFlagMutationResponse,
@@ -490,6 +491,19 @@ export class BillingService extends APIService {
    */
   async featureFlags(params: TBillingListParams): Promise<TFeatureFlagListResponse> {
     return this.get("/api/billing/admin/feature-flags/", { params })
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /* billing analytics */
+
+  /**
+   * Aggregated financial analytics and revenue time series for the admin dashboard.
+   */
+  async analytics(params: { months?: number } = {}): Promise<TBillingAnalyticsResponse> {
+    return this.get("/api/billing/admin/analytics/", { params })
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;

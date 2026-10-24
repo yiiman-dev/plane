@@ -20,6 +20,8 @@ export const BillingService = new BillingServiceClass();
 export const BILLING_GATEWAYS = "billing-gateways";
 export const BILLING_ROUTING = "billing-routing";
 export const BILLING_PLANS = "billing-plans";
+export const BILLING_ANALYTICS = (months?: number) =>
+  months ? `billing-analytics?months=${months}` : "billing-analytics";
 
 /**
  * Transactions and invoices are server side filtered and paginated, so their cache key has to

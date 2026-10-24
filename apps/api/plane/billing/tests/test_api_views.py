@@ -31,6 +31,7 @@ pytestmark = pytest.mark.django_db
 # it, which is the property this list is about. Using a real workspace here
 # would make the list depend on a fixture and buy nothing.
 ADMIN_URLS = [
+    ("get", "/api/billing/admin/analytics/"),
     ("get", "/api/billing/admin/gateways/"),
     ("post", "/api/billing/admin/gateways/"),
     ("get", "/api/billing/admin/routing/"),
@@ -439,3 +440,75 @@ def test_admin_transaction_list_filters_by_invoice_cycle(client, instance_admin,
     assert response.status_code == 200, response.content
     numbers = [item["invoice_number"] for item in response.json()["results"]]
     assert numbers == [yearly_invoice.number]
+
+
+def test_admin_billing_analytics_endpoint(client, instance_admin, db):
+    from plane.billing.models import PaymentTransaction, Subscription, SubscriptionStatus, TransactionStatus
+    from plane.billing.services.payment import issue_invoice
+
+    user = _signed_in_user(client, "analytics@example.com")
+    plan = Plan.objects.create(
+        code="growth",
+        name="Growth",
+        monthly_price_toman=500000,
+        yearly_price_toman=5000000,
+        is_active=True,
+        sort_order=1,
+        included_seats=5,
+        min_seats=1,
+        max_seats=20,
+    )
+    invoice = issue_invoice(user=user, plan=plan, seats=5, cycle="monthly")
+    tx = PaymentTransaction.objects.create(
+        invoice=invoice,
+        user=user,
+        gateway_code="zarinpal",
+        gateway_token="tx-analytics-1",
+        amount_toman=500000,
+        status=TransactionStatus.PAID,
+    )
+    # Failed transaction to verify success_rate calculation
+    PaymentTransaction.objects.create(
+        user=user,
+        gateway_code="zarinpal",
+        gateway_token="tx-analytics-2",
+        amount_toman=500000,
+        status=TransactionStatus.FAILED,
+    )
+
+    Subscription.objects.create(
+        user=user,
+        plan=plan,
+        seats=5,
+        cycle="monthly",
+        status=SubscriptionStatus.ACTIVE,
+        source_transaction=tx,
+    )
+
+    client.force_authenticate(user=None)
+    force_instance_admin_login(client, instance_admin)
+
+    response = client.get("/api/billing/admin/analytics/?months=6")
+    assert response.status_code == 200, response.content
+    data = response.json()
+
+    assert "summary" in data
+    assert data["summary"]["total_revenue_toman"] == 500000
+    assert data["summary"]["mrr_toman"] == 500000
+    assert data["summary"]["active_subscriptions"] == 1
+    assert data["summary"]["total_transactions"] == 2
+    assert data["summary"]["paid_transactions"] == 1
+    assert data["summary"]["success_rate"] == 50.0
+
+    assert "monthly_trend" in data
+    assert len(data["monthly_trend"]) == 6
+    assert any(m["revenue"] == 500000 for m in data["monthly_trend"])
+
+    assert "plan_distribution" in data
+    assert any(p["key"] == "growth" and p["count"] == 1 for p in data["plan_distribution"])
+
+    assert "status_distribution" in data
+    statuses = {s["status"]: s["count"] for s in data["status_distribution"]}
+    assert statuses.get(TransactionStatus.PAID) == 1
+    assert statuses.get(TransactionStatus.FAILED) == 1
+

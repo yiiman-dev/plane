@@ -6,6 +6,7 @@ from django.urls import path
 
 from plane.billing.api.views.admin_views import (
     AdminAccessLogEndpoint,
+    AdminBillingAnalyticsEndpoint,
     AdminSmsReportEndpoint,
     AdminWorkspaceBillingEndpoint,
     AdminWorkspaceListEndpoint,
@@ -56,6 +57,7 @@ from plane.billing.api.views.workspace_views import (
 
 urlpatterns = [
     # instance admin (god mode)
+    path("admin/analytics/", AdminBillingAnalyticsEndpoint.as_view(), name="billing-admin-analytics"),
     path("admin/gateways/", GatewayListCreateEndpoint.as_view(), name="billing-gateways"),
     path("admin/gateways/<uuid:pk>/", GatewayDetailEndpoint.as_view(), name="billing-gateway-detail"),
     path("admin/routing/", GatewayRoutingConfigEndpoint.as_view(), name="billing-routing"),

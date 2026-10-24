@@ -558,3 +558,52 @@ export type TBillingSmsReportListResponse = TPaginatedResponse<TBillingSmsReport
 export type TFeatureFlagListResponse = TPaginatedResponse<TFeatureFlag[]>;
 export type TPlanFeatureFlagListResponse = TPaginatedResponse<TPlanFeatureFlag[]>;
 export type TBillingAccessLogListResponse = TPaginatedResponse<TBillingAccessLogRow[]>;
+
+/* billing analytics */
+
+export type TBillingAnalyticsSummary = {
+  total_revenue_toman: number;
+  mrr_toman: number;
+  active_subscriptions: number;
+  total_transactions: number;
+  paid_transactions: number;
+  success_rate: number;
+};
+
+export type TBillingMonthlyTrend = {
+  date: string;
+  label: string;
+  revenue: number;
+  count: number;
+};
+
+export type TBillingPlanDistribution = {
+  key: string;
+  name: string;
+  count: number;
+  revenue_toman: number;
+  color: string;
+};
+
+export type TBillingGatewayDistribution = {
+  key: string;
+  name: string;
+  count: number;
+  paid_count: number;
+  revenue_toman: number;
+  color: string;
+};
+
+export type TBillingStatusDistribution = {
+  status: string;
+  label: string;
+  count: number;
+};
+
+export type TBillingAnalyticsResponse = {
+  summary: TBillingAnalyticsSummary;
+  monthly_trend: TBillingMonthlyTrend[];
+  plan_distribution: TBillingPlanDistribution[];
+  gateway_distribution: TBillingGatewayDistribution[];
+  status_distribution: TBillingStatusDistribution[];
+};

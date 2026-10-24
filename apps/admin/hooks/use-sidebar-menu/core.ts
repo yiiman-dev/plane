@@ -50,7 +50,7 @@ export const coreSidebarMenuLinks: Record<TCoreSidebarMenuKey, TSidebarMenuItem>
     Icon: CreditCard,
     name: "Billing & payments",
     description: "Configure Iranian payment gateways, routing, plans and invoices.",
-    href: `/billing/gateways/`,
+    href: `/billing/analytics/`,
   },
   workspace: {
     Icon: WorkspaceOutline,

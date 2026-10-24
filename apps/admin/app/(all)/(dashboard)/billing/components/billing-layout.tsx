@@ -11,6 +11,7 @@ import { cn } from "@plane/utils";
 import { PageWrapper } from "@/components/common/page-wrapper";
 
 const BILLING_TABS: { href: string; label: string }[] = [
+  { href: "/billing/analytics/", label: "آمار و تحلیل درآمد" },
   { href: "/billing/gateways/", label: "درگاه‌های پرداخت" },
   { href: "/billing/routing/", label: "انتخاب درگاه" },
   { href: "/billing/plans/", label: "پلن‌های مالی" },

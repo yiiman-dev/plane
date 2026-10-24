@@ -5,12 +5,14 @@
 """God mode (instance admin) endpoints for gateways, routing, plans and billing records."""
 
 # Python imports
+from datetime import datetime, timezone as dt_timezone
 
 # Django imports
 
 # Third party imports
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q, Sum
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -756,3 +758,170 @@ class RenewalNoticeScheduleEndpoint(BillingAdminAPIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
         return Response(serializer.data)
+
+
+class AdminBillingAnalyticsEndpoint(BillingAdminAPIView):
+    """Aggregated financial metrics and charts for the instance admin billing dashboard."""
+
+    permission_classes = [InstanceAdminPermission]
+
+    def get(self, request):
+        now = timezone.now()
+
+        # 1. Summary metrics
+        paid_transactions = PaymentTransaction.objects.filter(status=TransactionStatus.PAID)
+        total_revenue_toman = paid_transactions.aggregate(total=Sum("amount_toman"))["total"] or 0
+        total_transactions_count = PaymentTransaction.objects.count()
+        paid_transactions_count = paid_transactions.count()
+        success_rate = (
+            round((paid_transactions_count / total_transactions_count * 100), 1)
+            if total_transactions_count > 0
+            else 0.0
+        )
+
+        # MRR from active subscriptions
+        active_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.ACTIVE).select_related("plan")
+        active_subscriptions_count = active_subscriptions.count()
+        mrr_toman = 0
+        for sub in active_subscriptions:
+            plan = sub.plan
+            if not plan:
+                continue
+            extra_seats = max(0, (sub.seats or 1) - plan.included_seats)
+            if sub.cycle == "yearly":
+                yearly_amount = plan.yearly_price_toman + (extra_seats * plan.per_seat_price_toman * 12)
+                mrr_toman += yearly_amount // 12
+            else:
+                monthly_amount = plan.monthly_price_toman + (extra_seats * plan.per_seat_price_toman)
+                mrr_toman += monthly_amount
+
+        # 2. Revenue time series (last N months, default 6)
+        try:
+            months_count = int(request.GET.get("months", 6))
+            months_count = max(1, min(months_count, 24))
+        except (ValueError, TypeError):
+            months_count = 6
+
+        import jdatetime
+
+        PERSIAN_MONTH_NAMES = [
+            "فروردین",
+            "اردیبهشت",
+            "خرداد",
+            "تیر",
+            "مرداد",
+            "شهریور",
+            "مهر",
+            "آبان",
+            "آذر",
+            "دی",
+            "بهمن",
+            "اسفند",
+        ]
+
+        monthly_trend = []
+        current_year = now.year
+        current_month = now.month
+
+        for i in range(months_count - 1, -1, -1):
+            m = current_month - i
+            y = current_year
+            while m <= 0:
+                m += 12
+                y -= 1
+
+            start_dt = datetime(y, m, 1, tzinfo=dt_timezone.utc)
+            if m == 12:
+                next_start_dt = datetime(y + 1, 1, 1, tzinfo=dt_timezone.utc)
+            else:
+                next_start_dt = datetime(y, m + 1, 1, tzinfo=dt_timezone.utc)
+
+            month_paid = paid_transactions.filter(
+                Q(paid_at__gte=start_dt, paid_at__lt=next_start_dt)
+                | Q(paid_at__isnull=True, created_at__gte=start_dt, created_at__lt=next_start_dt)
+            )
+            agg = month_paid.aggregate(total=Sum("amount_toman"), count=Count("id"))
+            month_revenue = agg["total"] or 0
+            month_count = agg["count"] or 0
+
+            jdt = jdatetime.datetime.fromgregorian(datetime=start_dt)
+            fa_label = f"{PERSIAN_MONTH_NAMES[jdt.month - 1]} {jdt.year}"
+
+            monthly_trend.append(
+                {
+                    "date": f"{y:04d}-{m:02d}",
+                    "label": fa_label,
+                    "revenue": month_revenue,
+                    "count": month_count,
+                }
+            )
+
+        # 3. Plan distribution
+        plan_distribution = []
+        plans = Plan.objects.all().order_by("sort_order", "code")
+        colors = ["#3E63DD", "#30A46C", "#E5484D", "#F76808", "#8E4EC6", "#0091FF"]
+        for idx, plan in enumerate(plans):
+            sub_count = active_subscriptions.filter(plan=plan).count()
+            plan_revenue = (
+                paid_transactions.filter(invoice__plan=plan).aggregate(total=Sum("amount_toman"))["total"] or 0
+            )
+            plan_distribution.append(
+                {
+                    "key": plan.code,
+                    "name": plan.name,
+                    "count": sub_count,
+                    "revenue_toman": plan_revenue,
+                    "color": colors[idx % len(colors)],
+                }
+            )
+
+        # 4. Gateway distribution
+        gateway_distribution = []
+        gateways = PaymentGateway.objects.all().order_by("priority", "code")
+        gw_colors = ["#10B981", "#6366F1", "#F59E0B", "#EC4899", "#8B5CF6"]
+        for idx, gw in enumerate(gateways):
+            gw_txs = PaymentTransaction.objects.filter(gateway_code=gw.code)
+            gw_total = gw_txs.count()
+            gw_paid_txs = gw_txs.filter(status=TransactionStatus.PAID)
+            gw_paid = gw_paid_txs.count()
+            gw_revenue = gw_paid_txs.aggregate(total=Sum("amount_toman"))["total"] or 0
+            gateway_distribution.append(
+                {
+                    "key": gw.code,
+                    "name": gw.title or gw.code,
+                    "count": gw_total,
+                    "paid_count": gw_paid,
+                    "revenue_toman": gw_revenue,
+                    "color": gw_colors[idx % len(gw_colors)],
+                }
+            )
+
+        # 5. Status distribution
+        status_map = dict(TransactionStatus.choices)
+        status_counts = PaymentTransaction.objects.values("status").annotate(count=Count("id")).order_by("-count")
+        status_distribution = [
+            {
+                "status": row["status"],
+                "label": status_map.get(row["status"], row["status"]),
+                "count": row["count"],
+            }
+            for row in status_counts
+        ]
+
+        return Response(
+            {
+                "summary": {
+                    "total_revenue_toman": total_revenue_toman,
+                    "mrr_toman": mrr_toman,
+                    "active_subscriptions": active_subscriptions_count,
+                    "total_transactions": total_transactions_count,
+                    "paid_transactions": paid_transactions_count,
+                    "success_rate": success_rate,
+                },
+                "monthly_trend": monthly_trend,
+                "plan_distribution": plan_distribution,
+                "gateway_distribution": gateway_distribution,
+                "status_distribution": status_distribution,
+            }
+        )
+
