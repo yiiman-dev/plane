@@ -21,6 +21,10 @@ x-frontend-base: &frontend-base
     - frontend_space_node_modules:/app/apps/space/node_modules
   environment:
     NODE_ENV: development
+    DOCKER_CONTAINER: "true"
+  networks:
+    - default
+    - dev_env
 
 services:
   frontend-install:
@@ -70,3 +74,9 @@ volumes:
   frontend_web_node_modules:
   frontend_admin_node_modules:
   frontend_space_node_modules:
+
+networks:
+  dev_env:
+    name: plane_dev_env
+    external: true
+

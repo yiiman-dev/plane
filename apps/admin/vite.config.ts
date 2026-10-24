@@ -24,10 +24,13 @@ const defineEnv = Object.keys(viteEnv).reduce<Record<string, string>>(
   },
   {
     "process.env": JSON.stringify(viteEnv),
+    __PLANE_ENV__: JSON.stringify(viteEnv),
   }
 );
 
 const basePath = joinUrlPath(process.env.VITE_ADMIN_BASE_PATH ?? "", "/") ?? "/";
+const apiProxyTarget =
+  process.env.VITE_API_INTERNAL_URL ?? (process.env.DOCKER_CONTAINER ? "http://api:8000" : "http://localhost:8000");
 
 export default defineConfig(() => ({
   base: basePath,
@@ -46,6 +49,16 @@ export default defineConfig(() => ({
   },
   server: {
     host: process.env.VITE_SERVER_HOST ?? "0.0.0.0",
+    proxy: {
+      "/api": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+      },
+      "/auth": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+      },
+    },
   },
   // No SSR-specific overrides needed; alias resolves to ESM build
 }));

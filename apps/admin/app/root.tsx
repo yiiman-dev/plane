@@ -41,17 +41,21 @@ export const links: LinksFunction = () => [
   },
 ];
 
-const viteEnv =
-  typeof process !== "undefined" && process.env
-    ? Object.keys(process.env)
-        .filter((k) => k.startsWith("VITE_"))
-        .reduce<Record<string, string>>((acc, key) => {
-          acc[key] = process.env[key] ?? "";
-          return acc;
-        }, {})
-    : {};
+declare const __PLANE_ENV__: Record<string, string> | undefined;
 
-const envScript = `window.process = window.process || { env: {} }; Object.assign(window.process.env, ${JSON.stringify(viteEnv)});`;
+const envVars =
+  typeof __PLANE_ENV__ !== "undefined"
+    ? __PLANE_ENV__
+    : typeof process !== "undefined" && process.env
+      ? Object.keys(process.env)
+          .filter((k) => k.startsWith("VITE_"))
+          .reduce<Record<string, string>>((acc, key) => {
+            acc[key] = process.env[key] ?? "";
+            return acc;
+          }, {})
+      : {};
+
+const envScript = `window.__PLANE_ENV__ = ${JSON.stringify(envVars)}; window.process = window.process || { env: {} }; Object.assign(window.process.env, window.__PLANE_ENV__);`;
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
