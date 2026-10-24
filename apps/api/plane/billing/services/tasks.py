@@ -24,6 +24,15 @@ logger = logging.getLogger("plane.billing")
 # ``BILLING_MAX_VERIFY_ATTEMPTS``; read it through ``max_verify_attempts()``.
 MAX_VERIFY_ATTEMPTS = 5
 
+# Age after which a pending/redirected transaction is considered stale and re-queried (default: 15 minutes)
+STALE_TRANSACTION_MINUTES = 15
+
+# Age after which an uncompleted transaction is expired (default: 2 hours)
+MAX_PENDING_TRANSACTION_HOURS = 2
+
+# Maximum stale transactions to inspect in one batch
+STALE_BATCH_SIZE = 50
+
 
 def max_verify_attempts() -> int:
     """How many verifications a payment gets before its money is parked in the hold queue."""
@@ -34,12 +43,90 @@ def max_verify_attempts() -> int:
         return MAX_VERIFY_ATTEMPTS
 
 
+def stale_transaction_minutes() -> int:
+    configured = getattr(settings, "BILLING_STALE_TRANSACTION_MINUTES", None)
+    try:
+        return max(1, int(configured)) if configured is not None else STALE_TRANSACTION_MINUTES
+    except (TypeError, ValueError):
+        return STALE_TRANSACTION_MINUTES
+
+
+def max_pending_transaction_hours() -> int:
+    configured = getattr(settings, "BILLING_MAX_PENDING_TRANSACTION_HOURS", None)
+    try:
+        return max(1, int(configured)) if configured is not None else MAX_PENDING_TRANSACTION_HOURS
+    except (TypeError, ValueError):
+        return MAX_PENDING_TRANSACTION_HOURS
+
+
 def _is_backoff_due(transaction, now) -> bool:
     attempts = int(transaction.attempts or 0)
     if attempts >= max_verify_attempts():
         return False
     elapsed = (now - transaction.created_at).total_seconds()
     return elapsed >= min(600, 2**attempts * 30)
+
+
+@shared_task
+def requery_stale_transactions(now=None):
+    """Re-query transactions left in pending or redirected status.
+
+    When a payer visits the payment gateway but closes the tab, suffers a network drop,
+    or does not get redirected back, the transaction remains in ``PENDING`` or ``REDIRECTED``.
+    This task re-queries the gateway to discover if the payment was completed. If the gateway
+    confirms payment, the order is fulfilled. If the transaction has passed the maximum pending
+    window and remains uncompleted, it is marked as failed/expired and its draft invoice cancelled.
+    """
+    from plane.billing.services.payment import cancel_invoice, process_callback
+
+    now = now or timezone.now()
+    stale_cutoff = now - timedelta(minutes=stale_transaction_minutes())
+    expiry_cutoff = now - timedelta(hours=max_pending_transaction_hours())
+
+    candidates = (
+        PaymentTransaction.objects.filter(
+            status__in=(TransactionStatus.PENDING, TransactionStatus.REDIRECTED),
+            created_at__lte=stale_cutoff,
+        )
+        .select_related("invoice")
+        .order_by("created_at")[:STALE_BATCH_SIZE]
+    )
+
+    processed = 0
+    for transaction in candidates:
+        if transaction.created_at <= expiry_cutoff:
+            try:
+                process_callback(
+                    transaction.gateway_code,
+                    transaction.callback_payload or {},
+                    transaction=transaction,
+                )
+                transaction.refresh_from_db()
+                if transaction.status not in (TransactionStatus.PENDING, TransactionStatus.REDIRECTED):
+                    processed += 1
+                    continue
+            except Exception as exc:
+                logger.warning("billing: final verify failed for %s: %s", transaction.id, exc)
+
+            transaction.mark_status(TransactionStatus.FAILED, "انقضای مهلت پرداخت (تراکنش متروکه)")
+            transaction.save(update_fields=["status", "failure_reason", "updated_at"])
+            if transaction.invoice:
+                cancel_invoice(transaction.invoice)
+            processed += 1
+            logger.info("billing: expired stale transaction %s", transaction.id)
+            continue
+
+        try:
+            process_callback(
+                transaction.gateway_code,
+                transaction.callback_payload or {},
+                transaction=transaction,
+            )
+            processed += 1
+        except Exception as exc:
+            logger.warning("billing: requery failed for stale transaction %s: %s", transaction.id, exc)
+
+    return processed
 
 
 @shared_task

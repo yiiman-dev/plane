@@ -63,6 +63,11 @@ app.conf.beat_schedule = {
         "task": "plane.billing.services.tasks.retry_pending_verifications",
         "schedule": crontab(minute="*"),  # Every minute
     },
+    # Re-query stale / abandoned transactions left in pending or redirected status.
+    "requery-stale-payment-transactions": {
+        "task": "plane.billing.services.tasks.requery_stale_transactions",
+        "schedule": crontab(minute="*/5"),  # Every 5 minutes
+    },
     # Money an ambiguous payment parked in a workspace's hold goes back to the
     # wallet after ninety days if no operator decided on it, so it is never lost.
     "release-expired-payment-holds": {

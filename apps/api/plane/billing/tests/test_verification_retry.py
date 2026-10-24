@@ -14,7 +14,7 @@ import pytest
 from django.utils import timezone
 
 # Module imports
-from plane.billing.models import PaymentTransaction, TransactionStatus
+from plane.billing.models import Invoice, InvoiceStatus, PaymentTransaction, Plan, TransactionStatus
 from plane.billing.services import payment as payment_service
 from plane.billing.services import tasks as billing_tasks
 
@@ -30,9 +30,10 @@ def user(db):
     )
 
 
-def make_transaction(user, status, attempts=0, age=timedelta(hours=1)):
+def make_transaction(user, status, attempts=0, age=timedelta(hours=1), invoice=None):
     transaction = PaymentTransaction.objects.create(
         user=user,
+        invoice=invoice,
         gateway_code="zarinpal",
         gateway_token=f"TOK-{status}-{attempts}-{PaymentTransaction.objects.count()}",
         amount_toman=1_000_000,
@@ -124,3 +125,96 @@ def test_enqueue_swallows_a_broker_outage(user, monkeypatch):
     monkeypatch.setattr(billing_tasks.retry_pending_verifications, "delay", broker_down)
 
     billing_tasks.schedule_verification_retry(transaction)
+
+
+def test_beat_schedule_registers_the_requery_stale_task():
+    from plane.celery import app
+
+    entry = app.conf.beat_schedule["requery-stale-payment-transactions"]
+
+    assert entry["task"] == billing_tasks.requery_stale_transactions.name
+    assert entry["task"] == "plane.billing.services.tasks.requery_stale_transactions"
+
+
+def test_requery_stale_skips_recent_transactions(user, monkeypatch):
+    make_transaction(user, TransactionStatus.REDIRECTED, age=timedelta(minutes=5))
+    make_transaction(user, TransactionStatus.PENDING, age=timedelta(minutes=10))
+
+    called = []
+    monkeypatch.setattr(payment_service, "process_callback", lambda *args, **kwargs: called.append(True))
+
+    processed = billing_tasks.requery_stale_transactions()
+    assert processed == 0
+    assert len(called) == 0
+
+
+def test_requery_stale_queries_gateway_for_stale_redirected(user, monkeypatch):
+    stale_redirected = make_transaction(user, TransactionStatus.REDIRECTED, age=timedelta(minutes=20))
+    stale_pending = make_transaction(user, TransactionStatus.PENDING, age=timedelta(minutes=30))
+
+    queried = []
+
+    def mock_process_callback(gateway_code, payload, transaction=None):
+        queried.append(transaction.pk)
+        transaction.status = TransactionStatus.PAID
+        transaction.save()
+        return {"status": "paid"}
+
+    monkeypatch.setattr(payment_service, "process_callback", mock_process_callback)
+
+    processed = billing_tasks.requery_stale_transactions()
+
+    assert processed == 2
+    assert sorted(queried) == sorted([stale_redirected.pk, stale_pending.pk])
+    stale_redirected.refresh_from_db()
+    assert stale_redirected.status == TransactionStatus.PAID
+
+
+def test_requery_stale_expires_abandoned_unpaid_transactions(user, monkeypatch):
+    plan = Plan.objects.create(
+        code="stale-plan",
+        name="Stale Plan",
+        monthly_price_toman=500_000,
+        is_active=True,
+    )
+    invoice = Invoice.objects.create(
+        number=Invoice.generate_number(),
+        user=user,
+        plan=plan,
+        seats=1,
+        total_toman=500_000,
+        status=InvoiceStatus.ISSUED,
+    )
+    abandoned = make_transaction(user, TransactionStatus.REDIRECTED, age=timedelta(hours=3), invoice=invoice)
+
+    # Mock gateway returning still pending / failing to verify
+    monkeypatch.setattr(
+        payment_service,
+        "process_callback",
+        lambda *args, **kwargs: {"status": "redirected"},
+    )
+
+    processed = billing_tasks.requery_stale_transactions()
+
+    assert processed == 1
+    abandoned.refresh_from_db()
+    assert abandoned.status == TransactionStatus.FAILED
+    assert "انقضای مهلت پرداخت" in abandoned.failure_reason
+
+    invoice.refresh_from_db()
+    assert invoice.status == InvoiceStatus.CANCELLED
+
+
+def test_requery_stale_ignores_completed_transactions(user, monkeypatch):
+    make_transaction(user, TransactionStatus.PAID, age=timedelta(hours=5))
+    make_transaction(user, TransactionStatus.FAILED, age=timedelta(hours=5))
+    make_transaction(user, TransactionStatus.HELD, age=timedelta(hours=5))
+    make_transaction(user, TransactionStatus.REVERSED, age=timedelta(hours=5))
+
+    called = []
+    monkeypatch.setattr(payment_service, "process_callback", lambda *args, **kwargs: called.append(True))
+
+    processed = billing_tasks.requery_stale_transactions()
+    assert processed == 0
+    assert len(called) == 0
+
