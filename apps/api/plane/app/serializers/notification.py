@@ -91,3 +91,4 @@ class NotificationChannelLogSerializer(BaseSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
