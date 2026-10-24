@@ -53,12 +53,25 @@ export const links: LinksFunction = () => [
   },
 ];
 
+const viteEnv =
+  typeof process !== "undefined" && process.env
+    ? Object.keys(process.env)
+        .filter((k) => k.startsWith("VITE_"))
+        .reduce<Record<string, string>>((acc, key) => {
+          acc[key] = process.env[key] ?? "";
+          return acc;
+        }, {})
+    : {};
+
+const envScript = `window.process = window.process || { env: {} }; Object.assign(window.process.env, ${JSON.stringify(viteEnv)});`;
+
 export function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: envScript }} />
         <meta name="theme-color" content="#fff" />
         {/* Meta info for PWA */}
         <meta name="application-name" content="Plane" />

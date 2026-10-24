@@ -50,12 +50,25 @@ export const headers: Route.HeadersFunction = () => ({
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
 });
 
+const viteEnv =
+  typeof process !== "undefined" && process.env
+    ? Object.keys(process.env)
+        .filter((k) => k.startsWith("VITE_"))
+        .reduce<Record<string, string>>((acc, key) => {
+          acc[key] = process.env[key] ?? "";
+          return acc;
+        }, {})
+    : {};
+
+const envScript = `window.process = window.process || { env: {} }; Object.assign(window.process.env, ${JSON.stringify(viteEnv)});`;
+
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: envScript }} />
         <meta name="robots" content="noindex, nofollow" />
         <Meta />
         <Links />
