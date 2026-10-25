@@ -413,6 +413,7 @@
       "time_tracking": {
         "title": "Time tracking",
         "short_title": "Time tracking",
+        "menu_label": "ثبت زمان",
         "description": "Log time spent on work items and projects.",
         "toggle_title": "Enable time tracking",
         "toggle_description": "Project members will be able to log time worked."

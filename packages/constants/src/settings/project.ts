@@ -81,7 +81,7 @@ export const PROJECT_SETTINGS: Record<TProjectSettingsTabs, TProjectSettingsItem
   },
   features_time_tracking: {
     key: "features_time_tracking",
-    i18n_label: "common.time_tracking",
+    i18n_label: "project_settings.features.time_tracking.menu_label",
     href: `/features/time-tracking`,
     access: [EUserProjectRoles.ADMIN],
     highlight: (pathname: string, baseUrl: string) => pathname === `${baseUrl}/features/time-tracking/`,
