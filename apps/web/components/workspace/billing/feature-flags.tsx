@@ -47,9 +47,9 @@ export function BillingFeatureFlags({ workspaceSlug }: Props) {
   const flags = data.results ?? [];
   if (!flags.length)
     return (
-      <div className="flex w-full flex-col items-center gap-1 rounded-md border border-subtle bg-surface-1 px-4 py-10 text-center">
-        <h3 className="text-content-on-surface text-sm font-medium">قابلیتی تعریف نشده است</h3>
-        <p className="text-content-2 text-sm">هنوز پرچم قابلیتی برای این نمونه تعریف نشده است.</p>
+      <div className="flex w-full flex-col items-center gap-1 rounded-lg border border-subtle bg-layer-2 px-4 py-10 text-center">
+        <h4 className="text-body-sm-medium text-primary">قابلیتی تعریف نشده است</h4>
+        <p className="text-body-xs-regular text-tertiary">هنوز پرچم قابلیتی برای این نمونه تعریف نشده است.</p>
       </div>
     );
 
@@ -97,12 +97,12 @@ export function BillingFeatureFlags({ workspaceSlug }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {!canManageFeatureFlags && (
-        <p className="text-content-2 text-sm">فقط مدیر ورک‌اسپیس می‌تواند قابلیت‌ها را روشن یا خاموش کند.</p>
+        <p className="text-body-xs-regular text-tertiary">فقط مدیر ورک‌اسپیس می‌تواند قابلیت‌ها را روشن یا خاموش کند.</p>
       )}
 
       {Object.entries(groupedFlags).map(([groupLabel, groupFlags]) => (
-        <section key={groupLabel} className="flex flex-col gap-2 rounded-md border border-subtle bg-surface-1 p-4">
-          <h3 className="text-content-2 text-sm font-medium">{groupLabel}</h3>
+        <section key={groupLabel} className="flex flex-col gap-1 rounded-lg border border-subtle bg-layer-2 p-5">
+          <h4 className="pb-2 text-caption-md-medium text-tertiary">{groupLabel}</h4>
           {groupFlags.map((flag) => (
             <FeatureFlagRow
               key={flag.code}
@@ -130,25 +130,27 @@ function FeatureFlagRow({ canManage, flag, isPending, onToggle }: RowProps) {
   const isLocked = !flag.has_access;
 
   return (
-    <div className="flex items-start justify-between gap-3 border-t border-subtle pt-3 first:border-t-0 first:pt-0">
+    <div className="flex items-center justify-between gap-4 border-t border-subtle py-3.5 first:border-t-0">
       <div className="flex flex-col gap-1">
-        <span className="text-content-on-surface text-sm font-medium">{flag.name}</span>
-        {flag.description && <span className="text-content-2 text-sm">{flag.description}</span>}
+        <span className="text-body-sm-medium text-primary">{flag.name}</span>
+        {flag.description && <span className="text-body-xs-regular text-tertiary">{flag.description}</span>}
         {isLocked && (
-          <span className="text-warning-600 text-xs flex items-center gap-1">
-            <LockOutline className="size-3.5" />
+          <span className="flex items-center gap-1.5 text-caption-md-regular text-warning-primary">
+            <LockOutline className="size-3.5 shrink-0" />
             این قابلیت در پلن فعلی شما فعال نیست. برای استفاده باید پلن ورک‌اسپیس را ارتقا دهید.
           </span>
         )}
       </div>
-      <Switch
-        // The plan grant is the hard gate: without it the switch can never be turned on.
-        size="sm"
-        disabled={!flag.has_access || !canManage || isPending}
-        checked={flag.is_enabled}
-        onCheckedChange={(checked) => onToggle(flag, checked)}
-        aria-label={flag.name}
-      />
+      <div className="shrink-0">
+        <Switch
+          // The plan grant is the hard gate: without it the switch can never be turned on.
+          size="sm"
+          disabled={!flag.has_access || !canManage || isPending}
+          checked={flag.is_enabled}
+          onCheckedChange={(checked) => onToggle(flag, checked)}
+          aria-label={flag.name}
+        />
+      </div>
     </div>
   );
 }
@@ -163,6 +165,8 @@ function LoadingState() {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="border-danger-200 bg-danger-50 text-danger-500 text-sm w-full rounded-md border p-4">{message}</div>
+    <div className="w-full rounded-lg border border-subtle bg-danger-subtle p-4 text-body-xs-medium text-danger-primary">
+      {message}
+    </div>
   );
 }

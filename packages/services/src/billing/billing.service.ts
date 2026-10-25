@@ -8,6 +8,7 @@
 import { API_BASE_URL } from "@plane/constants";
 import type {
   TBillingAnalyticsResponse,
+  TBillingFreePlanResult,
   TBillingWorkspaceEntitlement,
   TBillingWorkspaceFeatureFlagListResponse,
   TBillingWorkspaceFeatureFlagMutationResponse,
@@ -351,6 +352,18 @@ export class BillingService extends APIService {
    */
   async workspaceEntitlement(workspaceSlug: string): Promise<TBillingWorkspaceEntitlement> {
     return this.get(`/api/billing/workspaces/${workspaceSlug}/billing/entitlement/`)
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Let the paid plan of this workspace run out and fall back to the free plan. Admin only.
+   * No payment is taken; the server answers with the date the free plan starts.
+   */
+  async applyFreePlan(workspaceSlug: string): Promise<TBillingFreePlanResult> {
+    return this.post(`/api/billing/workspaces/${workspaceSlug}/billing/free-plan/`)
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;

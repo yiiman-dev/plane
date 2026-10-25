@@ -50,24 +50,24 @@ function PlanSummaryContent({
     : `${formatPersianNumber(seatsUsed)} از ${formatPersianNumber(seatLimit)}`;
 
   const percentageUsed = !isUnlimited && seatLimit > 0 ? Math.min(100, Math.round((seatsUsed / seatLimit) * 100)) : 0;
+  const progressColor =
+    percentageUsed > 90 ? "bg-danger-primary" : percentageUsed > 75 ? "bg-warning-primary" : "bg-accent-primary";
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-subtle bg-surface-1 p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-5 rounded-lg border border-subtle bg-layer-2 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg text-content-on-surface font-semibold">{plan?.name ?? "بدون پلن مشخص"}</h3>
+            <h4 className="text-body-md-medium text-primary">{plan?.name ?? "بدون پلن مشخص"}</h4>
             <span
-              className={`text-xs rounded-full border px-2.5 py-0.5 font-medium ${
-                plan?.is_free
-                  ? "border-subtle bg-surface-2 text-content-2"
-                  : "border-primary/20 bg-primary/10 text-primary"
+              className={`rounded-full px-2.5 py-0.5 text-caption-md-medium ${
+                plan?.is_free ? "bg-layer-1 text-tertiary" : "bg-accent-primary/10 text-accent-primary"
               }`}
             >
               {plan?.is_free ? "پلن رایگان" : "پلن فعال (غیر رایگان)"}
             </span>
           </div>
-          <p className="text-sm text-content-2">
+          <p className="text-body-xs-regular text-tertiary">
             {plan?.description ?? "برای این ورک‌اسپیس پلنی ثبت نشده است؛ سقف صندلی اعمال نمی‌شود."}
           </p>
         </div>
@@ -77,52 +77,39 @@ function PlanSummaryContent({
         </Link>
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-subtle pt-4">
-        {!isUnlimited && (
-          <div className="flex flex-col gap-1.5 pb-2">
-            <div className="flex items-center justify-between text-xs text-content-2">
-              <span>میزان مصرف صندلی‌ها</span>
-              <span className="font-medium text-content-on-surface">{formatPersianNumber(percentageUsed)}٪</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
-              <div
-                className={`h-full transition-all duration-300 ${
-                  percentageUsed > 90 ? "bg-danger-500" : percentageUsed > 75 ? "bg-warning-500" : "bg-primary"
-                }`}
-                style={{ width: `${percentageUsed}%` }}
-              />
-            </div>
+      {!isUnlimited && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-caption-md-regular text-tertiary">
+            <span>میزان مصرف صندلی‌ها</span>
+            <span className="text-caption-md-medium text-primary">{formatPersianNumber(percentageUsed)}٪</span>
           </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="flex flex-col rounded-lg bg-surface-2 p-3">
-            <span className="text-xs text-content-2">صندلی‌های مصرف‌شده</span>
-            <span className="mt-1 text-base font-semibold text-content-on-surface">{seatsUsedLabel}</span>
-          </div>
-          <div className="flex flex-col rounded-lg bg-surface-2 p-3">
-            <span className="text-xs text-content-2">سقف صندلی پلن</span>
-            <span className="mt-1 text-base font-semibold text-content-on-surface">
-              {isUnlimited ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatLimit)}
-            </span>
-          </div>
-          <div className="flex flex-col rounded-lg bg-surface-2 p-3">
-            <span className="text-xs text-content-2">صندلی باقی‌مانده</span>
-            <span className="mt-1 text-base font-semibold text-content-on-surface">
-              {seatsRemaining === null ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatsRemaining)}
-            </span>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-layer-1">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${progressColor}`}
+              style={{ width: `${percentageUsed}%` }}
+            />
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
+      )}
 
-function SeatRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="text-sm flex items-center justify-between gap-3">
-      <span className="text-content-2">{label}</span>
-      <span className="text-content-on-surface font-medium">{value}</span>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-1 rounded-md border border-subtle bg-layer-1 p-3.5">
+          <span className="text-caption-md-regular text-tertiary">صندلی‌های مصرف‌شده</span>
+          <span className="text-body-sm-medium text-primary">{seatsUsedLabel}</span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-md border border-subtle bg-layer-1 p-3.5">
+          <span className="text-caption-md-regular text-tertiary">سقف صندلی پلن</span>
+          <span className="text-body-sm-medium text-primary">
+            {isUnlimited ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatLimit)}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 rounded-md border border-subtle bg-layer-1 p-3.5">
+          <span className="text-caption-md-regular text-tertiary">صندلی باقی‌مانده</span>
+          <span className="text-body-sm-medium text-primary">
+            {seatsRemaining === null ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatsRemaining)}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -137,6 +124,8 @@ function LoadingState() {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="border-danger-200 bg-danger-50 text-danger-500 text-sm w-full rounded-md border p-4">{message}</div>
+    <div className="w-full rounded-lg border border-subtle bg-danger-subtle p-4 text-body-xs-medium text-danger-primary">
+      {message}
+    </div>
   );
 }

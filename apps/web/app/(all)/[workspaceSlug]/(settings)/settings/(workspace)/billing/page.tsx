@@ -10,6 +10,7 @@ import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import { NotAuthorizedView } from "@/components/auth-screens/not-authorized-view";
 import { PageHead } from "@/components/core/page-title";
 import { SettingsContentWrapper } from "@/components/settings/content-wrapper";
+import { SettingsHeading } from "@/components/settings/heading";
 import { BillingPlanSummary } from "@/components/workspace/billing/plan-summary";
 import { BillingFeatureFlags } from "@/components/workspace/billing/feature-flags";
 // hooks
@@ -37,10 +38,16 @@ function BillingSettingsPage() {
   return (
     <SettingsContentWrapper header={<BillingWorkspaceSettingsHeader />} hugging>
       <PageHead title={pageTitle} />
-      <div className="flex flex-col gap-4">
-        <BillingPlanSummary workspaceSlug={currentWorkspace.slug} />
-        <BillingFeatureFlags workspaceSlug={currentWorkspace.slug} />
-      </div>
+      <section dir="rtl" className="flex w-full flex-col gap-8 text-start">
+        <SettingsHeading
+          title="صورتحساب و پلن‌ها"
+          description="پلن فعلی ورک‌اسپیس، مصرف صندلی‌ها و قابلیت‌های فعال را مدیریت کنید."
+        />
+        <div className="flex flex-col gap-6">
+          <BillingPlanSummary workspaceSlug={currentWorkspace.slug} />
+          <BillingFeatureFlags workspaceSlug={currentWorkspace.slug} />
+        </div>
+      </section>
     </SettingsContentWrapper>
   );
 }

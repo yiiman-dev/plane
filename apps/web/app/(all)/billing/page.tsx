@@ -27,7 +27,7 @@ import {
   BILLING_WORKSPACE_ENTITLEMENT,
   BillingService,
 } from "@plane/services";
-import type { TBillingCycle, TPublicPlan } from "@plane/types";
+import type { TBillingCycle, TBillingFreePlanResult, TPublicPlan } from "@plane/types";
 // components
 import { LogoSpinner } from "@/components/common/logo-spinner";
 // local imports
@@ -42,17 +42,19 @@ export default function BillingPage() {
   const [seatsCount, setSeatsCount] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [freeResult, setFreeResult] = useState<TBillingFreePlanResult | null>(null);
 
   const checkoutRef = useRef<HTMLDivElement>(null);
 
   // Fetch plans
-  const { data: plansData, error: plansError, isLoading: plansLoading } = useSWR(
-    BILLING_PUBLIC_PLANS,
-    () => BillingService.publicPlans()
-  );
+  const {
+    data: plansData,
+    error: plansError,
+    isLoading: plansLoading,
+  } = useSWR(BILLING_PUBLIC_PLANS, () => BillingService.publicPlans());
 
   // Fetch workspace entitlement if workspaceSlug is present
-  const { data: entitlement } = useSWR(
+  const { data: entitlement, mutate: mutateEntitlement } = useSWR(
     workspaceSlug ? BILLING_WORKSPACE_ENTITLEMENT(workspaceSlug) : null,
     () => (workspaceSlug ? BillingService.workspaceEntitlement(workspaceSlug) : null)
   );
@@ -118,6 +120,31 @@ export default function BillingPage() {
     }
   };
 
+  // A plan with no price for the chosen cycle is free: nothing to pay, only a change to record.
+  const selectedPrice = selectedPlan
+    ? cycle === "yearly"
+      ? selectedPlan.yearly_price_toman
+      : selectedPlan.monthly_price_toman
+    : null;
+  const isFreeSelection = selectedPrice === 0;
+  const isSelectedCurrent = Boolean(selectedPlan && entitlement?.plan?.code === selectedPlan.code);
+
+  const handleApplyFree = async () => {
+    if (!workspaceSlug) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setFreeResult(null);
+    try {
+      const result = await BillingService.applyFreePlan(workspaceSlug);
+      setFreeResult(result);
+      await mutateEntitlement();
+    } catch (applyError) {
+      setSubmitError(getErrorMessage(applyError, "ثبت پلن رایگان ناموفق بود. لطفاً دوباره تلاش کنید."));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (plansLoading) {
     return (
       <div className="grid min-h-screen w-full place-items-center py-20">
@@ -128,10 +155,12 @@ export default function BillingPage() {
 
   if (plansError) {
     return (
-      <div className="mx-auto w-full max-w-4xl p-6">
-        <div className="rounded-xl border border-danger-200 bg-danger-50 p-6 text-center text-danger-600">
-          <h2 className="text-base font-semibold">خطا در بارگذاری پلن‌ها</h2>
-          <p className="mt-2 text-sm">{getErrorMessage(plansError, "امکان دریافت فهرست پلن‌های مالی وجود ندارد.")}</p>
+      <div dir="rtl" className="mx-auto w-full max-w-4xl p-6">
+        <div className="rounded-lg border border-subtle bg-danger-subtle p-6 text-center">
+          <h2 className="text-body-md-medium text-danger-primary">خطا در بارگذاری پلن‌ها</h2>
+          <p className="mt-2 text-body-xs-regular text-danger-primary">
+            {getErrorMessage(plansError, "امکان دریافت فهرست پلن‌های مالی وجود ندارد.")}
+          </p>
         </div>
       </div>
     );
@@ -140,59 +169,55 @@ export default function BillingPage() {
   const currentPlanCode = entitlement?.plan?.code;
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8">
-      {/* Top Navigation & Workspace Header */}
+    <div dir="rtl" className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-8 text-start sm:px-6 lg:px-8">
+      {/* Top navigation & workspace header */}
       <div className="flex flex-col gap-4 border-b border-subtle pb-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {workspaceSlug && (
             <Link
               to={`/${workspaceSlug}/settings/billing`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-subtle bg-surface-1 px-3 py-1.5 text-xs font-medium text-content-2 hover:bg-surface-2 hover:text-content-on-surface transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-md border border-subtle bg-layer-1 px-3 py-1.5 text-body-xs-medium text-secondary transition-colors hover:bg-layer-1-hover hover:text-primary"
             >
               <ArrowRight className="size-4" />
               بازگشت به تنظیمات ورک‌اسپیس
             </Link>
           )}
           {entitlement?.workspace && (
-            <div className="flex items-center gap-2 rounded-full border border-subtle bg-surface-1 px-3 py-1 text-xs">
-              <span className="text-content-2">ورک‌اسپیس:</span>
-              <span className="font-semibold text-content-on-surface">{entitlement.workspace.name}</span>
+            <div className="flex items-center gap-2 rounded-full border border-subtle bg-layer-1 px-3 py-1 text-caption-md-regular">
+              <span className="text-tertiary">ورک‌اسپیس:</span>
+              <span className="text-caption-md-medium text-primary">{entitlement.workspace.name}</span>
             </div>
           )}
         </div>
 
         {entitlement?.plan && (
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-content-2">پلن فعلی ورک‌اسپیس:</span>
-            <span className="rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 font-semibold text-primary">
+          <div className="flex items-center gap-2 text-caption-md-regular">
+            <span className="text-tertiary">پلن فعلی ورک‌اسپیس:</span>
+            <span className="rounded-md bg-accent-subtle px-2 py-0.5 text-caption-md-medium text-accent-primary">
               {entitlement.plan.name}
             </span>
           </div>
         )}
       </div>
 
-      {/* Hero Section */}
+      {/* Hero */}
       <div className="flex flex-col items-center text-center">
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3.5 py-1 text-xs font-medium text-primary">
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-accent-subtle px-3 py-1 text-caption-md-medium text-accent-primary">
           <Sparkles className="size-3.5" />
           پلن‌های منعطف و قیمت‌گذاری شفاف
         </div>
-        <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-content-on-surface sm:text-4xl">
-          انتخاب پلن مناسب برای تیم شما
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm sm:text-base text-content-2">
+        <h1 className="mt-4 text-h3-medium text-primary">انتخاب پلن مناسب برای تیم شما</h1>
+        <p className="mt-3 max-w-2xl text-body-sm-regular text-tertiary">
           امکانات حرفه‌ای مدیریت پروژه، وابستگی تسک‌ها، هوش مصنوعی، و ظرفیت صندلی مورد نیاز تیم خود را به سادگی فعال کنید.
         </p>
 
-        {/* Billing Cycle Switcher */}
-        <div className="mt-8 flex items-center gap-3 rounded-full border border-subtle bg-surface-1 p-1 shadow-xs">
+        {/* Billing cycle switcher */}
+        <div className="mt-8 inline-flex items-center gap-1 rounded-full border border-subtle bg-layer-2 p-1">
           <button
             type="button"
             onClick={() => setCycle("monthly")}
-            className={`rounded-full px-5 py-2 text-sm font-medium transition-all ${
-              cycle === "monthly"
-                ? "bg-primary text-white shadow-sm"
-                : "text-content-2 hover:text-content-on-surface"
+            className={`rounded-full px-5 py-1.5 text-body-xs-medium transition-colors ${
+              cycle === "monthly" ? "bg-layer-1 text-primary shadow-raised-100" : "text-tertiary hover:text-secondary"
             }`}
           >
             پرداخت ماهانه
@@ -200,22 +225,20 @@ export default function BillingPage() {
           <button
             type="button"
             onClick={() => setCycle("yearly")}
-            className={`flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-medium transition-all ${
-              cycle === "yearly"
-                ? "bg-primary text-white shadow-sm"
-                : "text-content-2 hover:text-content-on-surface"
+            className={`flex items-center gap-1.5 rounded-full px-5 py-1.5 text-body-xs-medium transition-colors ${
+              cycle === "yearly" ? "bg-layer-1 text-primary shadow-raised-100" : "text-tertiary hover:text-secondary"
             }`}
           >
             <span>پرداخت سالانه</span>
-            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-10 font-bold text-emerald-600 dark:text-emerald-400">
+            <span className="rounded-full bg-success-subtle px-2 py-0.5 text-caption-sm-medium text-success-primary">
               ۲۰٪ تخفیف
             </span>
           </button>
         </div>
       </div>
 
-      {/* Plans Grid */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {/* Plans grid */}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
         {plans.map((plan) => {
           const isSelected = selectedPlanCode === plan.code;
           const isCurrent = currentPlanCode === plan.code;
@@ -226,15 +249,12 @@ export default function BillingPage() {
           return (
             <div
               key={plan.code}
-              onClick={() => handleSelectPlan(plan)}
-              className={`relative flex flex-col justify-between rounded-2xl border p-6 transition-all cursor-pointer ${
-                isSelected
-                  ? "border-primary bg-surface-1 shadow-md ring-2 ring-primary/20"
-                  : "border-subtle bg-surface-1 hover:border-primary/50 hover:shadow-sm"
+              className={`relative flex flex-col justify-between rounded-lg border bg-layer-2 p-6 transition-colors ${
+                isSelected ? "border-accent-strong" : "border-subtle hover:border-strong-1"
               }`}
             >
               {isPopular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-0.5 text-11 font-bold text-white shadow-xs">
+                <div className="absolute start-1/2 -top-3 -translate-x-1/2 rounded-full border border-subtle bg-accent-subtle px-3 py-0.5 text-caption-sm-medium text-accent-primary">
                   پیشنهاد ویژه
                 </div>
               )}
@@ -242,26 +262,30 @@ export default function BillingPage() {
               <div>
                 {/* Header */}
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-xl font-bold text-content-on-surface">{plan.name}</h3>
+                  <h3 className="text-h5-medium text-primary">{plan.name}</h3>
                   {isCurrent && (
-                    <span className="rounded-md border border-subtle bg-surface-2 px-2 py-0.5 text-xs text-content-2">
+                    <span className="rounded-md bg-layer-1 px-2 py-0.5 text-caption-md-regular text-tertiary">
                       پلن فعلی شما
                     </span>
                   )}
                 </div>
 
-                {plan.description && <p className="mt-2 text-xs text-content-2 min-h-8">{plan.description}</p>}
+                {plan.description && (
+                  <p className="mt-2 min-h-8 text-body-xs-regular text-tertiary">{plan.description}</p>
+                )}
 
                 {/* Pricing */}
                 <div className="mt-5 border-t border-subtle pt-4">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-content-on-surface">
-                      {price === 0 ? "رایگان" : formatNumber(price)}
-                    </span>
-                    {price > 0 && <span className="text-xs text-content-2">تومان / {cycle === "yearly" ? "سالانه" : "ماهانه"}</span>}
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-h3-medium text-primary">{price === 0 ? "رایگان" : formatNumber(price)}</span>
+                    {price > 0 && (
+                      <span className="text-caption-md-regular text-tertiary">
+                        تومان / {cycle === "yearly" ? "سالانه" : "ماهانه"}
+                      </span>
+                    )}
                   </div>
 
-                  <div className="mt-2 text-xs text-content-2">
+                  <div className="mt-2 text-caption-md-regular text-tertiary">
                     {plan.per_seat_price_toman > 0 ? (
                       <span>{formatToman(plan.per_seat_price_toman)} به ازای هر صندلی اضافه</span>
                     ) : (
@@ -270,19 +294,20 @@ export default function BillingPage() {
                   </div>
                 </div>
 
-                {/* Features List */}
+                {/* Features */}
                 <div className="mt-6 border-t border-subtle pt-4">
-                  <h4 className="text-xs font-semibold text-content-1">امکانات و ویژگی‌ها:</h4>
-                  <ul className="mt-3 flex flex-col gap-2.5 text-xs text-content-2">
+                  <h4 className="text-body-xs-medium text-secondary">امکانات و ویژگی‌ها:</h4>
+                  <ul className="mt-3 flex flex-col gap-2.5 text-body-xs-regular text-tertiary">
                     <li className="flex items-center gap-2">
-                      <Check className="size-4 shrink-0 text-emerald-500" />
+                      <Check className="size-4 shrink-0 text-success-primary" />
                       <span>
-                        شامل <strong>{formatNumber(plan.included_seats)} صندلی</strong> اولیه (حداکثر {formatNumber(plan.max_seats)})
+                        شامل <strong className="text-secondary">{formatNumber(plan.included_seats)} صندلی</strong> اولیه
+                        (حداکثر {formatNumber(plan.max_seats)})
                       </span>
                     </li>
                     {plan.features.map((feature) => (
                       <li key={feature} className="flex items-center gap-2">
-                        <Check className="size-4 shrink-0 text-emerald-500" />
+                        <Check className="size-4 shrink-0 text-success-primary" />
                         <span>{feature}</span>
                       </li>
                     ))}
@@ -290,14 +315,15 @@ export default function BillingPage() {
                 </div>
               </div>
 
-              {/* Action Button */}
+              {/* Action */}
               <div className="mt-8 pt-4">
                 <Button
                   variant={isSelected ? "primary" : "secondary"}
                   size="md"
                   stretch="full"
                   type="button"
-                  label={isSelected ? "پلن انتخابی شما ✓" : "انتخاب و ادامه خرید"}
+                  onClick={() => handleSelectPlan(plan)}
+                  label={isSelected ? "پلن انتخابی شما" : "انتخاب و ادامه خرید"}
                 />
               </div>
             </div>
@@ -305,43 +331,39 @@ export default function BillingPage() {
         })}
       </div>
 
-      {/* Selected Plan Checkout & Quote Section */}
+      {/* Selected plan: configuration and checkout */}
       {selectedPlan && (
-        <div
-          ref={checkoutRef}
-          className="rounded-2xl border border-primary/30 bg-surface-1 p-6 shadow-md transition-all"
-        >
+        <div ref={checkoutRef} className="rounded-lg border border-subtle bg-layer-2 p-6">
           <div className="flex flex-col gap-2 border-b border-subtle pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="flex size-6 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <span className="flex size-6 items-center justify-center rounded-full bg-accent-subtle text-accent-primary">
                   <Zap className="size-3.5" />
                 </span>
-                <h2 className="text-lg font-bold text-content-on-surface">
-                  پیکربندی و تسویه‌حساب: پلن {selectedPlan.name}
-                </h2>
+                <h2 className="text-h5-medium text-primary">پیکربندی و تسویه‌حساب: پلن {selectedPlan.name}</h2>
               </div>
-              <p className="mt-1 text-xs text-content-2">
+              <p className="mt-1 text-caption-md-regular text-tertiary">
                 تعداد صندلی و دوره پرداخت را تعیین کنید؛ مبلغ فاکتور به صورت رسمی و بلادرنگ محاسبه می‌شود.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-content-2">دوره پرداخت:</span>
-              <span className="rounded-full border border-subtle bg-surface-2 px-3 py-1 text-xs font-medium text-content-on-surface">
+              <span className="text-caption-md-regular text-tertiary">دوره پرداخت:</span>
+              <span className="rounded-full border border-subtle bg-layer-1 px-3 py-1 text-caption-md-medium text-secondary">
                 {cycle === "yearly" ? "سالانه (۲۰٪ تخفیف)" : "ماهانه"}
               </span>
             </div>
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
-            {/* Controls (Seats & Options) */}
+            {/* Seats & trust */}
             <div className="flex flex-col gap-5 lg:col-span-6">
-              <div className="rounded-xl border border-subtle bg-surface-2 p-4">
-                <label htmlFor="seats-input" className="text-sm font-semibold text-content-on-surface">
+              <div className="rounded-lg border border-subtle bg-layer-1 p-4">
+                <label htmlFor="seats-input" className="text-body-sm-medium text-primary">
                   تعداد صندلی‌های مورد نیاز (کاربران تیم)
                 </label>
-                <p className="mt-1 text-xs text-content-2">
-                  شامل {formatNumber(selectedPlan.included_seats)} صندلی پایه. حداقل {formatNumber(minSeats)} و حداکثر {formatNumber(maxSeats)} صندلی مجاز است.
+                <p className="mt-1 text-caption-md-regular text-tertiary">
+                  شامل {formatNumber(selectedPlan.included_seats)} صندلی پایه. حداقل {formatNumber(minSeats)} و حداکثر{" "}
+                  {formatNumber(maxSeats)} صندلی مجاز است.
                 </p>
 
                 <div className="mt-4 flex items-center gap-3">
@@ -349,7 +371,8 @@ export default function BillingPage() {
                     type="button"
                     onClick={() => handleSeatChange(-1)}
                     disabled={seatsCount <= minSeats}
-                    className="flex size-10 items-center justify-center rounded-lg border border-subtle bg-surface-1 text-content-on-surface hover:bg-surface-3 disabled:opacity-40 transition-colors"
+                    aria-label="کاهش صندلی"
+                    className="flex size-9 items-center justify-center rounded-md border border-subtle bg-layer-2 text-secondary transition-colors hover:bg-layer-2-hover disabled:opacity-40"
                   >
                     <Minus className="size-4" />
                   </button>
@@ -363,68 +386,98 @@ export default function BillingPage() {
                       const val = Number.parseInt(e.target.value, 10);
                       if (Number.isFinite(val)) setSeatsCount(val);
                     }}
-                    className="h-10 w-24 rounded-lg border border-subtle bg-surface-1 text-center font-bold text-content-on-surface outline-none focus:border-primary"
+                    className="h-9 w-24 rounded-md border border-subtle bg-layer-2 text-center text-body-sm-medium text-primary outline-none focus:border-accent-strong"
                   />
                   <button
                     type="button"
                     onClick={() => handleSeatChange(1)}
                     disabled={seatsCount >= maxSeats}
-                    className="flex size-10 items-center justify-center rounded-lg border border-subtle bg-surface-1 text-content-on-surface hover:bg-surface-3 disabled:opacity-40 transition-colors"
+                    aria-label="افزایش صندلی"
+                    className="flex size-9 items-center justify-center rounded-md border border-subtle bg-layer-2 text-secondary transition-colors hover:bg-layer-2-hover disabled:opacity-40"
                   >
                     <Plus className="size-4" />
                   </button>
-                  <span className="text-xs text-content-2">صندلی فعال</span>
+                  <span className="text-caption-md-regular text-tertiary">صندلی فعال</span>
                 </div>
 
                 {!isSeatsValid && (
-                  <p className="mt-2 text-xs text-danger-500 font-medium">
+                  <p className="mt-2 text-caption-md-medium text-danger-primary">
                     تعداد صندلی باید بین {formatNumber(minSeats)} و {formatNumber(maxSeats)} باشد.
                   </p>
                 )}
               </div>
 
-              {/* Security & Peace of Mind */}
-              <div className="grid grid-cols-2 gap-3 text-xs text-content-2">
-                <div className="flex items-center gap-2 rounded-lg border border-subtle bg-surface-1 p-3">
-                  <ShieldCheck className="size-4 text-emerald-500 shrink-0" />
+              <div className="grid grid-cols-1 gap-3 text-caption-md-regular text-tertiary sm:grid-cols-2">
+                <div className="flex items-center gap-2 rounded-md border border-subtle bg-layer-1 p-3">
+                  <ShieldCheck className="size-4 shrink-0 text-success-primary" />
                   <span>پرداخت امن از طریق درگاه شاپرک</span>
                 </div>
-                <div className="flex items-center gap-2 rounded-lg border border-subtle bg-surface-1 p-3">
-                  <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />
+                <div className="flex items-center gap-2 rounded-md border border-subtle bg-layer-1 p-3">
+                  <CheckCircle2 className="size-4 shrink-0 text-success-primary" />
                   <span>فعال‌سازی آنی پس از پرداخت</span>
                 </div>
               </div>
             </div>
 
-            {/* Server Quote & Checkout CTA */}
-            <div className="flex flex-col justify-between gap-4 rounded-xl border border-subtle bg-surface-2 p-5 lg:col-span-6">
+            {/* Quote & checkout */}
+            <div className="flex flex-col justify-between gap-4 rounded-lg border border-subtle bg-layer-1 p-5 lg:col-span-6">
               <OrderQuote plan={selectedPlan} seats={seatsCount} cycle={cycle} />
 
               {submitError && (
-                <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-xs text-danger-600">
+                <div className="rounded-md bg-danger-subtle p-3 text-caption-md-medium text-danger-primary">
                   {submitError}
                 </div>
               )}
 
-              <Button
-                variant="primary"
-                size="lg"
-                stretch="full"
-                type="button"
-                loading={isSubmitting}
-                disabled={!canCheckout}
-                onClick={handleCheckout}
-                label="پرداخت و اتصال به درگاه بانکی"
-              />
+              {isFreeSelection ? (
+                <div className="flex flex-col gap-3">
+                  {freeResult && (
+                    <div className="rounded-md bg-success-subtle p-3 text-caption-md-medium text-success-primary">
+                      {freeResult.status === "already_free" || !freeResult.effective_at
+                        ? "پلن رایگان برای این ورک‌اسپیس ثبت شد."
+                        : `پلن رایگان از ${new Date(freeResult.effective_at).toLocaleDateString("fa-IR", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })} فعال می‌شود.`}
+                    </div>
+                  )}
+                  {workspaceSlug ? (
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      stretch="full"
+                      type="button"
+                      loading={isSubmitting}
+                      disabled={isSubmitting || isSelectedCurrent}
+                      onClick={handleApplyFree}
+                      label={isSelectedCurrent ? "این پلن هم‌اکنون فعال است" : "اعمال پلن رایگان"}
+                    />
+                  ) : (
+                    <p className="text-caption-md-regular text-tertiary">
+                      برای اعمال پلن رایگان، این صفحه را از تنظیمات صورتحساب ورک‌اسپیس باز کنید.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  stretch="full"
+                  type="button"
+                  loading={isSubmitting}
+                  disabled={!canCheckout}
+                  onClick={handleCheckout}
+                  label="پرداخت و اتصال به درگاه بانکی"
+                />
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Feature Comparison Matrix */}
       <FeatureComparisonSection plans={plans} />
 
-      {/* FAQ Section */}
       <BillingFAQSection />
     </div>
   );
@@ -432,14 +485,13 @@ export default function BillingPage() {
 
 /** Real-time server quote breakdown */
 function OrderQuote({ plan, seats, cycle }: { plan: TPublicPlan; seats: number; cycle: TBillingCycle }) {
-  const { data, error, isLoading } = useSWR(
-    BILLING_PLAN_QUOTE(plan.code, seats, cycle),
-    () => BillingService.planQuote(plan.code, { cycle, seats })
+  const { data, error, isLoading } = useSWR(BILLING_PLAN_QUOTE(plan.code, seats, cycle), () =>
+    BillingService.planQuote(plan.code, { cycle, seats })
   );
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-6 text-xs text-content-2">
+      <div className="flex flex-col items-center justify-center py-6 text-caption-md-regular text-tertiary">
         <LogoSpinner />
         <span className="mt-2">در حال محاسبه فاکتور رسمی...</span>
       </div>
@@ -448,7 +500,7 @@ function OrderQuote({ plan, seats, cycle }: { plan: TPublicPlan; seats: number; 
 
   if (error || !data) {
     return (
-      <div className="text-xs text-danger-500">
+      <div className="text-caption-md-regular text-danger-primary">
         {getErrorMessage(error, "امکان محاسبه فاکتور وجود ندارد. لطفاً صندلی مجاز انتخاب کنید.")}
       </div>
     );
@@ -456,33 +508,31 @@ function OrderQuote({ plan, seats, cycle }: { plan: TPublicPlan; seats: number; 
 
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-sm font-semibold text-content-on-surface">خلاصه فاکتور پرداخت</h3>
+      <h3 className="text-body-sm-medium text-primary">خلاصه فاکتور پرداخت</h3>
 
-      <div className="flex flex-col gap-2 border-t border-subtle pt-3 text-xs">
+      <div className="flex flex-col gap-2 border-t border-subtle pt-3 text-caption-md-regular">
         <div className="flex items-center justify-between">
-          <span className="text-content-2">قیمت پایه پلن ({cycle === "yearly" ? "سالانه" : "ماهانه"}):</span>
-          <span className="font-medium text-content-on-surface">{formatToman(data.base_price_toman)}</span>
+          <span className="text-tertiary">قیمت پایه پلن ({cycle === "yearly" ? "سالانه" : "ماهانه"}):</span>
+          <span className="text-secondary">{formatToman(data.base_price_toman)}</span>
         </div>
 
         {data.extra_seats > 0 && (
           <div className="flex items-center justify-between">
-            <span className="text-content-2">
-              هزینه صندلی‌های اضافه ({formatNumber(data.extra_seats)} صندلی):
-            </span>
-            <span className="font-medium text-content-on-surface">{formatToman(data.extra_seats_total_toman)}</span>
+            <span className="text-tertiary">هزینه صندلی‌های اضافه ({formatNumber(data.extra_seats)} صندلی):</span>
+            <span className="text-secondary">{formatToman(data.extra_seats_total_toman)}</span>
           </div>
         )}
 
-        <div className="mt-2 flex items-center justify-between border-t border-subtle pt-3 text-sm">
-          <span className="font-bold text-content-on-surface">مبلغ کل قابل پرداخت:</span>
-          <span className="text-base font-extrabold text-primary">{formatToman(data.total_toman)}</span>
+        <div className="mt-2 flex items-center justify-between border-t border-subtle pt-3">
+          <span className="text-body-xs-medium text-secondary">مبلغ کل قابل پرداخت:</span>
+          <span className="text-body-md-medium text-accent-primary">{formatToman(data.total_toman)}</span>
         </div>
       </div>
     </div>
   );
 }
 
-/** Feature Comparison Table */
+/** Feature comparison table */
 function FeatureComparisonSection({ plans }: { plans: TPublicPlan[] }) {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -501,29 +551,25 @@ function FeatureComparisonSection({ plans }: { plans: TPublicPlan[] }) {
   ];
 
   return (
-    <div className="mt-6 flex flex-col rounded-2xl border border-subtle bg-surface-1 p-6">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between text-right"
-      >
+    <div className="flex flex-col rounded-lg border border-subtle bg-layer-2 p-6">
+      <button type="button" onClick={() => setIsOpen(!isOpen)} className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-lg font-bold text-content-on-surface">جدول مقایسه جامع قابلیت‌های پلن‌ها</h3>
-          <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs text-content-2">
+          <h3 className="text-h5-medium text-primary">جدول مقایسه جامع قابلیت‌های پلن‌ها</h3>
+          <span className="rounded-full bg-layer-1 px-2.5 py-0.5 text-caption-md-regular text-tertiary">
             {plans.length} پلن فعال
           </span>
         </div>
-        {isOpen ? <ChevronUp className="size-5 text-content-2" /> : <ChevronDown className="size-5 text-content-2" />}
+        {isOpen ? <ChevronUp className="size-5 text-tertiary" /> : <ChevronDown className="size-5 text-tertiary" />}
       </button>
 
       {isOpen && (
         <div className="mt-6 overflow-x-auto">
-          <table className="w-full text-right text-xs">
+          <table className="w-full text-start text-caption-md-regular">
             <thead>
               <tr className="border-b border-subtle">
-                <th className="py-3 pr-4 font-semibold text-content-2">ویژگی و قابلیت</th>
+                <th className="py-3 pe-4 text-start text-caption-md-medium text-tertiary">ویژگی و قابلیت</th>
                 {plans.map((p) => (
-                  <th key={p.code} className="py-3 px-4 font-bold text-content-on-surface text-center">
+                  <th key={p.code} className="px-4 py-3 text-center text-caption-md-medium text-secondary">
                     {p.name}
                   </th>
                 ))}
@@ -531,17 +577,17 @@ function FeatureComparisonSection({ plans }: { plans: TPublicPlan[] }) {
             </thead>
             <tbody className="divide-y divide-subtle">
               {capabilities.map((cap) => (
-                <tr key={cap.key} className="hover:bg-surface-2 transition-colors">
-                  <td className="py-3.5 pr-4 font-medium text-content-on-surface">{cap.title}</td>
+                <tr key={cap.key} className="transition-colors hover:bg-layer-1">
+                  <td className="py-3.5 pe-4 text-body-xs-medium text-secondary">{cap.title}</td>
                   {plans.map((p) => {
                     const isFree = p.access_level === "free" || p.access_level === "0";
                     const isAvailable = !isFree || cap.key === "projects" || cap.key === "pages";
                     return (
-                      <td key={p.code} className="py-3.5 px-4 text-center">
+                      <td key={p.code} className="px-4 py-3.5 text-center">
                         {isAvailable ? (
-                          <Check className="mx-auto size-4 text-emerald-500" />
+                          <Check className="mx-auto size-4 text-success-primary" />
                         ) : (
-                          <span className="text-content-3">—</span>
+                          <span className="text-placeholder">—</span>
                         )}
                       </td>
                     );
@@ -556,7 +602,7 @@ function FeatureComparisonSection({ plans }: { plans: TPublicPlan[] }) {
   );
 }
 
-/** FAQ Accordion */
+/** FAQ accordion */
 function BillingFAQSection() {
   const faqs = [
     {
@@ -578,13 +624,13 @@ function BillingFAQSection() {
   ];
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-subtle bg-surface-1 p-6">
+    <div className="flex flex-col gap-4 rounded-lg border border-subtle bg-layer-2 p-6">
       <div className="flex items-center gap-2">
-        <HelpCircle className="size-5 text-primary" />
-        <h3 className="text-lg font-bold text-content-on-surface">سوالات متداول</h3>
+        <HelpCircle className="size-5 text-tertiary" />
+        <h3 className="text-h5-medium text-primary">سوالات متداول</h3>
       </div>
 
-      <div className="mt-2 divide-y divide-subtle">
+      <div className="divide-y divide-subtle">
         {faqs.map((faq) => (
           <FAQItem key={faq.q} question={faq.q} answer={faq.a} />
         ))}
@@ -604,12 +650,20 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
         aria-expanded={open}
         aria-controls={contentId}
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between text-right text-sm font-semibold text-content-on-surface hover:text-primary transition-colors"
+        className="flex w-full items-center justify-between text-start text-body-xs-medium text-secondary transition-colors hover:text-primary"
       >
         <span>{question}</span>
-        {open ? <ChevronUp className="size-4 shrink-0 text-content-2" /> : <ChevronDown className="size-4 shrink-0 text-content-2" />}
+        {open ? (
+          <ChevronUp className="size-4 shrink-0 text-tertiary" />
+        ) : (
+          <ChevronDown className="size-4 shrink-0 text-tertiary" />
+        )}
       </button>
-      {open && <p id={contentId} className="mt-2 text-xs leading-relaxed text-content-2">{answer}</p>}
+      {open && (
+        <p id={contentId} className="mt-2 text-caption-md-regular leading-relaxed text-tertiary">
+          {answer}
+        </p>
+      )}
     </div>
   );
 }

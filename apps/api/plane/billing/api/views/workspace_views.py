@@ -20,11 +20,13 @@ from plane.billing.services.entitlements import (
     get_feature_flag_rows,
     get_workspace_entitlement,
     grantable_feature_codes,
+    schedule_free_plan,
 )
 from plane.db.models import Workspace
 from plane.license.api.views.base import BaseAPIView
 
 WORKSPACE_NOT_FOUND = {"error": "ورک‌اسپیس یافت نشد."}
+PLAN_OWNED_BY_OWNER_MESSAGE = "پلن این ورک‌اسپیس از اشتراک مالک آن می‌آید و از این مسیر قابل تغییر نیست."
 
 
 class WorkspaceEntitlementBaseView(BaseAPIView):
@@ -135,3 +137,33 @@ class WorkspaceFeatureFlagDisableEndpoint(WorkspaceEntitlementBaseView):
 
         WorkspaceFeatureFlag.objects.filter(workspace=workspace, feature_flag=feature_flag).update(is_enabled=False)
         return Response({"code": feature_flag.code, "is_enabled": False}, status=status.HTTP_200_OK)
+
+
+class WorkspaceFreePlanEndpoint(WorkspaceEntitlementBaseView):
+    """Move the workspace to the free plan once its paid period ends.
+
+    Admin only. No payment is involved, so the paid period is simply not renewed.
+    """
+
+    permission_classes = [WorkSpaceAdminPermission]
+
+    def post(self, request, slug):
+        workspace = self.workspace
+        if workspace is None:
+            return Response(WORKSPACE_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+
+        result = schedule_free_plan(workspace)
+        if result["status"] == "not_workspace_subscription":
+            return Response(
+                {"error": PLAN_OWNED_BY_OWNER_MESSAGE, "code": "not_workspace_subscription"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        effective_at = result["effective_at"]
+        return Response(
+            {
+                "status": result["status"],
+                "effective_at": effective_at.isoformat() if effective_at else None,
+            },
+            status=status.HTTP_200_OK,
+        )

@@ -53,6 +53,7 @@ from plane.billing.api.views.workspace_views import (
     WorkspaceFeatureFlagDisableEndpoint,
     WorkspaceFeatureFlagEnableEndpoint,
     WorkspaceFeatureFlagListEndpoint,
+    WorkspaceFreePlanEndpoint,
 )
 
 urlpatterns = [
@@ -132,6 +133,11 @@ urlpatterns = [
         "workspaces/<slug:slug>/billing/entitlement/",
         WorkspaceEntitlementEndpoint.as_view(),
         name="billing-workspace-entitlement",
+    ),
+    path(
+        "workspaces/<slug:slug>/billing/free-plan/",
+        WorkspaceFreePlanEndpoint.as_view(),
+        name="billing-workspace-free-plan",
     ),
     path(
         "workspaces/<slug:slug>/feature-flags/",

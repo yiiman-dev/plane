@@ -256,7 +256,15 @@ export type TBillingWorkspaceEntitlement = {
   seat_limit: number | null;
   seats_remaining: number | null;
   seats_used: number;
+  /** End of the paid period that sets the plan, or null when there is none to end. */
+  subscription_ends_at: string | null;
   workspace: TBillingWorkspaceRef;
+};
+
+/** Result of POST …/billing/free-plan/. `effective_at` is when the free plan takes over. */
+export type TBillingFreePlanResult = {
+  status: "scheduled" | "already_free";
+  effective_at: string | null;
 };
 
 /**

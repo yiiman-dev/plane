@@ -127,6 +127,35 @@ def resolve_workspace_plan(workspace) -> Optional[Plan]:
     return Plan.objects.filter(code=FREE_PLAN_CODE, is_active=True).first()
 
 
+def current_workspace_subscription(workspace):
+    """The live subscription bound to ``workspace`` that sets its plan, or None."""
+    return _most_recent(_active_subscriptions().filter(workspace=workspace))
+
+
+def schedule_free_plan(workspace) -> Dict[str, Any]:
+    """Let the workspace's paid plan run out and fall back to the free plan.
+
+    Nothing is charged or refunded. The paid subscription stops renewing (``auto_renew``
+    is turned off) and entitlements stop reading it once ``ends_at`` has passed. The
+    returned ``effective_at`` is the date the free plan takes over.
+    """
+    plan = resolve_workspace_plan(workspace)
+    if plan is None or plan.code == FREE_PLAN_CODE:
+        return {"status": "already_free", "effective_at": None}
+
+    live = _active_subscriptions().filter(workspace=workspace)
+    if not live.exists():
+        # the paid plan comes from the owner's own subscription, which this route does not touch
+        return {"status": "not_workspace_subscription", "effective_at": None}
+
+    live.update(auto_renew=False)
+    latest = current_workspace_subscription(workspace)
+    return {
+        "status": "scheduled",
+        "effective_at": latest.ends_at if latest is not None else None,
+    }
+
+
 def get_seat_usage(workspace) -> int:
     """Seats taken right now: active human members plus pending invitations.
 
@@ -499,5 +528,10 @@ def get_workspace_entitlement(workspace) -> Dict[str, Any]:
         "seat_limit": seat_limit,
         "seats_used": seats_used,
         "seats_remaining": None if seat_limit is None else max(0, seat_limit - seats_used),
+        "subscription_ends_at": (
+            current.ends_at.isoformat()
+            if (current := current_workspace_subscription(workspace)) is not None and current.ends_at
+            else None
+        ),
         "feature_flags": get_feature_flag_rows(workspace),
     }
