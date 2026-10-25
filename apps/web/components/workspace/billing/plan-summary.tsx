@@ -31,11 +31,17 @@ export function BillingPlanSummary({ workspaceSlug }: Props) {
   if (error) return <ErrorState message={getBillingErrorMessage(error, "خطا در دریافت وضعیت پلن این ورک‌اسپیس.")} />;
   if (!data) return <LoadingState />;
 
-  return <PlanSummaryContent entitlement={data} />;
+  return <PlanSummaryContent entitlement={data} workspaceSlug={workspaceSlug} />;
 }
 
 /** Split out so the markup stays readable and the server data is passed down as one object. */
-function PlanSummaryContent({ entitlement }: { entitlement: TBillingWorkspaceEntitlement }) {
+function PlanSummaryContent({
+  entitlement,
+  workspaceSlug,
+}: {
+  entitlement: TBillingWorkspaceEntitlement;
+  workspaceSlug: string;
+}) {
   const { plan, seat_limit: seatLimit, seats_used: seatsUsed, seats_remaining: seatsRemaining } = entitlement;
   const isUnlimited = seatLimit === null;
   // The seat label reads differently when there is no ceiling, because "0 of unlimited" is a lie.
@@ -43,36 +49,70 @@ function PlanSummaryContent({ entitlement }: { entitlement: TBillingWorkspaceEnt
     ? `${formatPersianNumber(seatsUsed)} از ${UNLIMITED_SEATS_LABEL}`
     : `${formatPersianNumber(seatsUsed)} از ${formatPersianNumber(seatLimit)}`;
 
+  const percentageUsed = !isUnlimited && seatLimit > 0 ? Math.min(100, Math.round((seatsUsed / seatLimit) * 100)) : 0;
+
   return (
-    <div className="flex flex-col gap-4 rounded-md border border-subtle bg-surface-1 p-4">
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base text-content-on-surface font-medium">{plan?.name ?? "بدون پلن مشخص"}</h3>
-          <span
-            className={`text-xs rounded-md border border-subtle px-2 py-0.5 ${plan?.is_free ? "text-content-2" : "text-primary"}`}
-          >
-            {plan?.is_free ? "پلن رایگان" : "پلن غیر رایگان"}
-          </span>
+    <div className="flex flex-col gap-4 rounded-xl border border-subtle bg-surface-1 p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-lg text-content-on-surface font-semibold">{plan?.name ?? "بدون پلن مشخص"}</h3>
+            <span
+              className={`text-xs rounded-full border px-2.5 py-0.5 font-medium ${
+                plan?.is_free
+                  ? "border-subtle bg-surface-2 text-content-2"
+                  : "border-primary/20 bg-primary/10 text-primary"
+              }`}
+            >
+              {plan?.is_free ? "پلن رایگان" : "پلن فعال (غیر رایگان)"}
+            </span>
+          </div>
+          <p className="text-sm text-content-2">
+            {plan?.description ?? "برای این ورک‌اسپیس پلنی ثبت نشده است؛ سقف صندلی اعمال نمی‌شود."}
+          </p>
         </div>
-        <p className="text-sm text-content-2">
-          {plan?.description ?? "برای این ورک‌اسپیس پلنی ثبت نشده است؛ سقف صندلی اعمال نمی‌شود."}
-        </p>
-      </div>
 
-      <div className="flex flex-col gap-3 border-t border-subtle pt-3">
-        <SeatRow label="صندلی‌های مصرف‌شده" value={seatsUsedLabel} />
-        <SeatRow label="سقف صندلی" value={isUnlimited ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatLimit)} />
-        <SeatRow
-          label="صندلی باقی‌مانده"
-          value={seatsRemaining === null ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatsRemaining)}
-        />
-      </div>
-
-      <div className="border-t border-subtle pt-3">
-        {/* The checkout lives outside the workspace route, so the slug travels as a query parameter. */}
-        <Link to={`/billing?workspace=${encodeURIComponent(entitlement.workspace.slug)}`}>
-          <Button variant="primary" size="md" type="button" label="ارتقای پلن و خرید صندلی بیشتر" stretch="full" />
+        <Link to={`/billing?workspace=${encodeURIComponent(workspaceSlug)}`}>
+          <Button variant="primary" size="md" type="button" stretch="auto" label="مشاهده و ارتقای پلن‌ها" />
         </Link>
+      </div>
+
+      <div className="flex flex-col gap-3 border-t border-subtle pt-4">
+        {!isUnlimited && (
+          <div className="flex flex-col gap-1.5 pb-2">
+            <div className="flex items-center justify-between text-xs text-content-2">
+              <span>میزان مصرف صندلی‌ها</span>
+              <span className="font-medium text-content-on-surface">{formatPersianNumber(percentageUsed)}٪</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  percentageUsed > 90 ? "bg-danger-500" : percentageUsed > 75 ? "bg-warning-500" : "bg-primary"
+                }`}
+                style={{ width: `${percentageUsed}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="flex flex-col rounded-lg bg-surface-2 p-3">
+            <span className="text-xs text-content-2">صندلی‌های مصرف‌شده</span>
+            <span className="mt-1 text-base font-semibold text-content-on-surface">{seatsUsedLabel}</span>
+          </div>
+          <div className="flex flex-col rounded-lg bg-surface-2 p-3">
+            <span className="text-xs text-content-2">سقف صندلی پلن</span>
+            <span className="mt-1 text-base font-semibold text-content-on-surface">
+              {isUnlimited ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatLimit)}
+            </span>
+          </div>
+          <div className="flex flex-col rounded-lg bg-surface-2 p-3">
+            <span className="text-xs text-content-2">صندلی باقی‌مانده</span>
+            <span className="mt-1 text-base font-semibold text-content-on-surface">
+              {seatsRemaining === null ? UNLIMITED_SEATS_LABEL : formatPersianNumber(seatsRemaining)}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

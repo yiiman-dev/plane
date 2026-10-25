@@ -9,6 +9,7 @@ import { observer } from "mobx-react";
 import { useTranslation } from "@plane/i18n";
 // ui
 import {
+  ClockOutline,
   CyclesOutline,
   DueDateOutline,
   EstimateOutline,
@@ -39,6 +40,7 @@ import { useUserProfile } from "@/hooks/store/user";
 // components
 import { IssueParentSelectRoot } from "@/components/issues/parent-select-root";
 import { SidebarPropertyListItem } from "@/components/common/layout/sidebar/property-list-item";
+import { IssueTimeSidebarItem } from "@/components/time-tracking/issue-time-sidebar-item";
 import { IssueCycleSelect } from "./cycle-select";
 import { IssueLabel } from "./label";
 import { IssueModuleSelect } from "./module-select";
@@ -94,6 +96,15 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 disabled={!isEditable}
                 variant="select-ghost-md"
                 tooltip
+              />
+            </SidebarPropertyListItem>
+
+            <SidebarPropertyListItem icon={ClockOutline} label="زمان کاری">
+              <IssueTimeSidebarItem
+                workspaceSlug={workspaceSlug}
+                projectId={projectId}
+                issueId={issueId}
+                disabled={!isEditable}
               />
             </SidebarPropertyListItem>
 

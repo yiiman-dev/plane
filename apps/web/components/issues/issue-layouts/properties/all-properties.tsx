@@ -45,6 +45,7 @@ import { usePlatformOS } from "@/hooks/use-platform-os";
 // local components
 import { IssuePropertyLabels } from "./labels";
 import { WithDisplayPropertiesHOC } from "./with-display-properties-HOC";
+import { IssueCardTimerButton } from "@/components/time-tracking/issue-card-timer-button";
 
 export interface IIssueProperties {
   issue: TIssue;
@@ -475,6 +476,16 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
           maxRender={3}
         />
       </WithDisplayPropertiesHOC>
+
+      {/* time tracking quick timer button */}
+      {workspaceSlug && issue?.project_id && (
+        <IssueCardTimerButton
+          workspaceSlug={workspaceSlug.toString()}
+          projectId={issue.project_id}
+          issueId={issue.id}
+          disabled={isReadOnly}
+        />
+      )}
     </div>
   );
 });

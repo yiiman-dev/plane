@@ -17,6 +17,7 @@ from rest_framework.response import Response
 from plane.app.permissions import ROLE, allow_permission
 from plane.app.serializers import ProjectLiteSerializer, WorkspaceLiteSerializer
 from plane.db.models import Project, Workspace
+from plane.billing.services.entitlements import ai_features_rejection
 from plane.license.utils.instance_value import get_configuration_value
 from plane.utils.exception_logger import log_exception
 
@@ -148,6 +149,11 @@ def get_llm_response(task, prompt, api_key: str, model: str, provider: str) -> T
 class GPTIntegrationEndpoint(BaseAPIView):
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def post(self, request, slug, project_id):
+        workspace = Workspace.objects.filter(slug=slug).first()
+        rejection = ai_features_rejection(workspace)
+        if rejection is not None:
+            return Response(rejection, status=status.HTTP_403_FORBIDDEN)
+
         api_key, model, provider = get_llm_config()
 
         if not api_key or not model or not provider:
@@ -184,6 +190,11 @@ class GPTIntegrationEndpoint(BaseAPIView):
 class WorkspaceGPTIntegrationEndpoint(BaseAPIView):
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER], level="WORKSPACE")
     def post(self, request, slug):
+        workspace = Workspace.objects.filter(slug=slug).first()
+        rejection = ai_features_rejection(workspace)
+        if rejection is not None:
+            return Response(rejection, status=status.HTTP_403_FORBIDDEN)
+
         api_key, model, provider = get_llm_config()
 
         if not api_key or not model or not provider:

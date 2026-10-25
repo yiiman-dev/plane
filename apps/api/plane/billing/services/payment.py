@@ -24,9 +24,11 @@ from plane.billing.models import (
     PaymentGateway,
     PaymentTransaction,
     Plan,
+    PlanFeatureFlag,
     Subscription,
     SubscriptionStatus,
     TransactionStatus,
+    WorkspaceFeatureFlag,
 )
 from plane.billing.services import hold as hold_service
 from plane.billing.services.router import GatewayRouter
@@ -344,14 +346,23 @@ def _activate_subscription(invoice: Invoice, transaction: PaymentTransaction) ->
             source_transaction=transaction,
             workspace=workspace,
         )
-        return
-    subscription.seats = invoice.seats
-    subscription.cycle = invoice.cycle
-    subscription.starts_at = now
-    subscription.ends_at = ends_at
-    subscription.source_transaction = transaction
-    subscription.workspace = workspace
-    subscription.save()
+    else:
+        subscription.seats = invoice.seats
+        subscription.cycle = invoice.cycle
+        subscription.starts_at = now
+        subscription.ends_at = ends_at
+        subscription.source_transaction = transaction
+        subscription.workspace = workspace
+        subscription.save()
+
+    # Automatically activate the plan's granted feature flags for the workspace
+    if workspace is not None and invoice.plan is not None:
+        for grant in PlanFeatureFlag.objects.filter(plan=invoice.plan, is_enabled=True).select_related("feature_flag"):
+            WorkspaceFeatureFlag.objects.update_or_create(
+                workspace=workspace,
+                feature_flag=grant.feature_flag,
+                defaults={"is_enabled": True},
+            )
 
 
 def _settle_hold(transaction: PaymentTransaction, description: str) -> None:

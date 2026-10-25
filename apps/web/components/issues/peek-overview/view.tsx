@@ -20,6 +20,7 @@ import usePeekOverviewOutsideClickDetector from "@/hooks/use-peek-overview-outsi
 import type { TIssueOperations } from "../issue-detail";
 import { IssueActivity } from "../issue-detail/issue-activity";
 import { IssueDetailWidgets } from "../issue-detail-widgets";
+import { IssueTimeTracking } from "@/components/time-tracking/issue-time-tracking";
 import { IssuePeekOverviewError } from "./error";
 import type { TPeekModes } from "./header";
 import { IssuePeekOverviewHeader } from "./header";
@@ -191,6 +192,15 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                     />
 
                     <div className="py-2">
+                      <IssueTimeTracking
+                        workspaceSlug={workspaceSlug}
+                        projectId={projectId}
+                        issueId={issueId}
+                        disabled={disabled || is_archived}
+                      />
+                    </div>
+
+                    <div className="py-2">
                       <IssueDetailWidgets
                         workspaceSlug={workspaceSlug}
                         projectId={projectId}
@@ -202,45 +212,54 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
 
                     <PeekOverviewProperties
                       workspaceSlug={workspaceSlug}
-                      projectId={projectId}
-                      issueId={issueId}
-                      issueOperations={issueOperations}
-                      disabled={disabled || is_archived}
-                    />
+                    projectId={projectId}
+                    issueId={issueId}
+                    issueOperations={issueOperations}
+                    disabled={disabled || is_archived}
+                  />
 
-                    <IssueActivity
-                      workspaceSlug={workspaceSlug}
-                      projectId={projectId}
-                      issueId={issueId}
-                      disabled={is_archived}
-                    />
-                  </div>
-                ) : (
-                  <div className="vertical-scrollbar flex h-full w-full overflow-auto">
-                    <div className="relative h-full w-full space-y-6 overflow-auto p-4 py-5">
-                      <div className="space-y-3">
-                        <PeekOverviewIssueDetails
-                          editorRef={editorRef}
+                  <IssueActivity
+                    workspaceSlug={workspaceSlug}
+                    projectId={projectId}
+                    issueId={issueId}
+                    disabled={is_archived}
+                  />
+                </div>
+              ) : (
+                <div className="vertical-scrollbar flex h-full w-full overflow-auto">
+                  <div className="relative h-full w-full space-y-6 overflow-auto p-4 py-5">
+                    <div className="space-y-3">
+                      <PeekOverviewIssueDetails
+                        editorRef={editorRef}
+                        workspaceSlug={workspaceSlug}
+                        projectId={projectId}
+                        issueId={issueId}
+                        issueOperations={issueOperations}
+                        disabled={disabled}
+                        titleDisabled={titleDisabled}
+                        isArchived={is_archived}
+                        isSubmitting={isSubmitting}
+                        setIsSubmitting={(value) => setIsSubmitting(value)}
+                      />
+
+                      <div className="py-2">
+                        <IssueTimeTracking
                           workspaceSlug={workspaceSlug}
                           projectId={projectId}
                           issueId={issueId}
-                          issueOperations={issueOperations}
-                          disabled={disabled}
-                          titleDisabled={titleDisabled}
-                          isArchived={is_archived}
-                          isSubmitting={isSubmitting}
-                          setIsSubmitting={(value) => setIsSubmitting(value)}
+                          disabled={disabled || is_archived}
                         />
+                      </div>
 
-                        <div className="py-2">
-                          <IssueDetailWidgets
-                            workspaceSlug={workspaceSlug}
-                            projectId={projectId}
-                            issueId={issueId}
-                            disabled={disabled}
-                            issueServiceType={EIssueServiceType.ISSUES}
-                          />
-                        </div>
+                      <div className="py-2">
+                        <IssueDetailWidgets
+                          workspaceSlug={workspaceSlug}
+                          projectId={projectId}
+                          issueId={issueId}
+                          disabled={disabled}
+                          issueServiceType={EIssueServiceType.ISSUES}
+                        />
+                      </div>
 
                         <IssueActivity
                           workspaceSlug={workspaceSlug}

@@ -42,12 +42,27 @@ FEATURE_LIMIT_UNSET_CODE = "feature_limit_unset"
 # configured it keeps creating projects exactly as before, and an operator turns
 # the gate on by activating the row and granting it to a plan.
 PROJECT_LIMIT_FLAG_CODE = "projects"
+TASK_BLOCKING_FLAG_CODE = "task_blocking"
+PAGES_FLAG_CODE = "pages"
+AI_FEATURES_FLAG_CODE = "ai_features"
+CYCLES_FLAG_CODE = "cycles"
+MODULES_FLAG_CODE = "modules"
+ANALYTICS_FLAG_CODE = "analytics"
+VIEWS_FLAG_CODE = "views"
+ESTIMATES_FLAG_CODE = "estimates"
+INTAKE_FLAG_CODE = "intake"
+WEBHOOKS_FLAG_CODE = "webhooks"
+TIME_TRACKING_FLAG_CODE = "time_tracking"
 
 SEAT_LIMIT_REACHED_MESSAGE = "سقف صندلی این پلن تکمیل است. برای افزودن عضو بیشتر باید پلن ورک‌اسپیس را ارتقا دهید."
 SEAT_LIMIT_REACHED_PROJECT_MESSAGE = (
     "سقف صندلی این پلن تکمیل است و دعوت این پروژه پذیرفته نمی‌شود. برای پذیرش آن باید پلن ورک‌اسپیس را ارتقا دهید."
 )
 FEATURE_NOT_IN_PLAN_MESSAGE = "این قابلیت در پلن فعلی ورک‌اسپیس شما فعال نیست."
+TASK_BLOCKING_NOT_IN_PLAN_MESSAGE = "قابلیت مسدودسازی و وابستگی تسک‌ها در پلن فعلی این ورک‌اسپیس فعال نیست."
+PAGES_NOT_IN_PLAN_MESSAGE = "قابلیت اسناد و مستندات (Pages) در پلن فعلی این ورک‌اسپیس فعال نیست."
+AI_FEATURES_NOT_IN_PLAN_MESSAGE = "امکانات هوش مصنوعی در پلن فعلی این ورک‌اسپیس فعال نیست."
+TIME_TRACKING_NOT_IN_PLAN_MESSAGE = "قابلیت ثبت و مدیریت زمان در پلن فعلی این ورک‌اسپیس فعال نیست."
 FEATURE_LIMIT_UNSET_MESSAGE = "حد این قابلیت در پلن فعلی تعیین نشده است."
 FEATURE_LIMIT_REACHED_TEMPLATE = (
     "سقف «{unit}» این پلن تکمیل است ({used} از {limit}). برای افزودن مورد بیشتر باید پلن ورک‌اسپیس را ارتقا دهید."
@@ -368,6 +383,61 @@ def project_limit_rejection(workspace, additional: int = 1) -> Optional[Dict[str
         PROJECT_LIMIT_FLAG_CODE,
         used=get_project_usage(workspace),
         additional=additional,
+    )
+
+
+def feature_gate_rejection(workspace, code: str, message: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Error body for a refused boolean capability, or None when it may proceed.
+
+    If the catalogue row is missing or inactive, it returns None (allowed),
+    preserving upgrade safety and backwards compatibility. If active, and not
+    granted by the plan or switched off by the workspace, it refuses with 403.
+    """
+    if workspace is None:
+        return None
+
+    feature_flag = FeatureFlag.objects.filter(code=code, is_active=True).first()
+    if feature_flag is None:
+        return None
+
+    if not has_feature(workspace, code):
+        return {
+            "error": message or FEATURE_NOT_IN_PLAN_MESSAGE,
+            "code": FEATURE_NOT_IN_PLAN_CODE,
+        }
+
+    return None
+
+
+def task_blocking_rejection(workspace) -> Optional[Dict[str, Any]]:
+    return feature_gate_rejection(
+        workspace,
+        TASK_BLOCKING_FLAG_CODE,
+        message=TASK_BLOCKING_NOT_IN_PLAN_MESSAGE,
+    )
+
+
+def pages_rejection(workspace) -> Optional[Dict[str, Any]]:
+    return feature_gate_rejection(
+        workspace,
+        PAGES_FLAG_CODE,
+        message=PAGES_NOT_IN_PLAN_MESSAGE,
+    )
+
+
+def ai_features_rejection(workspace) -> Optional[Dict[str, Any]]:
+    return feature_gate_rejection(
+        workspace,
+        AI_FEATURES_FLAG_CODE,
+        message=AI_FEATURES_NOT_IN_PLAN_MESSAGE,
+    )
+
+
+def time_tracking_rejection(workspace) -> Optional[Dict[str, Any]]:
+    return feature_gate_rejection(
+        workspace,
+        TIME_TRACKING_FLAG_CODE,
+        message=TIME_TRACKING_NOT_IN_PLAN_MESSAGE,
     )
 
 

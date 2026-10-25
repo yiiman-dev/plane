@@ -94,6 +94,7 @@ from .base import BaseAPIView
 from plane.utils.host import base_host
 from plane.utils.serializers import writable_data
 from plane.utils.issue_relation_mapper import get_actual_relation
+from plane.billing.services.entitlements import task_blocking_rejection
 from plane.bgtasks.webhook_task import model_activity
 from plane.app.permissions import ROLE
 from plane.utils.openapi import (
@@ -2763,7 +2764,14 @@ class IssueRelationListCreateAPIEndpoint(BaseAPIView):
 
         relation_type = serializer.validated_data["relation_type"]
         issues = serializer.validated_data["issues"]
-        project = Project.objects.get(pk=project_id, workspace__slug=slug)
+        project = Project.objects.select_related("workspace").get(pk=project_id, workspace__slug=slug)
+
+        # Gate blocking/blocked_by relations on the task_blocking feature flag
+        if relation_type in ["blocking", "blocked_by"]:
+            rejection = task_blocking_rejection(project.workspace)
+            if rejection is not None:
+                return Response(rejection, status=status.HTTP_403_FORBIDDEN)
+
         # The URL issue is one side of every relation; bind it to the URL project too.
         Issue.issue_objects.get(workspace__slug=slug, project_id=project_id, pk=issue_id)
 

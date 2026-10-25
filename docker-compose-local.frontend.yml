@@ -5,7 +5,10 @@
 #     -f docker-compose-local.frontend.yml up -d frontend-install web admin space
 #
 # The repo is bind-mounted, so source edits hot-reload without a rebuild. Dependencies
-# are installed once by `frontend-install`, then the three dev servers start.
+# are installed and the shared packages are built once by `frontend-install`, then the
+# three dev servers start. The dev servers run the app's own `dev` script, not `turbo dev`:
+# `turbo dev` runs `^build` per container, and three concurrent builds in the shared
+# bind mount wipe each other's packages/*/dist, so Vite fails with "Does the file exist?".
 #
 # Plain Node image: apps/web/Dockerfile.dev fails on `pnpm add -g turbo` (pnpm's global
 # bin directory is not on PATH), so install and run inside the container instead.
@@ -30,13 +33,13 @@ services:
   frontend-install:
     <<: *frontend-base
     container_name: plane-frontend-install
-    command: sh -c "corepack enable pnpm && pnpm install"
+    command: sh -c "corepack enable pnpm && pnpm install && pnpm turbo run build --filter=web^... --filter=admin^... --filter=space^..."
     restart: "no"
 
   web:
     <<: *frontend-base
     container_name: plane-web-dev
-    command: sh -c "corepack enable pnpm && pnpm dev --filter=web"
+    command: sh -c "corepack enable pnpm && pnpm --filter=web dev"
     env_file:
       - ./apps/web/.env
     ports:
@@ -48,7 +51,7 @@ services:
   admin:
     <<: *frontend-base
     container_name: plane-admin-dev
-    command: sh -c "corepack enable pnpm && pnpm dev --filter=admin"
+    command: sh -c "corepack enable pnpm && pnpm --filter=admin dev"
     env_file:
       - ./apps/admin/.env
     ports:
@@ -60,7 +63,7 @@ services:
   space:
     <<: *frontend-base
     container_name: plane-space-dev
-    command: sh -c "corepack enable pnpm && pnpm dev --filter=space"
+    command: sh -c "corepack enable pnpm && pnpm --filter=space dev"
     env_file:
       - ./apps/space/.env
     ports:

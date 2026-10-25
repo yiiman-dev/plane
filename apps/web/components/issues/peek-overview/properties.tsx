@@ -9,6 +9,7 @@ import { observer } from "mobx-react";
 import { useTranslation } from "@plane/i18n";
 // ui icons
 import {
+  ClockOutline,
   CyclesOutline,
   DueDateOutline,
   EstimateOutline,
@@ -30,6 +31,7 @@ import { MemberSelect } from "@/components/dropdowns/member/member-select";
 import { PrioritySelect } from "@/components/dropdowns/priority/priority-select";
 import { StateSelect } from "@/components/dropdowns/state/state-select";
 import { SidebarPropertyListItem } from "@/components/common/layout/sidebar/property-list-item";
+import { IssueTimeSidebarItem } from "@/components/time-tracking/issue-time-sidebar-item";
 // helpers
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
@@ -89,6 +91,15 @@ export const PeekOverviewProperties = observer(function PeekOverviewProperties(p
             disabled={disabled}
             variant="select-ghost-md"
             tooltip
+          />
+        </SidebarPropertyListItem>
+
+        <SidebarPropertyListItem icon={ClockOutline} label="زمان کاری">
+          <IssueTimeSidebarItem
+            workspaceSlug={workspaceSlug}
+            projectId={projectId}
+            issueId={issueId}
+            disabled={disabled}
           />
         </SidebarPropertyListItem>
 

@@ -32,6 +32,7 @@ import type {
   TAdminWorkspaceListResponse,
   TBillingAccessLogListResponse,
   TBillingSmsReportListResponse,
+  TFeatureFlag,
   TFeatureFlagListResponse,
   TPlanFeatureFlagGrantInput,
   TPlanFeatureFlagListResponse,
@@ -491,6 +492,17 @@ export class BillingService extends APIService {
    */
   async featureFlags(params: TBillingListParams): Promise<TFeatureFlagListResponse> {
     return this.get("/api/billing/admin/feature-flags/", { params })
+      .then((response) => response.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  /**
+   * Updates an instance feature flag (e.g. toggle is_active).
+   */
+  async updateFeatureFlag(flagId: string, data: Partial<TFeatureFlag>): Promise<TFeatureFlag> {
+    return this.patch(`/api/billing/admin/feature-flags/${flagId}/`, data)
       .then((response) => response.data)
       .catch((error) => {
         throw error?.response?.data;

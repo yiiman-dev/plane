@@ -29,6 +29,7 @@ from plane.db.models import (
     IssueLink,
     CycleIssue,
 )
+from plane.billing.services.entitlements import task_blocking_rejection
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.issue_relation_mapper import get_actual_relation
 from plane.utils.host import base_host
@@ -246,7 +247,13 @@ class IssueRelationViewSet(BaseViewSet):
             )
 
         issues = request.data.get("issues", [])
-        project = Project.objects.get(pk=project_id)
+        project = Project.objects.select_related("workspace").get(pk=project_id)
+
+        # Gate blocking/blocked_by relations on the task_blocking feature flag
+        if relation_type in ["blocking", "blocked_by"]:
+            rejection = task_blocking_rejection(project.workspace)
+            if rejection is not None:
+                return Response(rejection, status=status.HTTP_403_FORBIDDEN)
 
         # SECURITY: bind the URL issue to the workspace + project before using it as one
         # side of the relation. The body `issues` are scoped below, but `issue_id` came
