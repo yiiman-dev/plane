@@ -82,6 +82,7 @@ jobs:
           DOKPLOY_STAGING_WEBHOOK_URL: ${{ secrets.DOKPLOY_STAGING_WEBHOOK_URL }}
         run: |
           set -eu
+          : "${DOKPLOY_STAGING_WEBHOOK_URL:?Add the DOKPLOY_STAGING_WEBHOOK_URL repository secret}"
           # Dokploy's compose webhook redeploys the staging stack. The compose pins pull_policy: always,
           # so the :staging images built above are pulled on every deploy.
           curl -fsS -X POST "$DOKPLOY_STAGING_WEBHOOK_URL" -H "Content-Type: application/json" -d '{}'
