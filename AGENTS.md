@@ -81,3 +81,13 @@ See `apps/api/tests/RUNNING_TESTS.md` for the full walkthrough and troubleshooti
   - هر فیچری که تولید یا تغییر داده می‌شود، تغییرات باید در یک چنج‌لیست مشخص شود تا معلوم باشد چه بخش‌هایی تغییر کرده‌اند.
   - دلیل تغییرات (خواستهٔ PO) باید به زبان ساده، بسیار کوتاه و به زبان فارسی توضیح داده شود.
 
+
+## Demo server deployment
+
+- **`preview` is the main branch.** Every push or merge to `preview` triggers `.github/workflows/deploy-staging.yml`, which builds the images and redeploys the demo (staging) server on Dokploy.
+- **Trigger phrase**: when the user says "روی سرور دمو بده" (deploy to the demo server), do the whole flow without asking:
+  1. Commit every pending change on the current branch, with a Co-Authored-By line.
+  2. Push the branch and merge it into `preview`. Push `preview` (`git push fork preview`, or `origin` if the user says so).
+  3. Confirm that the "Deploy Staging" run for the new `preview` commit is queued or running, and wait for it to finish (`gh run list`).
+  4. Report done only after the run succeeds. Name the commit and the run. If it fails, report the failure and do not call it done.
+- Never push directly to `preview` without a merge from a feature branch unless the user asks for it.
