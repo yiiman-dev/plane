@@ -1,12 +1,12 @@
 name: Deploy Staging
 
-# Builds every Plane image from the pushed commit, pushes them to GHCR as :staging
+# Runs on every push or merge to preview (the main branch). Builds every Plane image from the commit, pushes them to GHCR as :staging
 # (and :sha-<commit>), then calls the Dokploy compose webhook to redeploy staging.
 
 on:
   push:
     branches:
-      - staging
+      - preview
   workflow_dispatch:
 
 permissions:
