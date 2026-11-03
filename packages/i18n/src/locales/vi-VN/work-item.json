@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Hoạt động",
-      "backlog": "Tồn đọng"
+      "backlog": "Tồn đọng",
+      "blocked_by": {
+        "error": {
+          "title": "Thay đổi trạng thái bị chặn",
+          "message": "Mục công việc này đang bị chặn bởi {blockers}. Hoàn thành các mục công việc đang chặn trước khi chuyển sang Đang thực hiện."
+        }
+      }
     },
     "comments": {
       "placeholder": "Thêm bình luận",

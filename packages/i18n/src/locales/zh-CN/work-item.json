@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "活动",
-      "backlog": "待办"
+      "backlog": "待办",
+      "blocked_by": {
+        "error": {
+          "title": "状态更改已被阻止",
+          "message": "此工作项已被 {blockers} 阻止。请先完成阻止它的工作项，再将其移至进行中。"
+        }
+      }
     },
     "comments": {
       "placeholder": "添加评论",

@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Aktif",
-      "backlog": "Bekleme Listesi"
+      "backlog": "Bekleme Listesi",
+      "blocked_by": {
+        "error": {
+          "title": "Durum değişikliği engellendi",
+          "message": "Bu iş öğesi şu nedenle engellendi: {blockers}. Devam ediyor durumuna taşımadan önce engelleyen iş öğelerini tamamlayın."
+        }
+      }
     },
     "comments": {
       "placeholder": "Yorum ekle",

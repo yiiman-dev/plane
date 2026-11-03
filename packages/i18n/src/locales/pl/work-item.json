@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Aktywny",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Zmiana stanu zablokowana",
+          "message": "Ten element pracy jest zablokowany przez: {blockers}. Ukończ blokujące elementy pracy, zanim przeniesiesz go do stanu W trakcie."
+        }
+      }
     },
     "comments": {
       "placeholder": "Dodaj komentarz",

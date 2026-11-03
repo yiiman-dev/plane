@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Actief",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Statuswijziging geblokkeerd",
+          "message": "Dit werkitem is geblokkeerd door {blockers}. Voltooi de blokkerende werkitems voordat u het naar Bezig verplaatst."
+        }
+      }
     },
     "comments": {
       "placeholder": "Reactie toevoegen",

@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "使用中",
-      "backlog": "待辦事項"
+      "backlog": "待辦事項",
+      "blocked_by": {
+        "error": {
+          "title": "狀態變更已被封鎖",
+          "message": "此工作項目已被 {blockers} 封鎖。請先完成封鎖它的工作項目，再將其移至進行中。"
+        }
+      }
     },
     "comments": {
       "placeholder": "新增留言",

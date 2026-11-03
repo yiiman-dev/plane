@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "アクティブ",
-      "backlog": "バックログ"
+      "backlog": "バックログ",
+      "blocked_by": {
+        "error": {
+          "title": "状態の変更がブロックされています",
+          "message": "この作業項目は {blockers} によってブロックされています。進行中に移動する前に、ブロックしている作業項目を完了してください。"
+        }
+      }
     },
     "comments": {
       "placeholder": "コメントを追加",

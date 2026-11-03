@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Активно",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Зміну статусу заблоковано",
+          "message": "Це робоче завдання заблоковано: {blockers}. Завершіть блокуючі завдання, перш ніж перевести його в роботу."
+        }
+      }
     },
     "comments": {
       "placeholder": "Додати коментар",

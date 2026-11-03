@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Active",
-      "backlog": "Restante"
+      "backlog": "Restante",
+      "blocked_by": {
+        "error": {
+          "title": "Schimbarea stării este blocată",
+          "message": "Acest element de lucru este blocat de {blockers}. Finalizați elementele de lucru care îl blochează înainte de a-l muta în În lucru."
+        }
+      }
     },
     "comments": {
       "placeholder": "Adaugă comentariu",

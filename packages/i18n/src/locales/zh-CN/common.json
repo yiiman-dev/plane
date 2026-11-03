@@ -893,5 +893,12 @@
       "save_as": "另存为",
       "hide_filters": "隐藏筛选"
     }
-  }
+  },
+  "calendar": "日历",
+  "calendar_persian": "波斯历 (شمسی)",
+  "calendar_gregorian": "公历 (میلادی)",
+  "calendar_description": "日期以公历格式存储，并按您选择的日历显示。",
+  "calendar_setting": "选择日期显示所用的日历。",
+  "content_direction": "内容方向",
+  "content_direction_setting": "选择用于描述、评论及其他富文本内容的文字方向。"
 }

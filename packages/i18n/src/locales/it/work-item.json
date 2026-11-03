@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Attivo",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Cambio di stato bloccato",
+          "message": "Questo work item è bloccato da {blockers}. Completa i work item che lo bloccano prima di spostarlo in corso."
+        }
+      }
     },
     "comments": {
       "placeholder": "Aggiungi commento",

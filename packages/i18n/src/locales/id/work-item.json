@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Aktif",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Perubahan status diblokir",
+          "message": "Item kerja ini diblokir oleh {blockers}. Selesaikan item kerja yang memblokir sebelum memindahkannya ke Sedang dikerjakan."
+        }
+      }
     },
     "comments": {
       "placeholder": "Tambah komentar",

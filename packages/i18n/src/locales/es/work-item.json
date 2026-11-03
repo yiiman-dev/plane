@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Activo",
-      "backlog": "Pendientes"
+      "backlog": "Pendientes",
+      "blocked_by": {
+        "error": {
+          "title": "Cambio de estado bloqueado",
+          "message": "Este elemento de trabajo está bloqueado por {blockers}. Completa los elementos de trabajo que lo bloquean antes de moverlo a En curso."
+        }
+      }
     },
     "comments": {
       "placeholder": "Agregar comentario",

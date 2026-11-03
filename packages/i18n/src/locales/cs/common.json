@@ -893,5 +893,12 @@
       "save_as": "Uložit jako",
       "hide_filters": "Skrýt filtry"
     }
-  }
+  },
+  "calendar": "Kalendář",
+  "calendar_persian": "Perský (شمسی)",
+  "calendar_gregorian": "Gregoriánský (میلادی)",
+  "calendar_description": "Data se ukládají v gregoriánském formátu a zobrazují se v kalendáři, který jste zvolili.",
+  "calendar_setting": "Vyberte kalendář, ve kterém se mají data zobrazovat.",
+  "content_direction": "Směr obsahu",
+  "content_direction_setting": "Vyberte směr textu pro popisy, komentáře a další formátovaný obsah."
 }

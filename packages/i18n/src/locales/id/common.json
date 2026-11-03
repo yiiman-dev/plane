@@ -893,5 +893,12 @@
       "save_as": "Simpan sebagai",
       "hide_filters": "Sembunyikan filter"
     }
-  }
+  },
+  "calendar": "Kalender",
+  "calendar_persian": "Persia (شمسی)",
+  "calendar_gregorian": "Gregorian (میلادی)",
+  "calendar_description": "Tanggal disimpan dalam format Gregorian dan ditampilkan dalam kalender pilihan Anda.",
+  "calendar_setting": "Pilih kalender tempat tanggal Anda ditampilkan.",
+  "content_direction": "Arah konten",
+  "content_direction_setting": "Pilih arah teks untuk deskripsi, komentar, dan konten teks kaya lainnya."
 }

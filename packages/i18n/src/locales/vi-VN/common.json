@@ -893,5 +893,12 @@
       "save_as": "Lưu thành",
       "hide_filters": "Ẩn bộ lọc"
     }
-  }
+  },
+  "calendar": "Lịch",
+  "calendar_persian": "Ba Tư (شمسی)",
+  "calendar_gregorian": "Dương lịch (میلادی)",
+  "calendar_description": "Ngày được lưu theo định dạng Dương lịch và hiển thị theo lịch bạn chọn.",
+  "calendar_setting": "Chọn lịch để hiển thị các ngày của bạn.",
+  "content_direction": "Hướng nội dung",
+  "content_direction_setting": "Chọn hướng văn bản dùng cho mô tả, bình luận và các nội dung văn bản đa định dạng khác."
 }

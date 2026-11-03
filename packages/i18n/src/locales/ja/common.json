@@ -893,5 +893,12 @@
       "save_as": "名前を付けて保存",
       "hide_filters": "フィルターを非表示"
     }
-  }
+  },
+  "calendar": "カレンダー",
+  "calendar_persian": "ペルシア暦 (شمسی)",
+  "calendar_gregorian": "グレゴリオ暦 (میلادی)",
+  "calendar_description": "日付はグレゴリオ暦形式で保存され、選択したカレンダーで表示されます。",
+  "calendar_setting": "日付を表示するカレンダーを選択します。",
+  "content_direction": "コンテンツの方向",
+  "content_direction_setting": "説明、コメント、その他のリッチテキストコンテンツで使用するテキストの方向を選択します。"
 }

@@ -136,7 +136,8 @@
           "success": "Préférences mises à jour avec succès.",
           "error": "Échec de la mise à jour des préférences. Veuillez réessayer."
         }
-      }
+      },
+      "update_calendar_system": "Changer le système de calendrier"
     },
     "help_actions": {
       "open_keyboard_shortcuts": "Ouvrir les raccourcis clavier",
@@ -166,7 +167,8 @@
       "update_theme": "Changer le thème",
       "update_timezone": "Changer le fuseau horaire",
       "update_start_of_week": "Changer le premier jour de la semaine",
-      "update_language": "Changer la langue"
+      "update_language": "Changer la langue",
+      "update_calendar_system": "Changer le système de calendrier"
     },
     "search_menu": {
       "no_results": "Aucun résultat trouvé",

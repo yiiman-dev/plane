@@ -136,7 +136,8 @@
           "success": "Voorkeuren bijgewerkt.",
           "error": "Bijwerken van voorkeuren mislukt. Probeer het opnieuw."
         }
-      }
+      },
+      "update_calendar_system": "Agendasysteem wijzigen"
     },
     "help_actions": {
       "open_keyboard_shortcuts": "Sneltoetsen openen",
@@ -166,7 +167,8 @@
       "update_theme": "Thema wijzigen",
       "update_timezone": "Tijdzone wijzigen",
       "update_start_of_week": "Eerste dag van de week wijzigen",
-      "update_language": "Taal wijzigen"
+      "update_language": "Taal wijzigen",
+      "update_calendar_system": "Agendasysteem wijzigen"
     },
     "search_menu": {
       "no_results": "Geen resultaten gevonden",

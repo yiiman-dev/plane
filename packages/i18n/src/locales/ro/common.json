@@ -893,5 +893,12 @@
       "save_as": "Salvează ca",
       "hide_filters": "Ascunde filtrele"
     }
-  }
+  },
+  "calendar": "Calendar",
+  "calendar_persian": "Persan (شمسی)",
+  "calendar_gregorian": "Gregorian (میلادی)",
+  "calendar_description": "Datele sunt stocate în format gregorian și afișate în calendarul ales de dumneavoastră.",
+  "calendar_setting": "Alegeți calendarul în care sunt afișate datele.",
+  "content_direction": "Direcția conținutului",
+  "content_direction_setting": "Alegeți direcția textului folosită pentru descrieri, comentarii și alt conținut bogat în text."
 }

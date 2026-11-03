@@ -893,5 +893,12 @@
       "save_as": "Opslaan als",
       "hide_filters": "Filters verbergen"
     }
-  }
+  },
+  "calendar": "Agenda",
+  "calendar_persian": "Perzisch (شمسی)",
+  "calendar_gregorian": "Gregoriaans (میلادی)",
+  "calendar_description": "Datums worden opgeslagen in het Gregoriaanse formaat en weergegeven in de agenda die u kiest.",
+  "calendar_setting": "Kies de agenda waarin uw datums worden weergegeven.",
+  "content_direction": "Tekstrichting",
+  "content_direction_setting": "Kies de tekstrichting voor beschrijvingen, opmerkingen en andere rich-text-inhoud."
 }

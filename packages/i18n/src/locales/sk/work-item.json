@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Aktívne",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Zmena stavu je zablokovaná",
+          "message": "Táto pracovná položka je zablokovaná: {blockers}. Pred presunutím do stavu Prebieha dokončite blokujúce pracovné položky."
+        }
+      }
     },
     "comments": {
       "placeholder": "Pridať komentár",

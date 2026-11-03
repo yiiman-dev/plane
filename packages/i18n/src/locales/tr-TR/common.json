@@ -893,5 +893,12 @@
       "save_as": "Farklı kaydet",
       "hide_filters": "Filtreleri gizle"
     }
-  }
+  },
+  "calendar": "Takvim",
+  "calendar_persian": "Pers (شمسی)",
+  "calendar_gregorian": "Miladi (میلادی)",
+  "calendar_description": "Tarihler Miladi biçimde saklanır ve seçtiğiniz takvimde görüntülenir.",
+  "calendar_setting": "Tarihlerin görüntüleneceği takvimi seçin.",
+  "content_direction": "İçerik yönü",
+  "content_direction_setting": "Açıklamalar, yorumlar ve diğer zengin metin içerikleri için kullanılacak metin yönünü seçin."
 }

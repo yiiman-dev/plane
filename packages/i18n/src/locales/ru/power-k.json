@@ -136,7 +136,8 @@
           "success": "Настройки успешно обновлены.",
           "error": "Не удалось обновить настройки. Пожалуйста, попробуйте снова."
         }
-      }
+      },
+      "update_calendar_system": "Изменить систему календаря"
     },
     "help_actions": {
       "open_keyboard_shortcuts": "Открыть горячие клавиши",
@@ -166,7 +167,8 @@
       "update_theme": "Изменить тему",
       "update_timezone": "Изменить часовой пояс",
       "update_start_of_week": "Изменить первый день недели",
-      "update_language": "Изменить язык"
+      "update_language": "Изменить язык",
+      "update_calendar_system": "Изменить систему календаря"
     },
     "search_menu": {
       "no_results": "Ничего не найдено",

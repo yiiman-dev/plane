@@ -893,5 +893,12 @@
       "save_as": "Speichern unter",
       "hide_filters": "Filter ausblenden"
     }
-  }
+  },
+  "calendar": "Kalender",
+  "calendar_persian": "Persisch (شمسی)",
+  "calendar_gregorian": "Gregorianisch (میلادی)",
+  "calendar_description": "Datumsangaben werden im gregorianischen Format gespeichert und im gewählten Kalender angezeigt.",
+  "calendar_setting": "Wählen Sie den Kalender, in dem Datumsangaben angezeigt werden.",
+  "content_direction": "Textrichtung",
+  "content_direction_setting": "Wählen Sie die Textrichtung für Beschreibungen, Kommentare und anderen Rich-Text-Inhalt."
 }

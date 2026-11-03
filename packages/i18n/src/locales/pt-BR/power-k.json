@@ -136,7 +136,8 @@
           "success": "Preferências atualizadas com sucesso.",
           "error": "Falha ao atualizar as preferências. Tente novamente."
         }
-      }
+      },
+      "update_calendar_system": "Alterar sistema de calendário"
     },
     "help_actions": {
       "open_keyboard_shortcuts": "Abrir atalhos do teclado",
@@ -166,7 +167,8 @@
       "update_theme": "Alterar tema",
       "update_timezone": "Alterar fuso horário",
       "update_start_of_week": "Alterar primeiro dia da semana",
-      "update_language": "Alterar idioma"
+      "update_language": "Alterar idioma",
+      "update_calendar_system": "Alterar sistema de calendário"
     },
     "search_menu": {
       "no_results": "Nenhum resultado encontrado",

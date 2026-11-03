@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Ativo",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Mudança de status bloqueada",
+          "message": "Este item de trabalho está bloqueado por {blockers}. Conclua os itens de trabalho que o bloqueiam antes de movê-lo para Em andamento."
+        }
+      }
     },
     "comments": {
       "placeholder": "Adicionar comentário",

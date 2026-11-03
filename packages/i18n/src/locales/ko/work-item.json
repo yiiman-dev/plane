@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "활성",
-      "backlog": "백로그"
+      "backlog": "백로그",
+      "blocked_by": {
+        "error": {
+          "title": "상태 변경이 차단됨",
+          "message": "이 작업 항목은 차단되어 있습니다. 차단 항목: {blockers}. 진행 중으로 옮기기 전에 차단하는 작업 항목을 완료하세요."
+        }
+      }
     },
     "comments": {
       "placeholder": "댓글 추가",

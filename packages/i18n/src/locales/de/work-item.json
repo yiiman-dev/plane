@@ -89,7 +89,13 @@
     },
     "states": {
       "active": "Aktiv",
-      "backlog": "Backlog"
+      "backlog": "Backlog",
+      "blocked_by": {
+        "error": {
+          "title": "Statusänderung blockiert",
+          "message": "Dieses Arbeitselement ist durch {blockers} blockiert. Schließen Sie die blockierenden Arbeitselemente ab, bevor Sie es in Bearbeitung verschieben."
+        }
+      }
     },
     "comments": {
       "placeholder": "Kommentar hinzufügen",
