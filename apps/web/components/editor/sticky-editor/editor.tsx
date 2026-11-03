@@ -15,7 +15,7 @@ import type { TSticky } from "@plane/types";
 // helpers
 import { cn } from "@plane/utils";
 // hooks
-import { useEditorConfig } from "@/hooks/editor";
+import { useContentTextDirection, useEditorConfig } from "@/hooks/editor";
 import { useParseEditorContent } from "@/hooks/use-parse-editor-content";
 // plane web hooks
 import { useEditorFlagging } from "@/hooks/use-editor-flagging";
@@ -40,6 +40,10 @@ interface StickyEditorWrapperProps extends Omit<
   parentClassName?: string;
   handleColorChange: (data: Partial<TSticky>) => Promise<void>;
   handleDelete: () => void;
+}
+
+function isMutableRefObject<T>(candidate: React.ForwardedRef<T>): candidate is React.MutableRefObject<T | null> {
+  return !!candidate && typeof candidate === "object" && "current" in candidate;
 }
 
 export const StickyEditor = React.forwardRef(function StickyEditor(
@@ -74,9 +78,8 @@ export const StickyEditor = React.forwardRef(function StickyEditor(
   });
   // editor config
   const { getEditorFileHandlers } = useEditorConfig();
-  function isMutableRefObject<T>(ref: React.ForwardedRef<T>): ref is React.MutableRefObject<T | null> {
-    return !!ref && typeof ref === "object" && "current" in ref;
-  }
+  // content text direction
+  const contentDirection = useContentTextDirection();
   // derived values
   const editorRef = isMutableRefObject<EditorRefApi>(ref) ? ref.current : null;
 
@@ -88,6 +91,7 @@ export const StickyEditor = React.forwardRef(function StickyEditor(
     >
       <LiteTextEditorWithRef
         ref={ref}
+        contentDirection={contentDirection}
         disabledExtensions={[...liteTextEditorExtensions.disabled, "enter-key"]}
         flaggedExtensions={liteTextEditorExtensions.flagged}
         editable

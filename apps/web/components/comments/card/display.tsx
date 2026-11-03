@@ -24,6 +24,7 @@ import { CommentReactions } from "../comment-reaction";
 import { CommentCardEditForm } from "./edit-form";
 import { EmojiReactionButton, EmojiReactionPicker } from "@plane/blocks/emoji-reaction";
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 
 export type TCommentCardDisplayProps = {
   activityOperations: TCommentsOperations;
@@ -59,6 +60,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
     renderQuickActions,
     showConnector = true,
   } = props;
+  const { calendarSystem } = useUserProfile();
   // states
   const [isHighlighted, setIsHighlighted] = useState(false);
   // state
@@ -136,9 +138,9 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
           }
           timestamp={
             <ActivityTimelineTimestamp
-              tooltip={`${renderFormattedDate(comment.created_at)} at ${renderFormattedTime(comment.created_at)}`}
+              tooltip={`${renderFormattedDate(comment.created_at, undefined, calendarSystem)} at ${renderFormattedTime(comment.created_at)}`}
             >
-              {calculateTimeAgo(comment.created_at)}
+              {calculateTimeAgo(comment.created_at, calendarSystem)}
               {comment.edited_at && " (edited)"}
             </ActivityTimelineTimestamp>
           }

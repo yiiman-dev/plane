@@ -347,6 +347,7 @@ export const ModuleAnalyticsSidebar = observer(function ModuleAnalyticsSidebar(p
                           mergeDates
                           placeholder={`${t("start_date")} - ${t("end_date")}`}
                           weekStartsOn={userProfile?.start_of_the_week}
+                          calendarSystem={userProfile?.calendar_system}
                           disabled={!isEditingAllowed || isArchived}
                         />
                       );

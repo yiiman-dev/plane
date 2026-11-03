@@ -12,7 +12,7 @@ import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { FormProvider, useForm } from "react-hook-form";
 // editor
-import { ETabIndices, DEFAULT_WORK_ITEM_FORM_VALUES } from "@plane/constants";
+import { ETabIndices, DEFAULT_WORK_ITEM_FORM_VALUES, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { EditorRefApi } from "@plane/editor";
 // i18n
 import { useTranslation } from "@plane/i18n";
@@ -50,6 +50,7 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { useWorkspaceDraftIssues } from "@/hooks/store/workspace-draft";
+import { useUserPermissions } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 import { useProjectIssueProperties } from "@/hooks/use-project-issue-properties";
 
@@ -154,6 +155,18 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
   } = methods;
 
   const projectId = watch("project_id");
+
+  // renaming an existing work item is restricted to project admins, while
+  // creating a new work item keeps the title editable for members
+  const { allowPermissions } = useUserPermissions();
+  const isTitleEditable =
+    !data?.id ||
+    allowPermissions(
+      [EUserPermissions.ADMIN],
+      EUserPermissionsLevel.PROJECT,
+      workspaceSlug?.toString(),
+      projectId ?? undefined
+    );
 
   const isDisabled = isSubmitting || isApplyingTemplate;
 
@@ -388,6 +401,7 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
                 issueTitleRef={issueTitleRef}
                 formState={formState}
                 handleFormChange={handleFormChange}
+                disabled={!isTitleEditable}
               />
             </DialogHeader>
             <DialogBody tabIndex={0} render={<div className="vertical-scrollbar scrollbar-sm" />}>

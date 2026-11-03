@@ -17,7 +17,8 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 # Module imports
-from plane.db.models import EmailNotificationLog, Issue, User
+from plane.db.models import EmailNotificationLog, Issue, Profile, User
+from plane.utils.calendar_format import format_activity_datetime, format_date_str
 from plane.license.utils.instance_value import get_email_configuration
 from plane.settings.redis import redis_instance
 from plane.utils.email import generate_plain_text_from_html
@@ -182,6 +183,12 @@ def send_email_notification(issue_id, notification_data, receiver_id, email_noti
 
             receiver = User.objects.get(pk=receiver_id)
             issue = Issue.objects.get(pk=issue_id)
+            calendar_system = (
+                Profile.objects.filter(user=receiver)
+                .values_list("calendar_system", flat=True)
+                .first()
+                or "gregorian"
+            )
             template_data = []
             total_changes = 0
             comments = []
@@ -217,8 +224,16 @@ def send_email_notification(issue_id, notification_data, receiver_id, email_noti
                         }
                     )
                 activity_time = changes.pop("activity_time")
-                # Parse the input string into a datetime object
-                formatted_time = datetime.strptime(activity_time, "%Y-%m-%d %H:%M:%S").strftime("%H:%M %p")
+                formatted_time = format_activity_datetime(activity_time, calendar_system)
+
+                # Format raw ISO date strings (e.g. due-date changes) using the
+                # receiver's calendar so they match the rest of the email.
+                if "target_date" in changes:
+                    for side in ("new_value", "old_value"):
+                        raw = changes["target_date"].get(side, [])
+                        changes["target_date"][side] = [
+                            format_date_str(v, calendar_system) if v else v for v in raw
+                        ]
 
                 if changes:
                     template_data.append(
@@ -233,7 +248,7 @@ def send_email_notification(issue_id, notification_data, receiver_id, email_noti
                                 "name": issue.name,
                                 "identifier": f"{issue.project.identifier}-{issue.sequence_id}",
                             },
-                            "activity_time": str(formatted_time),
+                            "activity_time": formatted_time,
                         }
                     )
 

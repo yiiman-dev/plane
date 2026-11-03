@@ -43,6 +43,7 @@ export interface IPartialProject {
 }
 
 export interface IProject extends IPartialProject {
+  is_time_tracking_enabled?: boolean;
   archive_in?: number;
   close_in?: number;
   // only for uploading the cover image

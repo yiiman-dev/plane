@@ -4,10 +4,12 @@
  * See the LICENSE file for details.
  */
 
+import { observer } from "mobx-react";
 import { CalendarOutline, DueDateOutline, StartDateOutline } from "@makeplane/propel/icons";
 // plane imports
 import type { TStateGroups } from "@plane/types";
 import { cn, getIssueDueDateClassName, renderFormattedDate } from "@plane/utils";
+import { useUserProfile } from "@/hooks/store/user";
 
 type Props = {
   startDate: string | null;
@@ -15,8 +17,13 @@ type Props = {
   targetDate: string | null;
 };
 
-export function WorkItemPreviewCardDate(props: Props) {
+// Wrapped in `observer` because the profile store loads asynchronously: without a subscription this
+// component reads `calendarSystem` once and would keep rendering Gregorian dates if the profile
+// landed after this card mounted.
+export const WorkItemPreviewCardDate = observer(function WorkItemPreviewCardDate(props: Props) {
   const { startDate, stateGroup, targetDate } = props;
+  // store hooks
+  const { calendarSystem } = useUserProfile();
   // derived values
   const isDateRangeEnabled = Boolean(startDate && targetDate);
   const dueDateClassName = getIssueDueDateClassName(targetDate, stateGroup);
@@ -29,20 +36,21 @@ export function WorkItemPreviewCardDate(props: Props) {
         <div className={cn("flex h-full items-center gap-1", dueDateClassName)}>
           <CalendarOutline className="size-3 shrink-0" />
           <span>
-            {renderFormattedDate(startDate)} - {renderFormattedDate(targetDate)}
+            {renderFormattedDate(startDate, undefined, calendarSystem)} -{" "}
+            {renderFormattedDate(targetDate, undefined, calendarSystem)}
           </span>
         </div>
       ) : startDate ? (
         <div className="flex h-full items-center gap-1">
           <StartDateOutline className="size-3 shrink-0" />
-          <span>{renderFormattedDate(startDate)}</span>
+          <span>{renderFormattedDate(startDate, undefined, calendarSystem)}</span>
         </div>
       ) : (
         <div className={cn("flex h-full items-center gap-1", dueDateClassName)}>
           <DueDateOutline className="size-3 shrink-0" />
-          <span>{renderFormattedDate(targetDate)}</span>
+          <span>{renderFormattedDate(targetDate, undefined, calendarSystem)}</span>
         </div>
       )}
     </div>
   );
-}
+});

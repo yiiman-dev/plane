@@ -23,6 +23,7 @@ import { IssueAttachmentDeleteModal } from "@/components/issues/attachment/delet
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // types
 import type { TAttachmentHelpers } from "../issue-detail-widgets/attachments/helper";
@@ -41,6 +42,7 @@ export const IssueAttachmentsDetail = observer(function IssueAttachmentsDetail(p
   const { attachmentId, attachmentHelpers, disabled } = props;
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   const {
     attachment: { getAttachmentById },
   } = useIssueDetail();
@@ -90,7 +92,7 @@ export const IssueAttachmentsDetail = observer(function IssueAttachmentsDetail(p
           <Tooltip
             label={`${
               getUserDetails(attachment.updated_by)?.display_name ?? ""
-            } uploaded on ${renderFormattedDate(attachment.updated_at)}`}
+            } uploaded on ${renderFormattedDate(attachment.updated_at, undefined, calendarSystem)}`}
             layout="stacked"
             disabled={isMobile}
           >

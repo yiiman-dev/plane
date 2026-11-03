@@ -11,7 +11,7 @@ import type { IEditorPropsExtended, EditorRefApi, IDocumentEditorProps, TFileHan
 import type { MakeOptional, TSearchEntityRequestPayload, TSearchResponse } from "@plane/types";
 import { cn } from "@plane/utils";
 // hooks
-import { useEditorConfig, useEditorMention } from "@/hooks/editor";
+import { useContentTextDirection, useEditorConfig, useEditorMention } from "@/hooks/editor";
 import { useMember } from "@/hooks/store/use-member";
 import { useParseEditorContent } from "@/hooks/use-parse-editor-content";
 import { useEditorFlagging } from "@/hooks/use-editor-flagging";
@@ -54,6 +54,8 @@ export const DocumentEditor = forwardRef(function DocumentEditor(
   } = props;
   // store hooks
   const { getUserDetails } = useMember();
+  // content text direction
+  const contentDirection = useContentTextDirection();
   // parse content
   const { getEditorMetaData } = useParseEditorContent({
     projectId,
@@ -75,6 +77,7 @@ export const DocumentEditor = forwardRef(function DocumentEditor(
   return (
     <DocumentEditorWithRef
       ref={ref}
+      contentDirection={contentDirection}
       disabledExtensions={[...documentEditorExtensions.disabled, ...(additionalDisabledExtensions ?? [])]}
       editable={editable}
       flaggedExtensions={documentEditorExtensions.flagged}

@@ -11,6 +11,7 @@ import { Icon } from "@makeplane/propel/components/icon";
 import { DownloadOutline } from "@makeplane/propel/icons";
 import type { IExportData } from "@plane/types";
 import { getDate, getFileURL, renderFormattedDate } from "@plane/utils";
+import { useUserProfile } from "@/hooks/store/user";
 
 type RowData = IExportData;
 const checkExpiry = (inputDateString: string) => {
@@ -21,6 +22,9 @@ const checkExpiry = (inputDateString: string) => {
   return expiryDate > currentDate;
 };
 export const useExportColumns = () => {
+  // Called from an `observer` component, so reading the profile here re-renders the table when
+  // the async profile load lands.
+  const { calendarSystem } = useUserProfile();
   const columns = [
     {
       key: "Exported By",
@@ -43,7 +47,7 @@ export const useExportColumns = () => {
     {
       key: "Exported On",
       content: "Exported On",
-      tdRender: (rowData: RowData) => <span>{renderFormattedDate(rowData.created_at)}</span>,
+      tdRender: (rowData: RowData) => <span>{renderFormattedDate(rowData.created_at, undefined, calendarSystem)}</span>,
     },
 
     {

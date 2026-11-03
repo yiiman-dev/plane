@@ -10,13 +10,23 @@ import {
   ImageOutline,
   LockOutline,
   MailOutline,
+  PhoneOutline,
   SettingsOutline,
   WorkspaceOutline,
 } from "@makeplane/propel/icons";
+import { CreditCard } from "lucide-react";
 // types
 import type { TSidebarMenuItem } from "./types";
 
-export type TCoreSidebarMenuKey = "general" | "email" | "workspace" | "authentication" | "ai" | "image";
+export type TCoreSidebarMenuKey =
+  | "general"
+  | "email"
+  | "notification-channels"
+  | "billing"
+  | "workspace"
+  | "authentication"
+  | "ai"
+  | "image";
 
 export const coreSidebarMenuLinks: Record<TCoreSidebarMenuKey, TSidebarMenuItem> = {
   general: {
@@ -30,6 +40,18 @@ export const coreSidebarMenuLinks: Record<TCoreSidebarMenuKey, TSidebarMenuItem>
     name: "Email",
     description: "Configure your SMTP controls.",
     href: `/email/`,
+  },
+  "notification-channels": {
+    Icon: PhoneOutline,
+    name: "Notification channels",
+    description: "Configure SMS and Bale delivery for notifications.",
+    href: `/notification-channels/`,
+  },
+  billing: {
+    Icon: CreditCard,
+    name: "Billing & payments",
+    description: "Configure Iranian payment gateways, routing, plans and invoices.",
+    href: `/billing/analytics/`,
   },
   workspace: {
     Icon: WorkspaceOutline,

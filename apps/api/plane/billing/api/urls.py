@@ -1,0 +1,214 @@
+# Copyright (c) 2023-present Plane Software, Inc. and contributors
+# SPDX-License-Identifier: AGPL-3.0-only
+# See the LICENSE file for details.
+
+from django.urls import path
+
+from plane.billing.api.views.admin_views import (
+    AdminAccessLogEndpoint,
+    AdminBillingAnalyticsEndpoint,
+    AdminSmsReportEndpoint,
+    AdminWorkspaceBillingEndpoint,
+    AdminWorkspaceListEndpoint,
+    FeatureFlagDetailEndpoint,
+    FeatureFlagListCreateEndpoint,
+    GatewayDetailEndpoint,
+    GatewayListCreateEndpoint,
+    GatewayRoutingConfigEndpoint,
+    InvoiceDetailEndpoint,
+    InvoiceListEndpoint,
+    PlanDetailEndpoint,
+    PlanFeatureFlagEndpoint,
+    PlanListCreateEndpoint,
+    QueuedTransactionListEndpoint,
+    RenewalNoticeScheduleEndpoint,
+    TransactionDetailEndpoint,
+    TransactionListEndpoint,
+    TransactionRejectHoldEndpoint,
+    TransactionReleaseHoldEndpoint,
+    TransactionRetryEndpoint,
+)
+from plane.billing.api.views.callback_views import (
+    PayPingCallbackEndpoint,
+    PaymentCallbackEndpoint,
+    ZibalStartEndpoint,
+)
+from plane.billing.api.views.user_views import (
+    PaymentOrderCreateEndpoint,
+    PaymentOrderStatusEndpoint,
+    PlanQuoteEndpoint,
+    PlanListEndpoint,
+    SubscriptionListEndpoint,
+)
+from plane.billing.api.views.wallet_views import (
+    AdminWorkspaceGrantView,
+    AdminWorkspaceLedgerView,
+    AdminWorkspaceRevokeView,
+    AdminWorkspaceWalletView,
+    WorkspaceLedgerView,
+    WorkspaceWalletView,
+)
+from plane.billing.api.views.workspace_views import (
+    WorkspaceEntitlementEndpoint,
+    WorkspaceFeatureFlagDisableEndpoint,
+    WorkspaceFeatureFlagEnableEndpoint,
+    WorkspaceFeatureFlagListEndpoint,
+    WorkspaceFreePlanEndpoint,
+)
+
+urlpatterns = [
+    # instance admin (god mode)
+    path("admin/analytics/", AdminBillingAnalyticsEndpoint.as_view(), name="billing-admin-analytics"),
+    path("admin/gateways/", GatewayListCreateEndpoint.as_view(), name="billing-gateways"),
+    path("admin/gateways/<uuid:pk>/", GatewayDetailEndpoint.as_view(), name="billing-gateway-detail"),
+    path("admin/routing/", GatewayRoutingConfigEndpoint.as_view(), name="billing-routing"),
+    path("admin/plans/", PlanListCreateEndpoint.as_view(), name="billing-plans"),
+    path("admin/plans/<uuid:pk>/", PlanDetailEndpoint.as_view(), name="billing-plan-detail"),
+    path(
+        "admin/feature-flags/",
+        FeatureFlagListCreateEndpoint.as_view(),
+        name="billing-feature-flags",
+    ),
+    path(
+        "admin/feature-flags/<uuid:pk>/",
+        FeatureFlagDetailEndpoint.as_view(),
+        name="billing-feature-flag-detail",
+    ),
+    path(
+        "admin/plans/<uuid:pk>/feature-flags/",
+        PlanFeatureFlagEndpoint.as_view(),
+        name="billing-plan-feature-flags",
+    ),
+    # The audit trail of the admin money reads above, for the operator who made
+    # them. Registered with the other instance-admin routes; the only thing that
+    # separates it from ``admin/workspaces/<slug>/...`` is its own literal path.
+    path("admin/access-log/", AdminAccessLogEndpoint.as_view(), name="billing-admin-access-log"),
+    # What the wallets paid for SMS, and what was delivered for it. Registered
+    # apart from the workspace-scoped routes because it spans tenants; the
+    # ``admin/workspaces/`` prefix belongs to routes that name one.
+    path("admin/sms-report/", AdminSmsReportEndpoint.as_view(), name="billing-admin-sms-report"),
+    # The reminder days for renewals (phase 5). Instance-wide, so it sits with the other
+    # god mode routes rather than under ``admin/workspaces/``.
+    path(
+        "admin/renewal-notifications/",
+        RenewalNoticeScheduleEndpoint.as_view(),
+        name="billing-admin-renewal-notifications",
+    ),
+    path("admin/invoices/", InvoiceListEndpoint.as_view(), name="billing-invoices"),
+    path("admin/invoices/<uuid:pk>/", InvoiceDetailEndpoint.as_view(), name="billing-invoice-detail"),
+    path("admin/transactions/", TransactionListEndpoint.as_view(), name="billing-transactions"),
+    # The ambiguous payment queue and the three decisions an operator can take
+    # on a queued payment (M5). The literal ``queued/`` route is registered
+    # before the ``<uuid:pk>/`` one; the converter would not match the word, but
+    # the order makes the intent visible.
+    path("admin/transactions/queued/", QueuedTransactionListEndpoint.as_view(), name="billing-transactions-queued"),
+    path(
+        "admin/transactions/<uuid:pk>/",
+        TransactionDetailEndpoint.as_view(),
+        name="billing-transaction-detail",
+    ),
+    path(
+        "admin/transactions/<uuid:pk>/retry/",
+        TransactionRetryEndpoint.as_view(),
+        name="billing-transaction-retry",
+    ),
+    path(
+        "admin/transactions/<uuid:pk>/release-hold/",
+        TransactionReleaseHoldEndpoint.as_view(),
+        name="billing-transaction-release-hold",
+    ),
+    path(
+        "admin/transactions/<uuid:pk>/reject-hold/",
+        TransactionRejectHoldEndpoint.as_view(),
+        name="billing-transaction-reject-hold",
+    ),
+    # user facing
+    path("plans/", PlanListEndpoint.as_view(), name="billing-public-plans"),
+    path("plans/<str:code>/quote/", PlanQuoteEndpoint.as_view(), name="billing-plan-quote"),
+    path("orders/", PaymentOrderCreateEndpoint.as_view(), name="billing-create-order"),
+    path("orders/<uuid:pk>/", PaymentOrderStatusEndpoint.as_view(), name="billing-order-status"),
+    path("subscriptions/", SubscriptionListEndpoint.as_view(), name="billing-subscriptions"),
+    # workspace scoped, the prefix of this urlconf keeps every billing route together
+    path(
+        "workspaces/<slug:slug>/billing/entitlement/",
+        WorkspaceEntitlementEndpoint.as_view(),
+        name="billing-workspace-entitlement",
+    ),
+    path(
+        "workspaces/<slug:slug>/billing/free-plan/",
+        WorkspaceFreePlanEndpoint.as_view(),
+        name="billing-workspace-free-plan",
+    ),
+    path(
+        "workspaces/<slug:slug>/feature-flags/",
+        WorkspaceFeatureFlagListEndpoint.as_view(),
+        name="billing-workspace-feature-flags",
+    ),
+    path(
+        "workspaces/<slug:slug>/feature-flags/<str:code>/enable/",
+        WorkspaceFeatureFlagEnableEndpoint.as_view(),
+        name="billing-workspace-feature-flag-enable",
+    ),
+    path(
+        "workspaces/<slug:slug>/feature-flags/<str:code>/disable/",
+        WorkspaceFeatureFlagDisableEndpoint.as_view(),
+        name="billing-workspace-feature-flag-disable",
+    ),
+    # Instance admin workspace triage. Guarded by InstanceAdminPermission.
+    # The COLLECTION path is registered before the slug-parameterised one on
+    # purpose: ``path()`` matches in declaration order, so a future greedy
+    # ``admin/workspaces/<slug>/...`` catch-all registered above this would
+    # shadow the list. Keep the collection route first in this block.
+    path("admin/workspaces/", AdminWorkspaceListEndpoint.as_view(), name="billing-admin-workspaces"),
+    path(
+        "admin/workspaces/<str:slug>/billing/",
+        AdminWorkspaceBillingEndpoint.as_view(),
+        name="billing-admin-workspace-billing",
+    ),
+    # Instance admin wallet management. Guarded by InstanceAdminPermission and
+    # able to read any workspace's wallet and ledger.
+    path(
+        "admin/workspaces/<str:slug>/wallet/",
+        AdminWorkspaceWalletView.as_view(),
+        name="admin-workspace-wallet",
+    ),
+    path(
+        "admin/workspaces/<str:slug>/wallet/ledger/",
+        AdminWorkspaceLedgerView.as_view(),
+        name="admin-workspace-ledger",
+    ),
+    path(
+        "admin/workspaces/<str:slug>/wallet/grant/",
+        AdminWorkspaceGrantView.as_view(),
+        name="admin-workspace-wallet-grant",
+    ),
+    path(
+        "admin/workspaces/<str:slug>/wallet/revoke/",
+        AdminWorkspaceRevokeView.as_view(),
+        name="admin-workspace-wallet-revoke",
+    ),
+    # Workspace scoped money reads. Guarded by WorkspaceBillingLedgerPermission
+    # (active role 20 only) and serialised with the narrow tenant projection.
+    path(
+        "workspaces/<str:slug>/billing/ledger/",
+        WorkspaceLedgerView.as_view(),
+        name="workspace-billing-ledger",
+    ),
+    path(
+        "workspaces/<str:slug>/billing/wallet/",
+        WorkspaceWalletView.as_view(),
+        name="workspace-billing-wallet",
+    ),
+    # gateway callbacks, the path must match the URL registered in each panel
+    path("callback/<str:gateway_code>/", PaymentCallbackEndpoint.as_view(), name="billing-callback"),
+    path(
+        "callback/payping/paid/<str:ref_id>/<str:payment_code>/",
+        PayPingCallbackEndpoint.as_view(),
+        name="billing-callback-payping",
+    ),
+    path(
+        "callback/zibal/start/<str:track_id>/",
+        ZibalStartEndpoint.as_view(),
+        name="billing-callback-zibal-start",
+    ),
+]

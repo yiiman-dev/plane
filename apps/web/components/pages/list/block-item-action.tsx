@@ -14,6 +14,7 @@ import { FavoriteStar } from "@plane/blocks/common";
 import { renderFormattedDate, getFileURL } from "@plane/utils";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePageOperations } from "@/hooks/use-page-operations";
 // plane web hooks
 import type { EPageStoreType } from "@/hooks/store";
@@ -32,6 +33,7 @@ export const BlockItemAction = observer(function BlockItemAction(props: Props) {
   const { page, parentRef, storeType } = props;
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   // page operations
   const { pageOperations } = usePageOperations({
     page,
@@ -61,7 +63,7 @@ export const BlockItemAction = observer(function BlockItemAction(props: Props) {
       </div>
       {/* page info */}
       <div className="grid size-(--control-height-sm) cursor-default place-items-center text-icon-secondary [--node-size:var(--control-glyph-sm)]">
-        <Tooltip label={`Created on ${renderFormattedDate(created_at)}`} layout="stacked">
+        <Tooltip label={`Created on ${renderFormattedDate(created_at, undefined, calendarSystem)}`} layout="stacked">
           <Icon icon={InfoOutline} />
         </Tooltip>
       </div>

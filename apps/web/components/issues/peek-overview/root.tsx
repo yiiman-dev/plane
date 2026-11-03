@@ -234,6 +234,13 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
     peekIssue?.workspaceSlug,
     peekIssue?.projectId
   );
+  // renaming a work item is restricted to project admins
+  const isTitleEditable = allowPermissions(
+    [EUserPermissions.ADMIN],
+    EUserPermissionsLevel.PROJECT,
+    peekIssue?.workspaceSlug,
+    peekIssue?.projectId
+  );
 
   return (
     <IssueView
@@ -244,6 +251,7 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
       isError={error}
       is_archived={!!peekIssue.isArchived}
       disabled={!isEditable}
+      titleDisabled={!isTitleEditable}
       embedIssue={embedIssue}
       embedRemoveCurrentNotification={embedRemoveCurrentNotification}
       issueOperations={issueOperations}

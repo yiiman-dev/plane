@@ -12,6 +12,8 @@ export function useSidebarMenu(): TSidebarMenuItem[] {
   return [
     coreSidebarMenuLinks.general,
     coreSidebarMenuLinks.email,
+    coreSidebarMenuLinks["notification-channels"],
+    coreSidebarMenuLinks.billing,
     coreSidebarMenuLinks.authentication,
     coreSidebarMenuLinks.workspace,
     coreSidebarMenuLinks.ai,

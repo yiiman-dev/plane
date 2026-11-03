@@ -22,6 +22,36 @@
 - **Testing**: All features require unit tests, use existing test framework per package
 - **Components**: Primitives come from the published `@makeplane/propel` npm package (`@makeplane/propel/components/*`, `elements/*`, `icons`); composite/Plane-specific components live in `@plane/blocks` (`packages/blocks`, subpath imports only, e.g. `@plane/blocks/toast`)
 
+## Feature flags
+
+- **Registration**: Every new user-facing capability MUST have a `FeatureFlag` row in
+  `apps/api/plane/billing` before or in the same change that introduces it. A capability with no
+  flag cannot be gated per plan and cannot be priced per seat later. `has_feature()` had zero
+  production callers until Phase 3 of the billing work — that is what "registered but unread"
+  looks like.
+- **Default Plan Availability**: Every new feature must be registered in the system's feature flags
+  so its availability across financial/billing plans can be controlled. By default, it MUST be
+  enabled across all plans, unless explicitly configured to be disabled for specific plans.
+  - هر فیچر جدیدی که تولید می‌شود باید به فیچرفلگ‌های سیستم اضافه شود تا معلوم شود در کدام پلن‌های مالی قابل استفاده است و به‌صورت پیش‌فرض در تمامی پلن‌ها فعال باشد، مگر اینکه برای برخی پلن‌های مالی غیرفعال شود.
+- **Developer Confirmation & Autonomous Mode**: When introducing a new feature, ask the developer
+  whether this feature should be added to feature flags and whether it should be active by default
+  across all plans. If the developer specifies autonomous mode (or asks to work autonomously),
+  automatically register the feature in feature flags and enable it across all financial plans by default.
+  - هنگام پیاده‌سازی هر فیچر جدید باید از توسعه‌دهنده پرسیده شود که آیا این فیچر به فیچرفلگ‌ها اضافه شود و در همهٔ پلن‌ها پیش‌فرض فعال باشد یا خیر؛ اما اگر برنامه‌نویس گفت کار به‌صورت autonomous (خودمختار) انجام شود، آن فیچر را به‌صورت پیش‌فرض به فیچرفلگ‌ها اضافه کرده و برای همهٔ پلن‌های مالی فعال کن.
+- **limit_type**: Each flag declares `boolean`, `number` or `unlimited`. Choose `number` with a
+  `unit_label` whenever the capability has a countable limit — a single global limit across flags
+  does not work, because "5 charts" and "10 projects" are not the same constraint. A
+  `limit_value` on a non-number flag is rejected by the serializer rather than silently dropped.
+- **Gating**: Gate the capability with `has_feature(workspace, code)` from
+  `plane.billing.services.entitlements`, and read a countable limit with
+  `feature_limit(workspace, code)`. Do not read `PlanFeatureFlag` directly, and do not branch on
+  `plan.code` — that couples the code to the plan catalogue.
+- **Testing**: Gating needs a test that covers the off case, otherwise the flag silently does
+  nothing. A flag whose limit is stored but never read is the same failure with a smaller blast
+  radius.
+
+See `docs/superpowers/specs/2026-10-07-billing-wallet-upgrade-design.md` for the design.
+
 ## Backend dependencies (uv)
 
 `apps/api` dependencies are managed with [uv](https://docs.astral.sh/uv/): declared in `apps/api/pyproject.toml`, pinned in `apps/api/uv.lock` (commit both). Groups: `dev` and `test` (installed by default; they use `psycopg-binary`), `production` (gunicorn + the source-built `psycopg-c`; production image and migration-check only). Lint config lives in `apps/api/ruff.toml`.
@@ -43,3 +73,11 @@ Prereq (once): `./setup.sh` — generates `apps/api/.env` from `.env.example`.
 - Teardown: `docker compose -f docker-compose-test.yml down -v`
 
 See `apps/api/tests/RUNNING_TESTS.md` for the full walkthrough and troubleshooting; see `apps/api/tests/TESTING_GUIDE.md` for test conventions and fixtures.
+
+## Feature Delivery & Changelog
+
+- **Changelist**: Whenever a feature is implemented or modified, document the changes in a clear changelist so it is transparent what was added, modified, or removed.
+- **PO Rationale (Persian)**: Explain the reason for the changes (reflecting the Product Owner's requirement) in simple, concise Persian:
+  - هر فیچری که تولید یا تغییر داده می‌شود، تغییرات باید در یک چنج‌لیست مشخص شود تا معلوم باشد چه بخش‌هایی تغییر کرده‌اند.
+  - دلیل تغییرات (خواستهٔ PO) باید به زبان ساده، بسیار کوتاه و به زبان فارسی توضیح داده شود.
+

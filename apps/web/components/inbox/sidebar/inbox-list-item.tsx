@@ -20,6 +20,7 @@ import { ButtonAvatars } from "@/components/dropdowns/member/avatar";
 // hooks
 import { useLabel } from "@/hooks/store/use-label";
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 import { useProjectInbox } from "@/hooks/store/use-project-inbox";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // local imports
@@ -45,6 +46,7 @@ export const InboxIssueListItem = observer(function InboxIssueListItem(props: In
   const { projectLabels } = useLabel();
   const { isMobile } = usePlatformOS();
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   const inboxIssue = getIssueInboxByIssueId(inboxIssueId);
   const issue = inboxIssue?.issue;
 
@@ -56,7 +58,7 @@ export const InboxIssueListItem = observer(function InboxIssueListItem(props: In
   if (!issue) return <></>;
 
   const createdByDetails = issue?.created_by ? getUserDetails(issue?.created_by) : undefined;
-  const createdOn = renderFormattedDate(issue.created_at ?? "");
+  const createdOn = renderFormattedDate(issue.created_at ?? "", undefined, calendarSystem);
 
   return (
     <>

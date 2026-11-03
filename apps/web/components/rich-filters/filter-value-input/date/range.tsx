@@ -57,6 +57,7 @@ export const DateRangeFilterValueInput = observer(function DateRangeFilterValueI
       // dropdown drew no arrow without a `placeholder.to`, so the whole empty state is "--".
       placeholder={EMPTY_FILTER_PLACEHOLDER_TEXT}
       weekStartsOn={userProfile?.start_of_the_week}
+      calendarSystem={userProfile?.calendar_system}
       // A pill segment of the condition, like the property and operator segments beside it.
       className={cn("max-w-none text-body-xs-regular", { "text-danger-primary": isIncomplete })}
       variant="pill-lg"

@@ -56,6 +56,7 @@ export const SpreadsheetDueDateColumn = observer(function SpreadsheetDueDateColu
         // `.clickable` is what the table's keyboard navigation clicks on Enter / Space in a focused cell.
         className={cn("clickable h-full", getIssueDueDateClassName(issue.target_date, stateDetails?.group))}
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         onClose={onClose}
         variant="table-cell"
       />

@@ -53,6 +53,33 @@ app.conf.beat_schedule = {
         "task": "plane.bgtasks.issue_automation_task.unsnooze_expired_intake_issues",
         "schedule": crontab(minute="*/5"),  # Every 5 minutes
     },
+    "check-every-minute-to-send-notification-channel-notifications": {
+        "task": "plane.bgtasks.notification_channel_task.stack_notification_channel",
+        "schedule": crontab(minute="*"),  # Every minute
+    },
+    # Re-verify payments a gateway left processing or unavailable. Runs from beat
+    # so retries still happen when the broker is down at callback time.
+    "retry-pending-payment-verifications": {
+        "task": "plane.billing.services.tasks.retry_pending_verifications",
+        "schedule": crontab(minute="*"),  # Every minute
+    },
+    # Re-query stale / abandoned transactions left in pending or redirected status.
+    "requery-stale-payment-transactions": {
+        "task": "plane.billing.services.tasks.requery_stale_transactions",
+        "schedule": crontab(minute="*/5"),  # Every 5 minutes
+    },
+    # Money an ambiguous payment parked in a workspace's hold goes back to the
+    # wallet after ninety days if no operator decided on it, so it is never lost.
+    "release-expired-payment-holds": {
+        "task": "plane.billing.services.tasks.release_expired_holds",
+        "schedule": crontab(hour=1, minute=0),  # UTC 01:00, daily
+    },
+    # Renewal reminders for workspace admins. Daily, after the hold release, and
+    # only the day's mark is looked at, so a missed run is not made up later.
+    "send-renewal-notices": {
+        "task": "plane.billing.services.tasks.send_renewal_notices",
+        "schedule": crontab(hour=2, minute=0),  # UTC 02:00, daily
+    },
     "push-instance-metrics": {
         "task": "plane.license.bgtasks.telemetry_metrics.push_instance_metrics",
         "schedule": schedule(run_every=timedelta(minutes=METRICS_PUSH_INTERVAL_MINUTES)),

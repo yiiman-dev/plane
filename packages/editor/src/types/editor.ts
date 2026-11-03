@@ -10,6 +10,7 @@ import type { Selection } from "@tiptap/pm/state";
 import type { EditorProps, EditorView } from "@tiptap/pm/view";
 import type { NodeViewProps as TNodeViewProps } from "@tiptap/react";
 // plane imports
+import type { ETextDirection } from "@plane/types";
 import type { TCustomComponentsMetaData } from "@plane/utils";
 // extension types
 import type { TTextAlign } from "@/extensions";
@@ -155,6 +156,12 @@ export type EditorTitleRefApi = EditorRefApi;
 export type IEditorProps = {
   autofocus?: boolean;
   bubbleMenuEnabled?: boolean;
+  /**
+   * Base text direction of the rendered content, defaults to RTL. Applied to the editor
+   * content element only — never to the surrounding app chrome — so a Persian user can read
+   * Persian and English paragraphs side by side without the menus and layout flipping.
+   */
+  contentDirection?: ETextDirection;
   containerClassName?: string;
   displayConfig?: TDisplayConfig;
   disabledExtensions: TExtensions[];

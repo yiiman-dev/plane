@@ -19,6 +19,7 @@ import type { TPageVersion } from "@plane/types";
 import { renderFormattedDate, renderFormattedTime } from "@plane/utils";
 // helpers
 import type { EPageStoreType } from "@/hooks/store";
+import { useUserProfile } from "@/hooks/store/user";
 // local imports
 import type { TVersionEditorProps } from "./editor";
 
@@ -49,6 +50,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
   // translation
   const { t } = useTranslation();
   const [isRetrying, setIsRetrying] = useState(false);
+  const { calendarSystem } = useUserProfile();
 
   const {
     data: versionDetails,
@@ -110,7 +112,7 @@ export const PageVersionsMainContent = observer(function PageVersionsMainContent
             <div className="flex items-center gap-4">
               <h6 className="text-body-sm-medium text-primary">
                 {versionDetails
-                  ? `${renderFormattedDate(versionDetails.last_saved_at)} ${renderFormattedTime(versionDetails.last_saved_at)}`
+                  ? `${renderFormattedDate(versionDetails.last_saved_at, undefined, calendarSystem)} ${renderFormattedTime(versionDetails.last_saved_at)}`
                   : t("page_navigation_pane.tabs.version_history.loading_details")}
               </h6>
               <Badge

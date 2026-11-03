@@ -20,6 +20,7 @@ import { getIconForLink, copyTextToClipboard, calculateTimeAgo } from "@plane/ut
 //
 // hooks
 import { useMember } from "@/hooks/store/use-member";
+import { useUserProfile } from "@/hooks/store/user";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 
 type Props = {
@@ -35,6 +36,7 @@ export const ModulesLinksListItem = observer(function ModulesLinksListItem(props
   const { t } = useTranslation();
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const createdByDetails = getUserDetails(link.created_by);
   // platform os
@@ -71,7 +73,7 @@ export const ModulesLinksListItem = observer(function ModulesLinksListItem(props
           </a>
         </Tooltip>
         <p className="truncate text-caption-md-regular text-placeholder">
-          Added {calculateTimeAgo(link.created_at)}{" "}
+          Added {calculateTimeAgo(link.created_at, calendarSystem)}{" "}
           {createdByDetails && (
             <>by {createdByDetails?.is_bot ? createdByDetails?.first_name + " Bot" : createdByDetails?.display_name}</>
           )}

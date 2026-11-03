@@ -5,11 +5,12 @@
  */
 
 import { useState } from "react";
-import { format } from "date-fns";
-import { Calendar } from "@makeplane/propel/components/calendar";
+import { CalendarSurface, getCalendarAdapter } from "@plane/calendar";
+import type { CalendarMonthParts } from "@plane/calendar";
+import { renderFormattedDate } from "@plane/utils";
 import type { DateSelectCommonProps } from "./date-select-shell";
 import { DateSelectShell } from "./date-select-shell";
-import { buildDisabledMatchers, DEFAULT_DATE_FORMAT_TOKEN } from "./date-select.utils";
+import { DEFAULT_DATE_FORMAT_TOKEN } from "./date-select.utils";
 
 export type DateSelectProps = DateSelectCommonProps & {
   /** The picked day, or `null` when nothing is set. */
@@ -19,9 +20,9 @@ export type DateSelectProps = DateSelectCommonProps & {
 };
 
 /**
- * Presentational, data-source-agnostic single-day picker: the `Select` trigger chrome over a propel
- * `Calendar` in a popover. The client owns the value and supplies the user's `weekStartsOn` and
- * `formatToken` — this block owns only the picker.
+ * Presentational, data-source-agnostic single-day picker: the `Select` trigger chrome over a month
+ * grid in a popover. The client owns the value and supplies the user's `weekStartsOn`,
+ * `calendarSystem` and `formatToken` — this block owns only the picker.
  */
 export function DateSelect(props: DateSelectProps) {
   const {
@@ -31,6 +32,7 @@ export function DateSelect(props: DateSelectProps) {
     minDate,
     maxDate,
     weekStartsOn,
+    calendarSystem = "gregorian",
     defaultMonth,
     placeholder = "",
     clearable = false,
@@ -38,12 +40,29 @@ export function DateSelect(props: DateSelectProps) {
   } = props;
   // states
   const [isOpen, setIsOpen] = useState(props.defaultOpen ?? false);
+  /**
+   * Which month the Persian grid is showing. Only the Persian branch reads it — the Gregorian branch
+   * hands `defaultMonth` to `react-day-picker` and lets it re-seed on every mount — but it is
+   * seeded here from the same inputs so the two branches open on the same month.
+   */
+  const [visibleMonth, setVisibleMonth] = useState<CalendarMonthParts>(() => {
+    const seed = value ?? defaultMonth ?? new Date();
+    const { year, month } = getCalendarAdapter(calendarSystem).toParts(seed);
+    return { year, month };
+  });
   // derived values
-  const formatted = value ? format(value, formatToken) : "";
-  const disabledMatchers = buildDisabledMatchers(minDate, maxDate);
+  const formatted = renderFormattedDate(value, formatToken, calendarSystem) ?? "";
 
   const handleOpenChange = (open: boolean) => {
     setIsOpen(open);
+    // Re-seed the Persian grid's month on open, the way `react-day-picker` re-seeds from
+    // `defaultMonth` every time the popover remounts it. Without this, a value changed elsewhere
+    // while the popover was shut would leave the grid on a stale month.
+    if (open) {
+      const seed = value ?? defaultMonth ?? new Date();
+      const { year, month } = getCalendarAdapter(calendarSystem).toParts(seed);
+      setVisibleMonth({ year, month });
+    }
     if (!open) onClose?.();
   };
 
@@ -61,19 +80,23 @@ export function DateSelect(props: DateSelectProps) {
         handleOpenChange(false);
       }}
     >
-      <Calendar
+      <CalendarSurface
+        system={calendarSystem}
         mode="single"
-        selected={value ?? undefined}
-        defaultMonth={value ?? defaultMonth}
-        disabled={disabledMatchers}
-        weekStartsOn={weekStartsOn}
+        value={value}
         onSelect={(date) => {
           // A repeat click on the selected day deselects it in react-day-picker; treat that as a
           // clear only when the caller allows one, otherwise keep the current value.
           if (!date && !clearable) return;
-          onChange(date ?? null);
+          onChange(date);
           handleOpenChange(false);
         }}
+        month={visibleMonth}
+        onMonthChange={setVisibleMonth}
+        defaultMonth={defaultMonth}
+        weekStartsOn={weekStartsOn}
+        minDate={minDate}
+        maxDate={maxDate}
       />
     </DateSelectShell>
   );

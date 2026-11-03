@@ -258,6 +258,7 @@ export const CycleListItemAction = observer(function CycleListItemAction(props: 
               mergeDates
               disabled
               weekStartsOn={userProfile?.start_of_the_week}
+              calendarSystem={userProfile?.calendar_system}
               icon={<CalendarOutline />}
             />
           </>

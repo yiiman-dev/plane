@@ -10,6 +10,8 @@ import { Badge } from "@makeplane/propel/components/badge";
 import { Icon } from "@makeplane/propel/components/icon";
 import { ArchiveOutline } from "@makeplane/propel/icons";
 import { renderFormattedDate } from "@plane/utils";
+// hooks
+import { useUserProfile } from "@/hooks/store/user";
 // store
 import type { TPageInstance } from "@/store/pages/base-page";
 
@@ -18,6 +20,8 @@ type Props = {
 };
 
 export const PageArchivedBadge = observer(function PageArchivedBadge({ page }: Props) {
+  const { calendarSystem } = useUserProfile();
+
   if (!page.archived_at) return null;
 
   return (
@@ -25,7 +29,7 @@ export const PageArchivedBadge = observer(function PageArchivedBadge({ page }: P
       variant="brand"
       size="sm"
       startIcon={<Icon icon={ArchiveOutline} />}
-      label={`Archived at ${renderFormattedDate(page.archived_at) ?? ""}`}
+      label={`Archived at ${renderFormattedDate(page.archived_at, undefined, calendarSystem) ?? ""}`}
     />
   );
 });

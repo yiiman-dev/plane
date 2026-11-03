@@ -18,7 +18,7 @@ import { RichTextEditor } from "@/components/editor/rich-text";
 import { ActivitySettingsLoader } from "@/components/ui/loader/settings/activity";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
-import { useUser } from "@/hooks/store/user";
+import { useUser, useUserProfile } from "@/hooks/store/user";
 
 type Props = {
   activity: IUserActivityResponse | undefined;
@@ -31,6 +31,7 @@ export const ActivityList = observer(function ActivityList(props: Props) {
   // store hooks
   const { data: currentUser } = useUser();
   const { getWorkspaceBySlug } = useWorkspace();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const workspaceId = getWorkspaceBySlug(workspaceSlug?.toString() ?? "")?.id ?? "";
 
@@ -69,7 +70,7 @@ export const ActivityList = observer(function ActivityList(props: Props) {
                             : activityItem.actor_detail.display_name}
                         </div>
                         <p className="mt-0.5 text-caption-sm-regular text-secondary">
-                          Commented {calculateTimeAgo(activityItem.created_at)}
+                          Commented {calculateTimeAgo(activityItem.created_at, calendarSystem)}
                         </p>
                       </div>
                       <div className="issue-comments-section p-0">
@@ -155,7 +156,7 @@ export const ActivityList = observer(function ActivityList(props: Props) {
                             <div className="inline gap-1">
                               {message}{" "}
                               <span className="flex-shrink-0 whitespace-nowrap">
-                                {calculateTimeAgo(activityItem.created_at)}
+                                {calculateTimeAgo(activityItem.created_at, calendarSystem)}
                               </span>
                             </div>
                           </div>

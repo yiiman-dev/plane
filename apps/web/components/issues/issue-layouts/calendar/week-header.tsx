@@ -5,9 +5,7 @@
  */
 
 import { observer } from "mobx-react";
-import { EStartOfTheWeek } from "@plane/types";
-import { getOrderedDays } from "@plane/utils";
-import { DAYS_LIST } from "@plane/constants";
+import { getCalendarAdapter, isWeekend, resolveCalendarSystem, weekdayNames } from "@plane/blocks/property-select";
 // helpers
 // hooks
 import { useUserProfile } from "@/hooks/store/user";
@@ -17,14 +15,28 @@ type Props = {
   showWeekends: boolean;
 };
 
+/**
+ * A `Date` whose `getDay()` is `dayIndex`, so a weekday index can be asked about with the shared
+ * weekend helper. 15 June 2025 is a Sunday, which pins the offset.
+ */
+const dateForWeekday = (dayIndex: number) => new Date(2025, 5, 15 + dayIndex);
+
 export const CalendarWeekHeader = observer(function CalendarWeekHeader(props: Props) {
   const { isLoading, showWeekends } = props;
   // hooks
-  const { data } = useUserProfile();
-  const startOfWeek = data?.start_of_the_week;
+  const { data: userProfile } = useUserProfile();
+  const startOfWeek = userProfile?.start_of_the_week;
 
-  // derived
-  const orderedDays = getOrderedDays(Object.values(DAYS_LIST), (item) => item.value, startOfWeek);
+  const adapter = getCalendarAdapter(resolveCalendarSystem(userProfile?.calendar_system));
+
+  // The adapter already rotates the names so column 0 is the user's first day of the week, so the
+  // rotation that used to happen here — sorting `DAYS_LIST` by `EStartOfTheWeek.value` — is part of
+  // the lookup. The weekday index is recovered from the column position, which is the only place
+  // it is needed: to decide which two columns are the weekend.
+  const orderedDays = weekdayNames(adapter, "short", startOfWeek).map((name, index) => ({
+    name,
+    dayIndex: (startOfWeek + index) % 7,
+  }));
 
   return (
     <div
@@ -36,12 +48,11 @@ export const CalendarWeekHeader = observer(function CalendarWeekHeader(props: Pr
         <div className="absolute h-[1.5px] w-3/4 animate-[bar-loader_2s_linear_infinite] bg-accent-primary" />
       )}
       {orderedDays.map((day) => {
-        if (!showWeekends && (day.value === EStartOfTheWeek.SUNDAY || day.value === EStartOfTheWeek.SATURDAY))
-          return null;
+        if (!showWeekends && isWeekend(dateForWeekday(day.dayIndex), startOfWeek)) return null;
 
         return (
-          <div key={day.shortTitle} className="flex h-11 items-center justify-center bg-layer-1 px-4 md:justify-end">
-            {day.shortTitle}
+          <div key={day.name} className="flex h-11 items-center justify-center bg-layer-1 px-4 md:justify-end">
+            {day.name}
           </div>
         );
       })}

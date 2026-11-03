@@ -122,6 +122,7 @@
       "update_theme": "Change interface theme",
       "update_timezone": "Change timezone",
       "update_start_of_week": "Change first day of week",
+      "update_calendar_system": "Change calendar system",
       "update_language": "Change interface language",
       "toast": {
         "theme": {
@@ -166,6 +167,7 @@
       "update_theme": "Change theme",
       "update_timezone": "Change timezone",
       "update_start_of_week": "Change first day of week",
+      "update_calendar_system": "Change calendar system",
       "update_language": "Change language"
     },
     "search_menu": {

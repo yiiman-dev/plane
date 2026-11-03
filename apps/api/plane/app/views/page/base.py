@@ -45,7 +45,9 @@ from plane.db.models import (
     ProjectPage,
     Project,
     UserRecentVisit,
+    Workspace,
 )
+from plane.billing.services.entitlements import pages_rejection
 from plane.utils.error_codes import ERROR_CODES
 from plane.utils.order_queryset import PAGE_ORDER_BY_ALLOWLIST, sanitize_order_by
 
@@ -143,6 +145,11 @@ class PageViewSet(BaseViewSet):
         )
 
     def create(self, request, slug, project_id):
+        workspace = Workspace.objects.filter(slug=slug).first()
+        rejection = pages_rejection(workspace)
+        if rejection is not None:
+            return Response(rejection, status=status.HTTP_403_FORBIDDEN)
+
         serializer = PageSerializer(
             data=request.data,
             context={

@@ -1,0 +1,796 @@
+# Copyright (c) 2023-present Plane Software, Inc. and contributors
+# SPDX-License-Identifier: AGPL-3.0-only
+# See the LICENSE file for details.
+
+# Python imports
+import uuid
+
+# Django imports
+from django.db import models
+from django.utils import timezone
+
+# Module imports
+from plane.db.models.base import BaseModel
+
+
+class GatewayCode(models.TextChoices):
+    ZARINPAL = "zarinpal", "ZarinPal"
+    PAYPING = "payping", "PayPing"
+    ZIBAL = "zibal", "Zibal"
+    DIGIPAY = "digipay", "Digipay"
+
+
+class RoutingStrategy(models.TextChoices):
+    SCHEDULE = "schedule", "Schedule"
+    RANDOM = "random", "Random"
+    PRIORITY = "priority", "Priority"
+
+
+class BillingCycle(models.TextChoices):
+    MONTHLY = "monthly", "Monthly"
+    YEARLY = "yearly", "Yearly"
+
+
+class InvoiceStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    ISSUED = "issued", "Issued"
+    PAID = "paid", "Paid"
+    CANCELLED = "cancelled", "Cancelled"
+    EXPIRED = "expired", "Expired"
+    REFUND = "refund", "Refunded"
+
+
+class TransactionStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    REDIRECTED = "redirected", "Redirected"
+    PROCESSING = "processing", "Processing"
+    PAID = "paid", "Paid"
+    FAILED = "failed", "Failed"
+    UNAVAILABLE = "unavailable", "Unavailable"
+    REVERSED = "reversed", "Reversed"
+    # The last allowed verification could not say whether the payer was charged.
+    # The amount sits in the workspace's hold account until an instance admin
+    # decides, or the hold expires (M5).
+    HELD = "held", "Held"
+
+
+class LedgerAccountKind(models.TextChoices):
+    ASSET = "asset", "Asset"
+    LIABILITY = "liability", "Liability"
+    REVENUE = "revenue", "Revenue"
+    GATEWAY_SETTLEMENT = "gateway_settlement", "Gateway settlement"
+    ADMIN_POOL = "admin_pool", "Admin grant pool"
+
+
+class LedgerSource(models.TextChoices):
+    GATEWAY = "gateway", "Gateway"
+    ADMIN_GRANT = "admin_grant", "Admin grant"
+    SMS_CHARGE = "sms_charge", "SMS charge"
+    PLAN_PURCHASE = "plan_purchase", "Plan purchase"
+    UPGRADE = "upgrade", "Upgrade"
+    REFUND = "refund", "Refund"
+    HOLD = "hold", "Hold"
+    RELEASE_HOLD = "release_hold", "Release hold"
+    # The reversal of an ADMIN_GRANT, booked by ``revoke_grant``. It used to be
+    # booked as REFUND, which was wrong twice over: it filed an operator's
+    # internal cancellation note into the "payer's money came back" bucket that
+    # ``refund_to_spendable`` owns (so the ledger redaction that protects grant
+    # notes, keyed on the source, did not apply to this one), and any statement
+    # filtered on REFUND silently lost grant reversals. It is a separate source
+    # so its description can be redacted WITHOUT also redacting the payment
+    # reference a payer is entitled to.
+    GRANT_REVERSAL = "grant_reversal", "Grant reversal"
+    # A hold ending WITHOUT the wallet being credited: the gateway confirmed the
+    # payment after all (the money became a plan), or it confirmed the payer was
+    # never charged. ``RELEASE_HOLD`` is the other way a hold ends, and it does
+    # credit the wallet; the two must stay distinguishable on a statement.
+    HOLD_CLOSED = "hold_closed", "Hold closed"
+
+
+class SubscriptionStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    EXPIRED = "expired", "Expired"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+# How an upgrade in the middle of a paid cycle treats the unused remainder.
+PRORATION_CREDIT_REMAINING = "credit_remaining"
+PRORATION_NO_EXTENSION = "no_extension"
+PRORATION_MODE_CHOICES = (
+    (PRORATION_CREDIT_REMAINING, "اعتبار باقیمانده"),
+    (PRORATION_NO_EXTENSION, "بدون تمدید دوره"),
+)
+
+# A flag is either a switch, a number with a unit, or explicitly unlimited.
+LIMIT_TYPE_BOOLEAN = "boolean"
+LIMIT_TYPE_NUMBER = "number"
+LIMIT_TYPE_UNLIMITED = "unlimited"
+LIMIT_TYPE_CHOICES = (
+    (LIMIT_TYPE_BOOLEAN, "روشن یا خاموش"),
+    (LIMIT_TYPE_NUMBER, "محدودیت عددی"),
+    (LIMIT_TYPE_UNLIMITED, "نامحدود"),
+)
+
+
+class PaymentGateway(BaseModel):
+    """A payment gateway configuration row. Credentials are stored encrypted."""
+
+    code = models.CharField(
+        max_length=50,
+        choices=GatewayCode.choices,
+        unique=True,
+        db_index=True,
+        verbose_name="Gateway Code",
+    )
+    title = models.CharField(max_length=255, verbose_name="Title")
+    is_enabled = models.BooleanField(default=False, verbose_name="Enabled")
+    is_sandbox = models.BooleanField(default=True, verbose_name="Sandbox Mode")
+    credentials = models.TextField(blank=True, default="", verbose_name="Encrypted Credentials")
+    extra_config = models.JSONField(default=dict, blank=True, verbose_name="Extra Configuration")
+    priority = models.IntegerField(default=0, verbose_name="Priority")
+    last_error_at = models.DateTimeField(null=True, blank=True, verbose_name="Last Error At")
+    last_error_message = models.TextField(blank=True, default="", verbose_name="Last Error Message")
+
+    class Meta:
+        verbose_name = "Payment Gateway"
+        verbose_name_plural = "Payment Gateways"
+        ordering = ("priority", "code")
+
+    def __str__(self) -> str:
+        return f"{self.code}"
+
+    def credential_value(self, key: str, default=None):
+        """Return a single decrypted credential value."""
+        from plane.billing.services.credentials import get_credential
+
+        return get_credential(self, key, default)
+
+    def get_config(self, key: str, default=None):
+        return (self.extra_config or {}).get(key, default)
+
+    def mark_healthy(self) -> None:
+        self.last_error_at = None
+        self.last_error_message = ""
+        self.save(update_fields=["last_error_at", "last_error_message", "updated_at"])
+
+    def mark_unhealthy(self, message: str) -> None:
+        self.last_error_at = timezone.now()
+        self.last_error_message = (message or "")[:2000]
+        self.save(update_fields=["last_error_at", "last_error_message", "updated_at"])
+
+
+class GatewayRoutingConfig(BaseModel):
+    """Singleton model holding the multi gateway routing strategy."""
+
+    SINGLETON_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
+
+    strategy = models.CharField(
+        max_length=20,
+        choices=RoutingStrategy.choices,
+        default=RoutingStrategy.PRIORITY,
+        verbose_name="Strategy",
+    )
+    schedule_entries = models.JSONField(default=list, blank=True, verbose_name="Schedule Entries")
+    priority_order = models.JSONField(default=list, blank=True, verbose_name="Priority Order")
+    weights = models.JSONField(default=dict, blank=True, verbose_name="Weights")
+    cooldown_seconds = models.PositiveIntegerField(default=120, verbose_name="Cooldown Seconds")
+    max_attempts_per_gateway = models.PositiveIntegerField(default=2, verbose_name="Max Attempts Per Gateway")
+    last_selected_code = models.CharField(max_length=50, blank=True, default="", verbose_name="Last Selected Code")
+    last_selected_reason = models.CharField(max_length=255, blank=True, default="", verbose_name="Last Selected Reason")
+
+    class Meta:
+        verbose_name = "Gateway Routing Config"
+        verbose_name_plural = "Gateway Routing Configs"
+
+    def __str__(self) -> str:
+        return f"GatewayRoutingConfig({self.strategy})"
+
+    def save(self, *args, **kwargs):
+        self.pk = self.SINGLETON_ID
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):  # pragma: no cover - singleton guard
+        return None
+
+    @classmethod
+    def get_solo(cls):
+        instance, _created = cls.objects.get_or_create(pk=cls.SINGLETON_ID)
+        return instance
+
+
+class Plan(BaseModel):
+    """A subscription plan."""
+
+    # See FeatureFlag below: same module-level constants, also readable off the
+    # model (``Plan.PRORATION_CREDIT_REMAINING``) by the upgrade and renewal code.
+    PRORATION_CREDIT_REMAINING = PRORATION_CREDIT_REMAINING
+    PRORATION_NO_EXTENSION = PRORATION_NO_EXTENSION
+    PRORATION_MODE_CHOICES = PRORATION_MODE_CHOICES
+
+    code = models.CharField(max_length=50, unique=True, db_index=True, verbose_name="Plan Code")
+    name = models.CharField(max_length=255, verbose_name="Name")
+    description = models.TextField(blank=True, default="", verbose_name="Description")
+    access_level = models.CharField(max_length=100, default="", blank=True, verbose_name="Access Level")
+    monthly_price_toman = models.BigIntegerField(default=0, verbose_name="Monthly Price Toman")
+    yearly_price_toman = models.BigIntegerField(default=0, verbose_name="Yearly Price Toman")
+    per_seat_price_toman = models.BigIntegerField(default=0, verbose_name="Per Seat Price Toman")
+    included_seats = models.PositiveIntegerField(default=1, verbose_name="Included Seats")
+    min_seats = models.PositiveIntegerField(default=1, verbose_name="Minimum Seats")
+    max_seats = models.PositiveIntegerField(default=100, verbose_name="Maximum Seats")
+    features = models.JSONField(default=list, blank=True, verbose_name="Features")
+    is_active = models.BooleanField(default=True, verbose_name="Active")
+    sort_order = models.IntegerField(default=0, verbose_name="Sort Order")
+    # Position in the upgrade ladder: a higher rank is a higher tier. Equal ranks
+    # are sideways moves, so they are never treated as an upgrade.
+    tier_rank = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Tier Rank",
+        help_text="Higher numbers are higher tiers. Decides whether a purchase is an upgrade.",
+    )
+    currency = models.CharField(max_length=8, default="IRT", verbose_name="Currency")
+
+    # Phase 2: policy fields the Phase 3 and Phase 4 code reads. They land together
+    # so neither of those phases needs a migration of its own.
+    renew_lock_days = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Renew Lock Days",
+        help_text="Days before expiry that a renewal of the same plan is refused.",
+    )
+    proration_mode = models.CharField(
+        max_length=32,
+        default=PRORATION_CREDIT_REMAINING,
+        choices=PRORATION_MODE_CHOICES,
+        verbose_name="Proration Mode",
+    )
+    sms_prices = models.JSONField(
+        default=dict, blank=True, verbose_name="SMS Prices", help_text="Event code to price in Toman."
+    )
+
+    class Meta:
+        verbose_name = "Plan"
+        verbose_name_plural = "Plans"
+        ordering = ("sort_order", "code")
+
+    def __str__(self) -> str:
+        return f"{self.code}"
+
+    def price_for(self, cycle: str) -> int:
+        return self.yearly_price_toman if cycle == BillingCycle.YEARLY else self.monthly_price_toman
+
+    def calculate_subtotal(self, seats: int, cycle: str) -> int:
+        """Return the subtotal in toman. Discounts and taxes are zero for now."""
+        seats = max(self.min_seats, min(int(seats or 0), self.max_seats))
+        base = self.price_for(cycle)
+        extra_seats = max(0, seats - self.included_seats)
+        return int(base) + (int(self.per_seat_price_toman) * extra_seats)
+
+
+class Invoice(BaseModel):
+    """A billing invoice."""
+
+    number = models.CharField(max_length=64, unique=True, db_index=True, verbose_name="Invoice Number")
+    user = models.ForeignKey("db.User", on_delete=models.PROTECT, related_name="billing_invoices", verbose_name="User")
+    plan = models.ForeignKey("billing.Plan", on_delete=models.PROTECT, related_name="invoices", verbose_name="Plan")
+    seats = models.PositiveIntegerField(default=1, verbose_name="Seats")
+    cycle = models.CharField(
+        max_length=20, choices=BillingCycle.choices, default=BillingCycle.MONTHLY, verbose_name="Cycle"
+    )
+    subtotal_toman = models.BigIntegerField(default=0, verbose_name="Subtotal Toman")
+    discount_toman = models.BigIntegerField(default=0, verbose_name="Discount Toman")
+    total_toman = models.BigIntegerField(default=0, verbose_name="Total Toman")
+    status = models.CharField(
+        max_length=20,
+        choices=InvoiceStatus.choices,
+        default=InvoiceStatus.DRAFT,
+        db_index=True,
+        verbose_name="Status",
+    )
+    issued_at = models.DateTimeField(null=True, blank=True, verbose_name="Issued At")
+    due_at = models.DateTimeField(null=True, blank=True, verbose_name="Due At")
+    paid_at = models.DateTimeField(null=True, blank=True, verbose_name="Paid At")
+    notes = models.TextField(blank=True, default="", verbose_name="Notes")
+    metadata = models.JSONField(default=dict, blank=True, verbose_name="Metadata")
+
+    class Meta:
+        verbose_name = "Invoice"
+        verbose_name_plural = "Invoices"
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"{self.number}"
+
+    @classmethod
+    def generate_number(cls) -> str:
+        stamp = timezone.now().strftime("%Y%m")
+        suffix = uuid.uuid4().hex[:10].upper()
+        return f"INV-{stamp}-{suffix}"
+
+    @property
+    def amount_toman(self) -> int:
+        return int(self.total_toman)
+
+
+class PaymentTransaction(BaseModel):
+    """A single payment attempt against one gateway."""
+
+    invoice = models.ForeignKey(
+        "billing.Invoice",
+        on_delete=models.PROTECT,
+        related_name="transactions",
+        null=True,
+        blank=True,
+        verbose_name="Invoice",
+    )
+    user = models.ForeignKey(
+        "db.User", on_delete=models.PROTECT, related_name="billing_transactions", verbose_name="User"
+    )
+    gateway_code = models.CharField(max_length=50, choices=GatewayCode.choices, verbose_name="Gateway Code")
+    gateway_token = models.CharField(max_length=255, verbose_name="Gateway Token")
+    gateway_ref_id = models.CharField(max_length=255, blank=True, default="", verbose_name="Gateway Reference Id")
+    amount_toman = models.BigIntegerField(default=0, verbose_name="Amount Toman")
+    status = models.CharField(
+        max_length=20,
+        choices=TransactionStatus.choices,
+        default=TransactionStatus.PENDING,
+        db_index=True,
+        verbose_name="Status",
+    )
+    gateway_fee = models.BigIntegerField(null=True, blank=True, verbose_name="Gateway Fee")
+    gateway_amount = models.BigIntegerField(null=True, blank=True, verbose_name="Gateway Amount")
+    callback_payload = models.JSONField(default=dict, blank=True, verbose_name="Callback Payload")
+    verify_payload = models.JSONField(default=dict, blank=True, verbose_name="Verify Payload")
+    failure_reason = models.TextField(blank=True, default="", verbose_name="Failure Reason")
+    attempts = models.PositiveIntegerField(default=0, verbose_name="Attempts")
+    verified_at = models.DateTimeField(null=True, blank=True, verbose_name="Verified At")
+    paid_at = models.DateTimeField(null=True, blank=True, verbose_name="Paid At")
+    # When the money was parked in the hold (see ``TransactionStatus.HELD``).
+    # Kept after the hold ends, so a row still says it was once in the queue.
+    held_at = models.DateTimeField(null=True, blank=True, verbose_name="Held At")
+    meta = models.JSONField(default=dict, blank=True, verbose_name="Meta")
+
+    class Meta:
+        verbose_name = "Payment Transaction"
+        verbose_name_plural = "Payment Transactions"
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["gateway_code", "gateway_token"],
+                name="unique_gateway_token_per_gateway",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.gateway_code}:{self.gateway_token}"
+
+    def mark_paid(self, ref_id: str = "", amount_toman: int = 0, fee=None) -> None:
+        now = timezone.now()
+        self.status = TransactionStatus.PAID
+        self.paid_at = self.paid_at or now
+        self.verified_at = self.verified_at or now
+        self.failure_reason = ""
+        if ref_id:
+            self.gateway_ref_id = ref_id
+        if amount_toman:
+            self.amount_toman = int(amount_toman)
+        if fee is not None:
+            self.gateway_fee = fee
+
+    def mark_status(self, status: str, reason: str = "") -> None:
+        self.status = status
+        self.failure_reason = (reason or "")[:2000]
+        if status in (TransactionStatus.PAID, TransactionStatus.PROCESSING, TransactionStatus.FAILED):
+            self.verified_at = self.verified_at or timezone.now()
+
+
+class Subscription(BaseModel):
+    """An active (or historic) subscription bound to a paid invoice."""
+
+    user = models.ForeignKey(
+        "db.User", on_delete=models.CASCADE, related_name="billing_subscriptions", verbose_name="User"
+    )
+    plan = models.ForeignKey(
+        "billing.Plan", on_delete=models.PROTECT, related_name="subscriptions", verbose_name="Plan"
+    )
+    # Plans are workspace entitlements, so the subscription records which
+    # workspace it was bought for. It stays nullable because a purchase made
+    # before this field existed has no workspace to point at.
+    workspace = models.ForeignKey(
+        "db.Workspace",
+        on_delete=models.CASCADE,
+        related_name="billing_subscriptions",
+        null=True,
+        blank=True,
+        verbose_name="Workspace",
+    )
+    seats = models.PositiveIntegerField(default=1, verbose_name="Seats")
+    cycle = models.CharField(
+        max_length=20, choices=BillingCycle.choices, default=BillingCycle.MONTHLY, verbose_name="Cycle"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=SubscriptionStatus.choices,
+        default=SubscriptionStatus.ACTIVE,
+        verbose_name="Status",
+    )
+    starts_at = models.DateTimeField(null=True, blank=True, verbose_name="Starts At")
+    ends_at = models.DateTimeField(null=True, blank=True, verbose_name="Ends At")
+    auto_renew = models.BooleanField(default=False, verbose_name="Auto Renew")
+    source_transaction = models.ForeignKey(
+        "billing.PaymentTransaction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="subscriptions",
+        verbose_name="Source Transaction",
+    )
+
+    class Meta:
+        verbose_name = "Subscription"
+        verbose_name_plural = "Subscriptions"
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.plan_id}"
+
+
+class FeatureFlag(BaseModel):
+    """A capability that a plan can grant and a workspace can turn on.
+
+    The row is the catalogue only. A feature needs three layers before it is
+    actually usable: this row has to be globally active, the workspace plan has
+    to grant it through ``PlanFeatureFlag``, and the workspace itself has to
+    switch it on through ``WorkspaceFeatureFlag``.
+    """
+
+    code = models.CharField(max_length=100, unique=True, db_index=True, verbose_name="Feature Flag Code")
+    name = models.CharField(max_length=255, verbose_name="Name")
+    description = models.TextField(blank=True, default="", verbose_name="Description")
+    category = models.CharField(max_length=100, blank=True, default="general", verbose_name="Category")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Active")
+    is_public = models.BooleanField(default=True, verbose_name="Public")
+
+    # Re-exported on the class as well as at module level: the catalogue rows are
+    # read as ``FeatureFlag.LIMIT_TYPE_BOOLEAN`` by the admin API and the
+    # serializers, while the choices tuples must exist before the class body runs.
+    LIMIT_TYPE_BOOLEAN = LIMIT_TYPE_BOOLEAN
+    LIMIT_TYPE_NUMBER = LIMIT_TYPE_NUMBER
+    LIMIT_TYPE_UNLIMITED = LIMIT_TYPE_UNLIMITED
+    LIMIT_TYPE_CHOICES = LIMIT_TYPE_CHOICES
+
+    # A flag either switches on or carries a countable limit. One global number
+    # across all flags does not work: "5 charts" and "10 projects" are not the
+    # same constraint, so each flag declares its own shape.
+    limit_type = models.CharField(
+        max_length=16,
+        default=LIMIT_TYPE_BOOLEAN,
+        choices=LIMIT_TYPE_CHOICES,
+        verbose_name="Limit Type",
+    )
+    unit_label = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="Unit Label", help_text="Persian noun for a numeric limit."
+    )
+
+    class Meta:
+        verbose_name = "Feature Flag"
+        verbose_name_plural = "Feature Flags"
+        ordering = ("category", "code")
+
+    def __str__(self) -> str:
+        return self.code
+
+
+class PlanFeatureFlag(BaseModel):
+    """Links a plan to a feature flag it is allowed to unlock."""
+
+    plan = models.ForeignKey(
+        "billing.Plan", on_delete=models.CASCADE, related_name="feature_flags", verbose_name="Plan"
+    )
+    feature_flag = models.ForeignKey(
+        "billing.FeatureFlag",
+        on_delete=models.CASCADE,
+        related_name="plan_grants",
+        verbose_name="Feature Flag",
+    )
+    is_enabled = models.BooleanField(default=True, verbose_name="Enabled")
+    config = models.JSONField(default=dict, blank=True, verbose_name="Config")
+    # The typed limit, kept beside the free-form ``config`` rather than inside it.
+    # ``config`` is writable today through the admin plan-flag endpoint and accepts
+    # arbitrary JSON, so restructuring it would turn valid writes into 400s. Only
+    # meaningful when the flag's limit_type is "number"; the serializer rejects it
+    # otherwise rather than storing a value nothing reads.
+    limit_value = models.PositiveIntegerField(null=True, blank=True, verbose_name="Limit Value")
+
+    class Meta:
+        verbose_name = "Plan Feature Flag"
+        verbose_name_plural = "Plan Feature Flags"
+        ordering = ("plan__code", "feature_flag__code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["plan", "feature_flag"],
+                name="unique_plan_feature_flag",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.plan_id}:{self.feature_flag_id}"
+
+
+class WorkspaceFeatureFlag(BaseModel):
+    """The workspace level switch that turns a granted feature on or off."""
+
+    workspace = models.ForeignKey(
+        "db.Workspace",
+        on_delete=models.CASCADE,
+        related_name="billing_feature_flags",
+        verbose_name="Workspace",
+    )
+    feature_flag = models.ForeignKey(
+        "billing.FeatureFlag",
+        on_delete=models.CASCADE,
+        related_name="workspace_activations",
+        verbose_name="Feature Flag",
+    )
+    is_enabled = models.BooleanField(default=False, verbose_name="Enabled")
+    enabled_by = models.ForeignKey(
+        "db.User",
+        on_delete=models.SET_NULL,
+        related_name="enabled_billing_feature_flags",
+        null=True,
+        blank=True,
+        verbose_name="Enabled By",
+    )
+    enabled_at = models.DateTimeField(null=True, blank=True, verbose_name="Enabled At")
+    config = models.JSONField(default=dict, blank=True, verbose_name="Config")
+
+    class Meta:
+        verbose_name = "Workspace Feature Flag"
+        verbose_name_plural = "Workspace Feature Flags"
+        ordering = ("feature_flag__category", "feature_flag__code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "feature_flag"],
+                name="unique_workspace_feature_flag",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.workspace_id}:{self.feature_flag_id}"
+
+
+class LedgerAccount(BaseModel):
+    """One side of every money movement. Codes are stable and referenced in code."""
+
+    # Soft deleted rows keep this uniqueness: ``delete()`` only sets ``deleted_at``
+    # (see ``SoftDeleteModel``), so the code stays taken and a second
+    # ``get_or_create(code=...)`` for a workspace whose account was deleted raises
+    # ``IntegrityError``, because the default manager hides the deleted row so
+    # ``get_or_create`` tries to insert a duplicate. Callers must look the code up
+    # through ``all_objects`` and revive it (``deleted_at=None``) instead.
+    code = models.CharField(max_length=255, unique=True, db_index=True)
+    kind = models.CharField(max_length=32, choices=LedgerAccountKind.choices, default=LedgerAccountKind.ASSET)
+    title = models.CharField(max_length=255, blank=True)
+    workspace = models.ForeignKey(
+        "db.Workspace", on_delete=models.CASCADE, related_name="ledger_accounts", null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ("code",)
+
+    def __str__(self) -> str:
+        return self.code
+
+    @property
+    def is_debit_normal(self) -> bool:
+        """Assets and pools grow on the debit side, everything else on the credit side."""
+        return self.kind in (LedgerAccountKind.ASSET, LedgerAccountKind.ADMIN_POOL)
+
+
+class LedgerEntry(BaseModel):
+    """One balanced movement of money. ``amount_toman`` is always positive."""
+
+    debit_account = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="debit_entries")
+    credit_account = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="credit_entries")
+    amount_toman = models.PositiveBigIntegerField()
+    source = models.CharField(max_length=32, choices=LedgerSource.choices)
+    workspace = models.ForeignKey(
+        "db.Workspace", on_delete=models.CASCADE, related_name="ledger_entries", null=True, blank=True
+    )
+    description = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        "db.User", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
+    )
+    invoice = models.ForeignKey(
+        "billing.Invoice", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
+    )
+    transaction = models.ForeignKey(
+        "billing.PaymentTransaction", on_delete=models.SET_NULL, related_name="ledger_entries", null=True, blank=True
+    )
+    # The entry this one reverses, if any. ``PROTECT`` because a reversal is the
+    # only record that money left the workspace: deleting the original grant
+    # must not orphan it and let the same grant be reversed a second time.
+    #
+    # This exists because a reversal cannot be identified by its legs. Two
+    # grants of the SAME amount to the SAME workspace have byte-identical legs,
+    # so "is there a mirrored entry on this workspace?" answers yes for the
+    # second grant after the FIRST one was reversed -- and ``revoke_grant``
+    # then refuses a legitimate first revocation with "already reversed".
+    # ``entry.reversals.exists()`` is exact by construction.
+    #
+    # Nullable because only reversals set it; every other entry leaves it null.
+    reversal_of = models.ForeignKey("self", on_delete=models.PROTECT, related_name="reversals", null=True, blank=True)
+    # Unique across soft deleted rows too: ``delete()`` only sets ``deleted_at``,
+    # so retrying an operation whose entry was deleted still raises
+    # ``IntegrityError`` rather than posting the movement a second time. Retry
+    # logic must therefore look the key up through ``all_objects`` (the default
+    # manager hides soft deleted rows) and revive the row instead of creating a
+    # new one.
+    idempotency_key = models.CharField(max_length=255, unique=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(debit_account=models.F("credit_account")),
+                name="ledger_entry_distinct_accounts",
+            ),
+            models.CheckConstraint(condition=models.Q(amount_toman__gt=0), name="ledger_entry_positive_amount"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source} {self.amount_toman}"
+
+
+class Wallet(BaseModel):
+    """A workspace wallet. The balance lives in LedgerEntry rows, never in a column."""
+
+    workspace = models.OneToOneField("db.Workspace", on_delete=models.CASCADE, related_name="billing_wallet")
+    # Zero means no cap. Guards against a mistyped admin grant.
+    admin_grant_cap_toman = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"wallet:{self.workspace.slug}"
+
+
+class BillingAccessLog(BaseModel):
+    """Every time an instance administrator reads a tenant's money.
+
+    An instance admin can see any workspace's wallet and ledger, and hiding that
+    would leave them unable to answer a customer's billing question. The risk
+    that creates -- a customer's financial data ending up in the wrong hands --
+    is managed by traceability rather than by pretending the operator does not
+    exist: every read leaves a row naming who looked, at which workspace and
+    when.
+
+    ``viewer`` is ``SET_NULL``, so deleting an admin leaves their rows in place
+    but un-attributed: the trail records that *someone* read the money and when,
+    and cannot name the person. Nullability is deliberate -- a background job
+    can produce a read -- but a reader must not assume the row always names a
+    human.
+
+    Only instance admins read this table. ``WorkspaceBillingLedgerPermission``
+    must never be given access: "who looked at me" has no meaning to a
+    workspace admin and only widens the surface.
+
+    Note for later tasks: this model inherits ``SoftDeleteModel``, so
+    ``objects`` hides soft-deleted rows and code must pick ``objects`` vs
+    ``all_objects`` deliberately. More importantly, ``SoftDeleteModel.delete()``
+    enqueues a Celery task, so calling ``.delete()`` on an audit row in a
+    broker-less environment raises ``kombu.OperationalError``. Nothing on the
+    audit path should call ``.delete()``.
+    """
+
+    VIEW_WALLET = "wallet"
+    VIEW_LEDGER = "ledger"
+    VIEW_CHOICES = (
+        (VIEW_WALLET, "کیف پول"),
+        (VIEW_LEDGER, "دفتر کل"),
+    )
+
+    # Nullable: a background job or a since-deleted admin can still produce a
+    # read, and dropping the row would erase the evidence it exists to keep.
+    viewer = models.ForeignKey(
+        "db.User",
+        on_delete=models.SET_NULL,
+        related_name="billing_access_logs",
+        null=True,
+        blank=True,
+        verbose_name="Viewer",
+    )
+    # ``db_index=False`` on purpose: ``Meta.indexes`` already declares
+    # ``(workspace, -created_at)`` and serves the same lookups from its leading
+    # column. Django would otherwise add a second index on ``workspace_id``
+    # alone, which on this append-only table -- one row per admin read -- is pure
+    # write amplification. ``viewer`` keeps its FK index; it answers a different
+    # question ("who looked at this workspace").
+    workspace = models.ForeignKey(
+        "db.Workspace",
+        on_delete=models.CASCADE,
+        related_name="billing_access_logs",
+        db_index=False,
+        verbose_name="Workspace",
+    )
+    view = models.CharField(max_length=16, choices=VIEW_CHOICES, verbose_name="View")
+    ip_address = models.CharField(max_length=45, blank=True, default="", verbose_name="IP Address")
+    user_agent = models.CharField(max_length=512, blank=True, default="", verbose_name="User Agent")
+    # ``created_at`` comes from ``BaseModel`` -> ``AuditModel`` -> ``TimeAuditModel``
+    # as ``auto_now_add``. Declaring it again here would shadow the inherited
+    # field, so it is deliberately not repeated.
+
+    class Meta:
+        verbose_name = "Billing Access Log"
+        verbose_name_plural = "Billing Access Logs"
+        ordering = ("-created_at",)
+        indexes = [models.Index(fields=["workspace", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.view}:{self.workspace_id}"
+
+
+# The days before a subscription ends on which its workspace admins are told.
+DEFAULT_RENEWAL_NOTICE_DAYS = [7, 3, 1]
+
+
+def default_renewal_notice_days():
+    return list(DEFAULT_RENEWAL_NOTICE_DAYS)
+
+
+class RenewalNoticeSchedule(BaseModel):
+    """The instance's renewal reminder schedule. One row; see ``services.renewal``.
+
+    The days are stored as a list rather than one row per day so the admin
+    page replaces the whole schedule in one save, which keeps two admins from
+    each adding a day the other one removed.
+    """
+
+    days_before = models.JSONField(default=default_renewal_notice_days, verbose_name="Days Before Expiry")
+
+    class Meta:
+        verbose_name = "Renewal Notice Schedule"
+        verbose_name_plural = "Renewal Notice Schedules"
+
+    def __str__(self) -> str:
+        return f"renewal-notice-schedule:{self.days_before}"
+
+
+class RenewalNotice(BaseModel):
+    """One reminder sent for one subscription period.
+
+    The unique key is the reminder itself: the subscription, which mark it was
+    for, and the moment the period ends. A beat run that repeats the day, or a
+    worker that retries after a crash, finds the row and sends nothing again.
+    """
+
+    subscription = models.ForeignKey(
+        "billing.Subscription",
+        on_delete=models.CASCADE,
+        related_name="renewal_notices",
+        verbose_name="Subscription",
+    )
+    invoice = models.ForeignKey(
+        "billing.Invoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="renewal_notices",
+        verbose_name="Invoice",
+    )
+    days_before = models.PositiveSmallIntegerField(verbose_name="Days Before Expiry")
+    period_ends_at = models.DateTimeField(verbose_name="Period Ends At")
+    recipients = models.PositiveIntegerField(default=0, verbose_name="Recipients")
+
+    class Meta:
+        verbose_name = "Renewal Notice"
+        verbose_name_plural = "Renewal Notices"
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subscription", "days_before", "period_ends_at"],
+                name="billing_renewal_notice_once_per_mark",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subscription_id}:{self.days_before}"

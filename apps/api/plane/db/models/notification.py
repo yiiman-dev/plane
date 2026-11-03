@@ -147,3 +147,204 @@ class EmailNotificationLog(BaseModel):
         verbose_name_plural = "Email Notification Logs"
         db_table = "email_notification_logs"
         ordering = ("-created_at",)
+
+
+# --------------------------------------------------------------------------------------
+# External notification channels (SMS, Bale bot, ...)
+# --------------------------------------------------------------------------------------
+
+NOTIFICATION_CHANNEL_SMS = "SMS"
+NOTIFICATION_CHANNEL_BALE = "BALE"
+
+NOTIFICATION_CHANNEL_CHOICES = (
+    (NOTIFICATION_CHANNEL_SMS, "SMS"),
+    (NOTIFICATION_CHANNEL_BALE, "Bale"),
+)
+
+NOTIFICATION_EVENT_PROPERTY_CHANGE = "property_change"
+NOTIFICATION_EVENT_STATE_CHANGE = "state_change"
+NOTIFICATION_EVENT_COMMENT = "comment"
+NOTIFICATION_EVENT_MENTION = "mention"
+NOTIFICATION_EVENT_ISSUE_COMPLETED = "issue_completed"
+NOTIFICATION_EVENT_BILLING_RENEWAL = "billing_renewal"
+
+NOTIFICATION_EVENT_CHOICES = (
+    (NOTIFICATION_EVENT_PROPERTY_CHANGE, "Property change"),
+    (NOTIFICATION_EVENT_STATE_CHANGE, "State change"),
+    (NOTIFICATION_EVENT_COMMENT, "Comment"),
+    (NOTIFICATION_EVENT_MENTION, "Mention"),
+    (NOTIFICATION_EVENT_ISSUE_COMPLETED, "Issue completed"),
+    (NOTIFICATION_EVENT_BILLING_RENEWAL, "Billing renewal"),
+)
+
+NOTIFICATION_EVENTS = [event[0] for event in NOTIFICATION_EVENT_CHOICES]
+
+NOTIFICATION_CHANNEL_STATUS_PENDING = "pending"
+NOTIFICATION_CHANNEL_STATUS_SENT = "sent"
+NOTIFICATION_CHANNEL_STATUS_FAILED = "failed"
+NOTIFICATION_CHANNEL_STATUS_SKIPPED = "skipped"
+
+NOTIFICATION_CHANNEL_STATUS_CHOICES = (
+    (NOTIFICATION_CHANNEL_STATUS_PENDING, "Pending"),
+    (NOTIFICATION_CHANNEL_STATUS_SENT, "Sent"),
+    (NOTIFICATION_CHANNEL_STATUS_FAILED, "Failed"),
+    (NOTIFICATION_CHANNEL_STATUS_SKIPPED, "Skipped"),
+)
+
+
+class UserNotificationChannel(BaseModel):
+    """Per user, per channel configuration and delivery state"""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_channels",
+    )
+    channel = models.CharField(max_length=20, choices=NOTIFICATION_CHANNEL_CHOICES)
+    # master switch for the channel
+    is_enabled = models.BooleanField(default=True)
+    # set once a message has been delivered successfully on this channel
+    is_verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    # last delivery state, used to surface delivery problems in the UI
+    last_status = models.CharField(
+        max_length=20,
+        choices=NOTIFICATION_CHANNEL_STATUS_CHOICES,
+        null=True,
+        blank=True,
+    )
+    last_delivered_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        verbose_name = "User Notification Channel"
+        verbose_name_plural = "User Notification Channels"
+        db_table = "user_notification_channels"
+        ordering = ("-created_at",)
+        constraints = [models.UniqueConstraint(fields=["user", "channel"], name="uniq_user_notification_channel")]
+
+    def __str__(self):
+        """Return the user and channel"""
+        return f"<{self.user}>:{self.channel}"
+
+
+class NotificationChannelPreference(BaseModel):
+    """Event level opt in / opt out for an external notification channel"""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_channel_preferences",
+    )
+    channel = models.CharField(max_length=20, choices=NOTIFICATION_CHANNEL_CHOICES)
+    event = models.CharField(max_length=30, choices=NOTIFICATION_EVENT_CHOICES)
+    is_enabled = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Notification Channel Preference"
+        verbose_name_plural = "Notification Channel Preferences"
+        db_table = "notification_channel_preferences"
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(fields=["user", "channel", "event"], name="uniq_notification_channel_preference")
+        ]
+
+    def __str__(self):
+        """Return the user, channel and event"""
+        return f"<{self.user}>:{self.channel}:{self.event}"
+
+
+class NotificationChannelLog(BaseModel):
+    """Delivery log for a single message queued on an external notification channel"""
+
+    # The workspace whose plan pays for this message, carried over from the in app
+    # notification it was queued from. Nullable: rows queued before billing knew
+    # about this column have none, and such a message is delivered and simply not
+    # billed -- an unattributed message must never be dropped or charged to
+    # somebody else's wallet.
+    workspace = models.ForeignKey(
+        "db.Workspace",
+        on_delete=models.CASCADE,
+        related_name="notification_channel_logs",
+        null=True,
+        blank=True,
+    )
+    receiver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="channel_notifications",
+    )
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="triggered_channel_notifications",
+    )
+    channel = models.CharField(max_length=20, choices=NOTIFICATION_CHANNEL_CHOICES)
+    event = models.CharField(max_length=30, choices=NOTIFICATION_EVENT_CHOICES)
+    # entity - can be issues, pages, etc.
+    entity_identifier = models.UUIDField(null=True)
+    entity_name = models.CharField(max_length=255)
+    # data
+    data = models.JSONField(null=True)
+    status = models.CharField(
+        max_length=20,
+        choices=NOTIFICATION_CHANNEL_STATUS_CHOICES,
+        default=NOTIFICATION_CHANNEL_STATUS_PENDING,
+    )
+    error_message = models.CharField(max_length=255, blank=True, default="")
+    # processed at marks the log as picked up by the dispatcher
+    processed_at = models.DateTimeField(null=True)
+    # sent at marks a successful delivery
+    sent_at = models.DateTimeField(null=True)
+    # The rate the plan charged for this message, snapshotted when the message was
+    # sent. A later price change must not rewrite what the past cost, and the
+    # delivery row is the only place that answers "what did this cost then".
+    sms_price_toman = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Notification Channel Log"
+        verbose_name_plural = "Notification Channel Logs"
+        db_table = "notification_channel_logs"
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["channel", "processed_at", "status"], name="notif_channel_queue_idx"),
+            models.Index(fields=["receiver", "channel", "created_at"], name="notif_channel_receiver_idx"),
+        ]
+
+    def __str__(self):
+        """Return the receiver, channel and event"""
+        return f"<{self.receiver}>:{self.channel}:{self.event}"
+
+
+class NotificationChannelPairingCode(BaseModel):
+    """One time pairing code handed to a user so a chat bot can be linked to their account
+
+    Only the sha256 hash of the code is persisted, the raw code is shown once and never stored.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_channel_pairing_codes",
+    )
+    channel = models.CharField(max_length=20, choices=NOTIFICATION_CHANNEL_CHOICES, default=NOTIFICATION_CHANNEL_BALE)
+    # sha256 hexdigest of the raw code, never the raw code itself
+    code = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    consumed_chat_id = models.CharField(max_length=128, null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Notification Channel Pairing Code"
+        verbose_name_plural = "Notification Channel Pairing Codes"
+        db_table = "notification_channel_pairing_codes"
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["channel", "expires_at"], name="notif_pairing_expiry_idx"),
+        ]
+
+    def __str__(self):
+        """Return the user and channel"""
+        return f"<{self.user}>:{self.channel}"

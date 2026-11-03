@@ -6,6 +6,7 @@ from django.urls import path
 
 from plane.license.api.views import (
     EmailCredentialCheckEndpoint,
+    NotificationChannelCredentialCheckEndpoint,
     InstanceAdminEndpoint,
     InstanceAdminSignInEndpoint,
     InstanceAdminSignUpEndpoint,
@@ -18,6 +19,13 @@ from plane.license.api.views import (
     InstanceAdminUserSessionEndpoint,
     InstanceWorkSpaceAvailabilityCheckEndpoint,
     InstanceWorkSpaceEndpoint,
+)
+
+# Imported directly so the shared views __init__ stays untouched
+from plane.license.api.views.configuration import (
+    BaleWebhookRegisterEndpoint,
+    BaleWebhookStatusEndpoint,
+    BaleWebhookUnregisterEndpoint,
 )
 
 urlpatterns = [
@@ -64,6 +72,26 @@ urlpatterns = [
         "email-credentials-check/",
         EmailCredentialCheckEndpoint.as_view(),
         name="email-credential-check",
+    ),
+    path(
+        "notification-channel-credentials-check/",
+        NotificationChannelCredentialCheckEndpoint.as_view(),
+        name="notification-channel-credential-check",
+    ),
+    path(
+        "bale-webhook/register/",
+        BaleWebhookRegisterEndpoint.as_view(),
+        name="bale-webhook-register",
+    ),
+    path(
+        "bale-webhook/unregister/",
+        BaleWebhookUnregisterEndpoint.as_view(),
+        name="bale-webhook-unregister",
+    ),
+    path(
+        "bale-webhook/status/",
+        BaleWebhookStatusEndpoint.as_view(),
+        name="bale-webhook-status",
     ),
     path(
         "workspace-slug-check/",

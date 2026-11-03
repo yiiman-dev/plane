@@ -117,6 +117,7 @@ export const IssueDetailMetaRow = observer(function IssueDetailMetaRow(props: Pr
             clearable
             icon={<StartDateOutline />}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             variant="select-ghost-lg"
             showTooltip
             tooltipHeading={t("common.order_by.start_date")}
@@ -141,6 +142,7 @@ export const IssueDetailMetaRow = observer(function IssueDetailMetaRow(props: Pr
             className={getIssueDueDateClassName(issue.target_date, stateDetails?.group)}
             icon={<DueDateOutline />}
             weekStartsOn={userProfile?.start_of_the_week}
+            calendarSystem={userProfile?.calendar_system}
             variant="select-ghost-lg"
             showTooltip
             tooltipHeading={t("common.order_by.due_date")}

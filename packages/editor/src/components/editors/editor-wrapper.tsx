@@ -25,6 +25,7 @@ type Props = IEditorProps & {
 export function EditorWrapper(props: Props) {
   const {
     children,
+    contentDirection,
     containerClassName,
     disabledExtensions,
     displayConfig = DEFAULT_DISPLAY_CONFIG,
@@ -97,7 +98,7 @@ export function EditorWrapper(props: Props) {
     >
       {children?.(editor)}
       <div className="flex flex-col">
-        <EditorContentWrapper editor={editor} id={id} tabIndex={tabIndex} />
+        <EditorContentWrapper contentDirection={contentDirection} editor={editor} id={id} tabIndex={tabIndex} />
       </div>
     </EditorContainer>
   );

@@ -21,6 +21,7 @@ import { cn } from "@plane/utils";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import useKeypress from "@/hooks/use-keypress";
 import usePeekOverviewOutsideClickDetector from "@/hooks/use-peek-overview-outside-click";
+import { IssueTimeTracking } from "@/components/time-tracking/issue-time-tracking";
 // local imports
 import type { TIssueOperations } from "../issue-detail";
 import { IssueActivity } from "../issue-detail/issue-activity";
@@ -40,6 +41,7 @@ interface IIssueView {
   isError?: boolean;
   is_archived: boolean;
   disabled?: boolean;
+  titleDisabled?: boolean;
   embedIssue?: boolean;
   embedRemoveCurrentNotification?: () => void;
   issueOperations: TIssueOperations;
@@ -54,6 +56,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
     isError,
     is_archived,
     disabled = false,
+    titleDisabled = false,
     embedIssue = false,
     embedRemoveCurrentNotification,
     issueOperations,
@@ -217,9 +220,19 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                         issueId={issueId}
                         issueOperations={issueOperations}
                         disabled={disabled}
+                        titleDisabled={titleDisabled}
                         isArchived={is_archived}
                         isSubmitting={isSubmitting}
                         setIsSubmitting={(value) => setIsSubmitting(value)}
+                      />
+                    </div>
+
+                    <div className="py-2">
+                      <IssueTimeTracking
+                        workspaceSlug={workspaceSlug}
+                        projectId={projectId}
+                        issueId={issueId}
+                        disabled={disabled || is_archived}
                       />
                     </div>
 
@@ -257,10 +270,20 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                           issueId={issueId}
                           issueOperations={issueOperations}
                           disabled={disabled}
+                          titleDisabled={titleDisabled}
                           isArchived={is_archived}
                           isSubmitting={isSubmitting}
                           setIsSubmitting={(value) => setIsSubmitting(value)}
                         />
+
+                        <div className="py-2">
+                          <IssueTimeTracking
+                            workspaceSlug={workspaceSlug}
+                            projectId={projectId}
+                            issueId={issueId}
+                            disabled={disabled || is_archived}
+                          />
+                        </div>
 
                         <div className="py-2">
                           <IssueDetailWidgets

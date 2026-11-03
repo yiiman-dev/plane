@@ -108,6 +108,7 @@ export const InboxIssueProperties = observer(function InboxIssueProperties(props
           placeholder="Start date"
           icon={<CalendarOutline />}
           weekStartsOn={userProfile?.start_of_the_week}
+          calendarSystem={userProfile?.calendar_system}
           clearable
           clearLabel={t("common.clear")}
           variant="pill-md"
@@ -123,6 +124,7 @@ export const InboxIssueProperties = observer(function InboxIssueProperties(props
         placeholder="Due date"
         icon={<CalendarOutline />}
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         clearable
         clearLabel={t("common.clear")}
         variant="pill-md"

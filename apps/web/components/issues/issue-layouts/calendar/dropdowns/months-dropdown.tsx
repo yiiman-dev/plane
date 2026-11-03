@@ -14,8 +14,9 @@ import { ChevronLeftOutline, ChevronRightOutline } from "@makeplane/propel/icons
 // icons
 // constants
 import { getDate } from "@plane/utils";
-import { MONTHS_LIST } from "@plane/constants";
+import { getCalendarAdapter, monthName, resolveCalendarSystem } from "@plane/blocks/property-select";
 import { useCalendarView } from "@/hooks/store/use-calendar-view";
+import { useUserProfile } from "@/hooks/store/user";
 import type { ICycleIssuesFilter } from "@/store/issue/cycle";
 import type { IModuleIssuesFilter } from "@/store/issue/module";
 import type { IProjectIssuesFilter } from "@/store/issue/project";
@@ -31,9 +32,18 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
 
   const issueCalendarView = useCalendarView();
 
+  const { data: userProfile } = useUserProfile();
+
   const calendarLayout = issuesFilterStore.issueFilters?.displayFilters?.calendar?.layout ?? "month";
 
   const { activeMonthDate } = issueCalendarView.calendarFilters;
+
+  // Every label below, and every date this control navigates to, is expressed in the user's own
+  // calendar. `activeMonthDate` stays a Gregorian `Date` — the payload it keys is Gregorian — but
+  // reading it means going through the adapter, because `getMonth()`/`getFullYear()` are 0-based
+  // Gregorian numbers and mean something entirely different in Persian.
+  const adapter = getCalendarAdapter(resolveCalendarSystem(userProfile?.calendar_system));
+  const activeMonthParts = adapter.toParts(activeMonthDate);
 
   const getWeekLayoutHeader = (): string => {
     const allDaysOfActiveWeek = issueCalendarView.allDaysOfActiveWeek;
@@ -47,17 +57,24 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
 
     if (!firstDay || !lastDay) return "Week view";
 
-    if (firstDay.getMonth() === lastDay.getMonth() && firstDay.getFullYear() === lastDay.getFullYear())
-      return `${MONTHS_LIST[firstDay.getMonth() + 1].title} ${firstDay.getFullYear()}`;
+    const firstParts = adapter.toParts(firstDay);
+    const lastParts = adapter.toParts(lastDay);
 
-    if (firstDay.getFullYear() !== lastDay.getFullYear()) {
-      return `${MONTHS_LIST[firstDay.getMonth() + 1].shortTitle} ${firstDay.getFullYear()} - ${
-        MONTHS_LIST[lastDay.getMonth() + 1].shortTitle
-      } ${lastDay.getFullYear()}`;
+    if (firstParts.month === lastParts.month && firstParts.year === lastParts.year)
+      return `${monthName(adapter, firstParts.month)} ${firstParts.year}`;
+
+    if (firstParts.year !== lastParts.year) {
+      return `${monthName(adapter, firstParts.month, "short")} ${firstParts.year} - ${monthName(
+        adapter,
+        lastParts.month,
+        "short"
+      )} ${lastParts.year}`;
     } else
-      return `${MONTHS_LIST[firstDay.getMonth() + 1].shortTitle} - ${
-        MONTHS_LIST[lastDay.getMonth() + 1].shortTitle
-      } ${lastDay.getFullYear()}`;
+      return `${monthName(adapter, firstParts.month, "short")} - ${monthName(
+        adapter,
+        lastParts.month,
+        "short"
+      )} ${lastParts.year}`;
   };
 
   const handleDateChange = (date: Date) => {
@@ -76,7 +93,7 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
             className="rounded-xs text-h5-semibold outline-none focus-visible:ring-2 focus-visible:ring-accent-strong"
           >
             {calendarLayout === "month"
-              ? `${MONTHS_LIST[activeMonthDate.getMonth() + 1].title} ${activeMonthDate.getFullYear()}`
+              ? `${monthName(adapter, activeMonthParts.month)} ${activeMonthParts.year}`
               : getWeekLayoutHeader()}
           </button>
         }
@@ -90,8 +107,9 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
               aria-label={`${t("prev")} ${activeMonthDate.getFullYear() - 1}`}
               icon={<ChevronLeftOutline height={14} width={14} />}
               onClick={() => {
-                const previousYear = new Date(activeMonthDate.getFullYear() - 1, activeMonthDate.getMonth(), 1);
-                handleDateChange(previousYear);
+                handleDateChange(
+                  adapter.getMonthStart({ year: activeMonthParts.year - 1, month: activeMonthParts.month })
+                );
               }}
             />
             <span className="text-caption-sm-regular">{activeMonthDate.getFullYear()}</span>
@@ -101,21 +119,25 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
               aria-label={`${t("next")} ${activeMonthDate.getFullYear() + 1}`}
               icon={<ChevronRightOutline height={14} width={14} />}
               onClick={() => {
-                const nextYear = new Date(activeMonthDate.getFullYear() + 1, activeMonthDate.getMonth(), 1);
-                handleDateChange(nextYear);
+                handleDateChange(
+                  adapter.getMonthStart({ year: activeMonthParts.year + 1, month: activeMonthParts.month })
+                );
               }}
             />
           </div>
           <div className="grid grid-cols-4 items-stretch justify-items-stretch gap-4 pt-3">
-            {Object.values(MONTHS_LIST).map((month, index) => (
+            {Array.from({ length: 12 }, (_, index) => (
               <Toggle
-                key={month.shortTitle}
+                key={index}
                 size="xs"
-                label={month.shortTitle}
-                aria-label={`${month.title} ${activeMonthDate.getFullYear()}`}
+                label={monthName(adapter, index + 1, "short")}
+                aria-label={`${monthName(adapter, index + 1)} ${activeMonthDate.getFullYear()}`}
                 pressed={activeMonthDate.getMonth() === index}
                 onClick={() => {
-                  const newDate = new Date(activeMonthDate.getFullYear(), index, 1);
+                  // The adapter's months are 1-based, which is what `fromParts` takes — the `+ 1`
+                  // on this 0-based index is not an off-by-one fix, it is the translation between
+                  // the two number spaces.
+                  const newDate = adapter.fromParts(activeMonthParts.year, index + 1, 1);
                   handleDateChange(newDate);
                 }}
               />

@@ -67,3 +67,6 @@ temp/
 build/
 node_modules/
 README.md
+
+# Local pnpm store (untracked, ~1GB) is not needed in the image build context
+.pnpm-store

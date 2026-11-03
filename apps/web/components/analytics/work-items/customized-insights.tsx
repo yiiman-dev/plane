@@ -13,6 +13,7 @@ import type { IAnalyticsParams } from "@plane/types";
 import { ChartXAxisProperty, ChartYAxisMetric } from "@plane/types";
 import { cn } from "@plane/utils";
 // plane web components
+import { useUserProfile } from "@/hooks/store/user";
 import AnalyticsSectionWrapper from "../analytics-section-wrapper";
 import { AnalyticsSelectParams } from "../select/analytics-params";
 import PriorityChart from "./priority-chart";
@@ -26,6 +27,8 @@ const CustomizedInsights = observer(function CustomizedInsights({
 }) {
   const { t } = useTranslation();
   const { workspaceSlug } = useParams();
+  // The x-axis labels render in the user's calendar, so the chart needs the profile's system.
+  const { calendarSystem } = useUserProfile();
   const { control, watch, setValue } = useForm<IAnalyticsParams>({
     defaultValues: {
       x_axis: ChartXAxisProperty.PRIORITY,
@@ -54,7 +57,12 @@ const CustomizedInsights = observer(function CustomizedInsights({
         />
       }
     >
-      <PriorityChart x_axis={params.x_axis} y_axis={params.y_axis} group_by={params.group_by} />
+      <PriorityChart
+        x_axis={params.x_axis}
+        y_axis={params.y_axis}
+        group_by={params.group_by}
+        x_axis_date_grouping_system={calendarSystem}
+      />
     </AnalyticsSectionWrapper>
   );
 });

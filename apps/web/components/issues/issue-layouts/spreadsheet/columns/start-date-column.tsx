@@ -52,6 +52,7 @@ export const SpreadsheetStartDateColumn = observer(function SpreadsheetStartDate
         // `.clickable` is what the table's keyboard navigation clicks on Enter / Space in a focused cell.
         className="clickable h-full"
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         onClose={onClose}
         variant="table-cell"
       />

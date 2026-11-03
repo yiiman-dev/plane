@@ -19,6 +19,7 @@ import { Button } from "@makeplane/propel/components/button";
 import { Icon } from "@makeplane/propel/components/icon";
 import { BarChart } from "@plane/blocks/charts/bar-chart";
 import { EmptyStateCompact } from "@plane/blocks/empty-state";
+import type { CalendarSystem } from "@plane/blocks/property-select";
 import type { TBarItem, TChart, TChartDatum, ChartXAxisProperty, ChartYAxisMetric } from "@plane/types";
 // plane web components
 import { generateExtendedColors, parseChartData } from "@/components/chart/utils";
@@ -47,6 +48,11 @@ interface Props {
   y_axis: ChartYAxisMetric;
   group_by?: ChartXAxisProperty;
   x_axis_date_grouping?: ChartXAxisDateGrouping;
+  /**
+   * The calendar the x-axis labels render in. Defaults to Gregorian, so the single existing
+   * call site — which passes neither this nor `x_axis_date_grouping` — is byte-for-byte unchanged.
+   */
+  x_axis_date_grouping_system?: CalendarSystem;
 }
 
 const analyticsService = new AnalyticsService();
@@ -81,8 +87,15 @@ const PriorityChart = observer(function PriorityChart(props: Props) {
   );
   const parsedData = useMemo(
     () =>
-      priorityChartData && parseChartData(priorityChartData, props.x_axis, props.group_by, props.x_axis_date_grouping),
-    [priorityChartData, props.x_axis, props.group_by, props.x_axis_date_grouping]
+      priorityChartData &&
+      parseChartData(
+        priorityChartData,
+        props.x_axis,
+        props.group_by,
+        props.x_axis_date_grouping,
+        props.x_axis_date_grouping_system
+      ),
+    [priorityChartData, props.x_axis, props.group_by, props.x_axis_date_grouping, props.x_axis_date_grouping_system]
   );
   const chart_model = props.group_by ? EChartModels.STACKED : EChartModels.BASIC;
 

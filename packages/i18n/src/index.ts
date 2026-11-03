@@ -18,7 +18,8 @@ export type { TNamespace } from "./constants/namespaces";
 
 // Utilities
 export { setLanguage } from "./core/set-language";
-export { initPromise } from "./core";
+// i18nInstance lets non-React callers (stores, services) translate without the hook.
+export { i18nInstance, initPromise } from "./core";
 
 // Constants
 export { FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES, LANGUAGE_STORAGE_KEY } from "./constants/language";

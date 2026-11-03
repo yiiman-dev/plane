@@ -268,6 +268,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
       icon={<StartDateOutline />}
       tooltipHeading={t("common.order_by.start_date")}
       weekStartsOn={userProfile?.start_of_the_week}
+      calendarSystem={userProfile?.calendar_system}
       variant="pill-md"
       {...extra}
     />
@@ -280,7 +281,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
     menuRow: {
       icon: <Icon icon={StartDateOutline} />,
       label: t("common.order_by.start_date"),
-      preview: renderFormattedDate(issue.start_date) ?? none,
+      preview: renderFormattedDate(issue.start_date, undefined, userProfile?.calendar_system) ?? none,
       editor: ({ onEditorClose }) => renderStartDate(getDatePropertyEditorProps(onEditorClose)),
     },
   });
@@ -295,6 +296,7 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
       icon={<DueDateOutline />}
       tooltipHeading={t("common.order_by.due_date")}
       weekStartsOn={userProfile?.start_of_the_week}
+      calendarSystem={userProfile?.calendar_system}
       variant="pill-md"
       {...extra}
     />
@@ -308,7 +310,9 @@ export const DraftIssueProperties = observer(function DraftIssueProperties(props
       icon: <Icon icon={DueDateOutline} />,
       label: t("common.order_by.due_date"),
       preview: issue.target_date ? (
-        <span className={dueDateClassName}>{renderFormattedDate(issue.target_date)}</span>
+        <span className={dueDateClassName}>
+          {renderFormattedDate(issue.target_date, undefined, userProfile?.calendar_system)}
+        </span>
       ) : (
         none
       ),

@@ -324,6 +324,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         disabled={isReadOnly}
         tooltipHeading={t("project_cycles.date_range")}
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         variant="pill-md"
         {...extra}
       />
@@ -338,7 +339,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         label: t("project_cycles.date_range"),
         preview: (
           <span className={dueDateClassName}>
-            {`${renderFormattedDate(issue.start_date) ?? ""} – ${renderFormattedDate(issue.target_date) ?? ""}`}
+            {`${renderFormattedDate(issue.start_date, undefined, userProfile?.calendar_system) ?? ""} – ${renderFormattedDate(issue.target_date, undefined, userProfile?.calendar_system) ?? ""}`}
           </span>
         ),
         disabled: isReadOnly,
@@ -359,6 +360,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         disabled={isReadOnly}
         tooltipHeading={t("common.order_by.start_date")}
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         variant="pill-md"
         {...extra}
       />
@@ -371,7 +373,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       menuRow: {
         icon: <Icon icon={StartDateOutline} />,
         label: t("common.order_by.start_date"),
-        preview: renderFormattedDate(issue.start_date) ?? none,
+        preview: renderFormattedDate(issue.start_date, undefined, userProfile?.calendar_system) ?? none,
         disabled: isReadOnly,
         editor: ({ onEditorClose }) => renderStartDate(getDatePropertyEditorProps(onEditorClose)),
       },
@@ -390,6 +392,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         disabled={isReadOnly}
         tooltipHeading={t("common.order_by.due_date")}
         weekStartsOn={userProfile?.start_of_the_week}
+        calendarSystem={userProfile?.calendar_system}
         variant="pill-md"
         {...extra}
       />
@@ -403,7 +406,9 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         icon: <Icon icon={DueDateOutline} />,
         label: t("common.order_by.due_date"),
         preview: issue.target_date ? (
-          <span className={dueDateClassName}>{renderFormattedDate(issue.target_date)}</span>
+          <span className={dueDateClassName}>
+            {renderFormattedDate(issue.target_date, undefined, userProfile?.calendar_system)}
+          </span>
         ) : (
           none
         ),

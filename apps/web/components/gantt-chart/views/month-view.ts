@@ -6,10 +6,12 @@
 
 import { cloneDeep, uniqBy } from "lodash-es";
 // plane imports
+import type { CalendarAdapter } from "@plane/blocks/property-select";
 import type { ChartDataType } from "@plane/types";
+import type { EStartOfTheWeek } from "@plane/types";
 // local imports
-import { months } from "../data";
-import { getNumberOfDaysBetweenTwoDates, getNumberOfDaysInMonth } from "./helpers";
+import { generateMonths } from "../data";
+import { defaultCalendarAdapter, getNumberOfDaysBetweenTwoDates, getNumberOfDaysInMonth } from "./helpers";
 import type { IWeekBlock } from "./week-view";
 import { getWeeksBetweenTwoDates } from "./week-view";
 
@@ -37,7 +39,19 @@ export interface IMonthView {
  * @param side
  * @returns
  */
-const generateMonthChart = (monthPayload: ChartDataType, side: null | "left" | "right", targetDate?: Date) => {
+/**
+ * `startOfWeek` is deliberately still not a parameter: this view has never passed the user's
+ * `start_of_the_week` down, so it falls back to Sunday inside `getWeeksBetweenTwoDates`. That is a
+ * pre-existing bug and not calendar-specific — fixing it here would fold an unrelated behaviour
+ * change into the calendar threading.
+ */
+const generateMonthChart = (
+  monthPayload: ChartDataType,
+  side: null | "left" | "right",
+  targetDate?: Date,
+  _startOfWeek?: EStartOfTheWeek,
+  adapter: CalendarAdapter = defaultCalendarAdapter()
+) => {
   let renderState = cloneDeep(monthPayload);
 
   const range: number = renderState.data.approxFilterRange || 6;
@@ -55,7 +69,7 @@ const generateMonthChart = (monthPayload: ChartDataType, side: null | "left" | "
     minusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - range, currentDate.getDate());
     plusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + range, currentDate.getDate());
 
-    if (minusDate && plusDate) filteredDates = getMonthsViewBetweenTwoDates(minusDate, plusDate);
+    if (minusDate && plusDate) filteredDates = getMonthsViewBetweenTwoDates(minusDate, plusDate, adapter);
 
     startDate = filteredDates.weeks[0]?.startDate;
     endDate = filteredDates.weeks[filteredDates.weeks.length - 1]?.endDate;
@@ -76,7 +90,7 @@ const generateMonthChart = (monthPayload: ChartDataType, side: null | "left" | "
     minusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - range, 1);
     plusDate = new Date(chartStartDate.getFullYear(), chartStartDate.getMonth(), chartStartDate.getDate() - 1);
 
-    if (minusDate && plusDate) filteredDates = getMonthsViewBetweenTwoDates(minusDate, plusDate);
+    if (minusDate && plusDate) filteredDates = getMonthsViewBetweenTwoDates(minusDate, plusDate, adapter);
 
     startDate = filteredDates.weeks[0]?.startDate;
     endDate = new Date(chartStartDate.getFullYear(), chartStartDate.getMonth(), chartStartDate.getDate() - 1);
@@ -93,7 +107,7 @@ const generateMonthChart = (monthPayload: ChartDataType, side: null | "left" | "
     minusDate = new Date(chartEndDate.getFullYear(), chartEndDate.getMonth(), chartEndDate.getDate() + 1);
     plusDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + range, 1);
 
-    if (minusDate && plusDate) filteredDates = getMonthsViewBetweenTwoDates(minusDate, plusDate);
+    if (minusDate && plusDate) filteredDates = getMonthsViewBetweenTwoDates(minusDate, plusDate, adapter);
 
     startDate = new Date(chartEndDate.getFullYear(), chartEndDate.getMonth(), chartEndDate.getDate() + 1);
     endDate = filteredDates.weeks[filteredDates.weeks.length - 1]?.endDate;
@@ -115,9 +129,14 @@ const generateMonthChart = (monthPayload: ChartDataType, side: null | "left" | "
  * @param endDate
  * @returns
  */
-const getMonthsViewBetweenTwoDates = (startDate: Date, endDate: Date): IMonthView => ({
-  months: getMonthsBetweenTwoDates(startDate, endDate),
-  weeks: getWeeksBetweenTwoDates(startDate, endDate, false),
+const getMonthsViewBetweenTwoDates = (
+  startDate: Date,
+  endDate: Date,
+  adapter: CalendarAdapter = defaultCalendarAdapter()
+): IMonthView => ({
+  months: getMonthsBetweenTwoDates(startDate, endDate, adapter),
+  // `shouldPopulateDaysForWeek` is false and no `startOfWeek` is passed — see `generateMonthChart`.
+  weeks: getWeeksBetweenTwoDates(startDate, endDate, false, undefined, adapter),
 });
 
 /**
@@ -126,31 +145,54 @@ const getMonthsViewBetweenTwoDates = (startDate: Date, endDate: Date): IMonthVie
  * @param endDate
  * @returns
  */
-export const getMonthsBetweenTwoDates = (startDate: Date, endDate: Date): IMonthBlock[] => {
+export const getMonthsBetweenTwoDates = (
+  startDate: Date,
+  endDate: Date,
+  adapter: CalendarAdapter = defaultCalendarAdapter()
+): IMonthBlock[] => {
   const monthBlocks = [];
+
+  // The month rows, rebuilt per call because they follow the adapter's month names.
+  // `generateMonths` is 0-based, so a 1-based calendar month `m` indexes row `m - 1`.
+  const months = generateMonths(adapter);
 
   const startYear = startDate.getFullYear();
   const startMonth = startDate.getMonth();
 
   const today = new Date();
-  const todayMonth = today.getMonth();
-  const todayYear = today.getFullYear();
+  // "Is this the current month" is a calendar question, not a Gregorian one — under Persian it must
+  // compare Persian months, or the "Current" badge lands on the wrong column.
+  const todayParts = adapter.toParts(today);
+  const todayMonth = todayParts.month - 1;
+  const todayYear = todayParts.year;
 
   const currentDate = new Date(startYear, startMonth);
 
+  // `currentDate` is advanced by `setDate` at the bottom of the loop, so the rule's "not modified
+  // in this loop" reading is a false positive — it does not track mutation through method calls.
+  // oxlint-disable-next-line no-unmodified-loop-condition
   while (currentDate <= endDate) {
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth();
+    // Adapter numbering: `parts.month` is 1-based and `parts.year` is the calendar year. Under
+    // Gregorian `toParts` reports `getMonth() + 1` / `getFullYear()`, so `month - 1` and `year`
+    // are exactly the values the old `Date.getMonth()` / `getFullYear()` reads produced — which
+    // makes the title string below byte-identical for a Gregorian user.
+    const parts = adapter.toParts(currentDate);
+    const currentYear = parts.year;
+    const currentMonth = parts.month - 1;
 
     monthBlocks.push({
       year: currentYear,
       month: currentMonth,
       monthData: months[currentMonth],
       title: `${months[currentMonth].title} ${currentYear}`,
-      days: getNumberOfDaysInMonth(currentMonth, currentYear),
+      // 1-based calendar month, not the 0-based row index.
+      days: getNumberOfDaysInMonth(adapter, currentYear, parts.month),
       today: todayMonth === currentMonth && todayYear === currentYear,
     });
 
+    // Stepping stays a Gregorian month advance. This loop walks *real* time so that each block
+    // lines up with the Gregorian week columns below it; only the labels and lengths above it are
+    // calendar-aware.
     currentDate.setMonth(currentDate.getMonth() + 1);
   }
 

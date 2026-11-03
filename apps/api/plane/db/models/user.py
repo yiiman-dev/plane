@@ -15,6 +15,7 @@ from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 # Module imports
 from plane.db.models import FileAsset
@@ -58,6 +59,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     username = models.CharField(max_length=128, unique=True)
     # user fields
     mobile_number = models.CharField(max_length=255, blank=True, null=True)
+    # Bale messenger chat id or @username, used for bot notifications
+    bale_chat_id = models.CharField(max_length=128, blank=True, null=True)
     email = models.CharField(max_length=255, null=True, blank=True, unique=True)
 
     # identity
@@ -220,6 +223,14 @@ class Profile(TimeAuditModel):
         (SATURDAY, "Saturday"),
     )
 
+    class CalendarSystem(models.TextChoices):
+        GREGORIAN = "gregorian", _("Gregorian")
+        PERSIAN = "persian", _("Persian")
+
+    class TextDirection(models.TextChoices):
+        RIGHT_TO_LEFT = "rtl", _("Right-to-left")
+        LEFT_TO_RIGHT = "ltr", _("Left-to-right")
+
     id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True, primary_key=True)
     # User
     user = models.OneToOneField("db.User", on_delete=models.CASCADE, related_name="profile")
@@ -250,6 +261,23 @@ class Profile(TimeAuditModel):
     # language
     language = models.CharField(max_length=255, default="en")
     start_of_the_week = models.PositiveSmallIntegerField(choices=START_OF_THE_WEEK_CHOICES, default=SUNDAY)
+    # How this user sees dates. Storage stays Gregorian regardless of this value — it only
+    # selects which calendar the presentation layer renders. Seeded from `language` when the
+    # profile is created (see save()); never re-derived afterwards.
+    calendar_system = models.CharField(
+        max_length=16,
+        choices=CalendarSystem.choices,
+        default=CalendarSystem.GREGORIAN,
+    )
+    # Direction used when rendering this user's markdown / rich-text content. RTL is the
+    # default so Persian and English text sit side by side correctly. This is a per-user
+    # content preference only: it never flips the direction of the surrounding app chrome,
+    # so it is read at render time instead of being applied to a root element.
+    text_direction = models.CharField(
+        max_length=3,
+        choices=TextDirection.choices,
+        default=TextDirection.RIGHT_TO_LEFT,
+    )
     goals = models.JSONField(default=dict)
     background_color = models.CharField(max_length=255, default=get_random_color)
 
@@ -266,6 +294,37 @@ class Profile(TimeAuditModel):
         verbose_name_plural = "Profiles"
         db_table = "profiles"
         ordering = ("-created_at",)
+
+    def __init__(self, *args, **kwargs):
+        # Record whether the caller passed `calendar_system` explicitly. Because the field
+        # default is "gregorian", an omitted value and an explicit "gregorian" are
+        # indistinguishable once the instance exists — so we capture intent at construction
+        # time, where the information is still available. Instances loaded from the database
+        # (Model.from_db) never pass it, which is correct: they are not being created.
+        self._calendar_system_is_explicit = "calendar_system" in kwargs
+        super().__init__(*args, **kwargs)
+
+    def save(self, *args, **kwargs):
+        # Creation-time only. A Persian interface language seeds the Persian calendar so a
+        # new user never sees a calendar they did not ask for. This must never re-run for an
+        # existing profile: silently changing how dates render is disruptive, and the
+        # calendar is a separate field precisely so it can diverge from the language.
+        #
+        # Two known limits, both deliberate rather than accidental:
+        #  - DRF injects a field's default into `validated_data` when the key is absent, so a
+        #    `ModelSerializer` create would look like an explicit choice and skip this. Both
+        #    production call sites use `Profile.objects.create` directly, so nothing is affected
+        #    today; a future profile-create API must pass the language-derived value itself.
+        #  - `bulk_create` bypasses `save()` entirely, so rows inserted that way keep the field
+        #    default. No call site does this.
+        if self._state.adding and not self._calendar_system_is_explicit:
+            self.calendar_system = (
+                self.CalendarSystem.PERSIAN
+                if (self.language or "").lower().startswith("fa")
+                else self.CalendarSystem.GREGORIAN
+            )
+
+        super().save(*args, **kwargs)
 
 
 class Account(TimeAuditModel):

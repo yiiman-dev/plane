@@ -22,6 +22,7 @@ import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifi
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
+import { useUserProfile } from "@/hooks/store/user";
 
 type BlockProps = {
   activity: TActivityEntityData;
@@ -35,6 +36,7 @@ export const RecentIssue = observer(function RecentIssue(props: BlockProps) {
   const { setPeekIssue } = useIssueDetail();
   const { setPeekIssue: setPeekEpic } = useIssueDetail(EIssueServiceType.EPICS);
   const { getProjectIdentifierById } = useProject();
+  const { calendarSystem } = useUserProfile();
   // derived values
   const issueDetails: TIssueEntityData = activity.entity_data as TIssueEntityData;
   const projectIdentifier = getProjectIdentifierById(issueDetails?.project_id);
@@ -95,7 +97,7 @@ export const RecentIssue = observer(function RecentIssue(props: BlockProps) {
       }
       appendTitleElement={
         <div className="flex-shrink-0 text-caption-md-regular text-tertiary">
-          {calculateTimeAgo(activity.visited_at)}
+          {calculateTimeAgo(activity.visited_at, calendarSystem)}
         </div>
       }
       quickActionElement={

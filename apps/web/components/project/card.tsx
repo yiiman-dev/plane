@@ -42,7 +42,7 @@ import { copyUrlToClipboard, cn, getFileURL } from "@plane/utils";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
 import { useProject } from "@/hooks/store/use-project";
-import { useUserPermissions } from "@/hooks/store/user";
+import { useUserPermissions, useUserProfile } from "@/hooks/store/user";
 import { useAppRouter } from "@/hooks/use-app-router";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // local imports
@@ -82,6 +82,7 @@ export const ProjectCard = observer(function ProjectCard(props: Props) {
   const { t } = useTranslation();
   // store hooks
   const { getUserDetails } = useMember();
+  const { calendarSystem } = useUserProfile();
   const { addProjectToFavorites, removeProjectFromFavorites } = useProject();
   const { allowPermissions } = useUserPermissions();
   // hooks

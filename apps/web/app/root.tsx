@@ -53,12 +53,29 @@ export const links: LinksFunction = () => [
   },
 ];
 
+declare const __PLANE_ENV__: Record<string, string> | undefined;
+
+const envVars =
+  typeof __PLANE_ENV__ !== "undefined"
+    ? __PLANE_ENV__
+    : typeof process !== "undefined" && process.env
+      ? Object.keys(process.env)
+          .filter((k) => k.startsWith("VITE_"))
+          .reduce<Record<string, string>>((acc, key) => {
+            acc[key] = process.env[key] ?? "";
+            return acc;
+          }, {})
+      : {};
+
+const envScript = `window.__PLANE_ENV__ = ${JSON.stringify(envVars)}; window.process = window.process || { env: {} }; Object.assign(window.process.env, window.__PLANE_ENV__);`;
+
 export function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: envScript }} />
         <meta name="theme-color" content="#fff" />
         {/* Meta info for PWA */}
         <meta name="application-name" content="Plane" />
